@@ -39,7 +39,7 @@ export function HomeHero() {
                     <HeroStats />
                 </MotionShell>
 
-                <MotionShell delay={0.12} className="relative min-h-[30rem] lg:min-h-[40rem]">
+                <MotionShell delay={0.12} className="relative h-[30rem] sm:h-[34rem] lg:h-[40rem]">
                     <div className="absolute -left-5 top-8 h-[86%] w-[60%] rounded-[999px] border-[16px] border-accent-400/32 bg-accent-100/25" />
                     <div className="absolute right-0 top-2 size-28 rounded-[2.25rem] bg-accent-400/75 shadow-gold" />
                     <div className="absolute -right-3 bottom-10 size-36 rounded-full bg-white/80 shadow-gold backdrop-blur-2xl" />
@@ -51,7 +51,7 @@ export function HomeHero() {
                             fill
                             priority
                             sizes="(min-width: 1024px) 55vw, 100vw"
-                            className="object-cover"
+                            className="object-cover object-center"
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-gov-950/62 via-gov-950/12 to-white/4" />
                         <div className="absolute left-5 top-5 rounded-2xl border border-white/60 bg-white/82 px-4 py-3 text-sm font-black text-gov-950 shadow-soft backdrop-blur-xl sm:left-6 sm:top-6">
