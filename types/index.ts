@@ -8,6 +8,10 @@ export type PublicService = {
     requirements: string[];
     duration: string;
     online: boolean;
+    legalBasis?: string;
+    flow?: string[];
+    output?: string;
+    channel?: string;
 };
 
 export type NewsItem = {
