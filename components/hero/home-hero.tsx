@@ -9,24 +9,24 @@ const badges = ["Modern", "Cepat", "Transparan", "Terpercaya"];
 
 export function HomeHero() {
     return (
-        <section className="relative -mt-20 min-h-screen px-4 pb-10 pt-28 sm:px-6 lg:px-8 lg:pt-30">
+        <section className="relative min-h-[calc(100vh-5rem)] px-4 pb-12 pt-8 sm:px-6 lg:px-8 lg:pt-10">
             <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[44rem] bg-[radial-gradient(circle_at_22%_28%,rgba(244,180,0,.26),transparent_24rem),radial-gradient(circle_at_82%_26%,rgba(15,39,72,.18),transparent_28rem)]" />
             <div className="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(rgba(15,39,72,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(15,39,72,0.045)_1px,transparent_1px)] bg-[size:76px_76px] [mask-image:linear-gradient(to_bottom,black,transparent_86%)]" />
-            <div className="pointer-events-none absolute left-[46%] top-20 -z-10 h-72 w-72 rounded-full border-[18px] border-accent-400/24" />
+            <div className="pointer-events-none absolute left-[46%] top-16 -z-10 h-72 w-72 rounded-full border-[18px] border-accent-400/24" />
             <div className="pointer-events-none absolute right-10 top-56 -z-10 size-28 rounded-full bg-white/80 shadow-gold" />
 
-            <div className="mx-auto grid min-h-[calc(100vh-7rem)] max-w-7xl items-center gap-7 lg:grid-cols-[.95fr_1.05fr] xl:gap-10">
+            <div className="mx-auto grid min-h-[calc(100vh-9rem)] max-w-7xl items-center gap-8 lg:grid-cols-[.92fr_1.08fr] xl:gap-12">
                 <MotionShell className="relative z-10 pt-4 lg:pt-0">
                     <div className="inline-flex flex-wrap items-center gap-2 rounded-full border border-white/80 bg-white/88 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-gov-800 shadow-soft backdrop-blur-xl sm:text-sm">
                         <Sparkles size={16} className="text-accent-700" />
                         {badges.map((badge, index) => <span key={badge}>{index > 0 ? <span className="mx-1 text-accent-600">•</span> : null}{badge}</span>)}
                     </div>
 
-                    <h1 className="mt-5 max-w-[760px] text-balance font-black leading-[0.97] tracking-[-0.065em] text-gov-950 [font-size:clamp(3.1rem,5.8vw,6.35rem)]">
+                    <h1 className="mt-5 max-w-[760px] text-balance font-black leading-[0.98] tracking-[-0.06em] text-gov-950 [font-size:clamp(2.85rem,5.2vw,5.9rem)]">
                         Portal Pelayanan Digital <span className="block bg-gradient-to-r from-gov-800 via-accent-700 to-accent-400 bg-clip-text text-transparent">Kelurahan Tamansari</span>
                     </h1>
 
-                    <p className="mt-5 max-w-[610px] text-base font-semibold leading-[1.8] text-gov-900/76 sm:text-lg">
+                    <p className="mt-5 max-w-[640px] text-base font-semibold leading-[1.75] text-gov-900/76 sm:text-lg">
                         Menghadirkan 33 pelayanan administrasi resmi, pengajuan surat online, pelacakan status permohonan, POSBANKUM, pengaduan masyarakat, dan TAMSAR CS dalam satu platform digital yang cepat, aman, transparan, dan mudah diakses.
                     </p>
 
