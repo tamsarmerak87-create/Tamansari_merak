@@ -14,7 +14,7 @@ const variants = {
 };
 
 export function Button({ className, variant = "primary", href, children, ...props }: ButtonProps) {
-    const classes = cn("inline-flex items-center justify-center gap-3 rounded-2xl px-6 py-3.5 text-sm font-black shadow-soft transition hover:-translate-y-0.5 focus:outline-none focus:ring-4", variants[variant], className);
+    const classes = cn("inline-flex min-h-[52px] w-full items-center justify-center gap-3 rounded-2xl px-5 py-3 text-sm font-black shadow-soft transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 sm:w-auto sm:px-6 sm:py-3.5", variants[variant], className);
 
     if (href) {
         return <Link className={classes} href={href as never}>{children}</Link>;

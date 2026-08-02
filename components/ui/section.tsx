@@ -8,7 +8,7 @@ type SectionProps = React.HTMLAttributes<HTMLElement> & {
 
 export function Section({ eyebrow, title, description, className, children, ...props }: SectionProps) {
     return (
-        <section className={cn("mx-auto w-full max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24", className)} {...props}>
+        <section className={cn("mx-auto w-full max-w-7xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8 lg:py-24", className)} {...props}>
             {(eyebrow || title || description) && (
                 <div className="mx-auto mb-10 max-w-3xl text-center">
                     {eyebrow && <p className="text-xs font-black uppercase tracking-[0.32em] text-accent-700">{eyebrow}</p>}
