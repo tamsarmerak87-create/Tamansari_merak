@@ -42,7 +42,7 @@ const profileStats = [
 ];
 
 const populationStats = [
-    { label: "Penduduk terdata", value: 14.142, suffix: " jiwa", source: sourceBps },
+    { label: "Penduduk terdata", value: 14142, suffix: " jiwa", source: sourceBps },
     { label: "Kepala keluarga", value: 4386, suffix: " KK", source: sourcePemkot },
     { label: "Laki-laki", value: 4218, suffix: " jiwa", source: sourceBps },
     { label: "Perempuan", value: 4122, suffix: " jiwa", source: sourceBps },
