@@ -5,11 +5,13 @@ import { site } from "@/constants/site";
 const nav = [
     { label: "Profil", href: "/profil" },
     { label: "Layanan", href: "/layanan" },
+    { label: "Surat Online", href: "/surat-online" },
     { label: "Berita", href: "/berita" },
     { label: "Agenda", href: "/agenda" },
     { label: "Galeri", href: "/galeri" },
     { label: "Pengaduan", href: "/pengaduan" },
     { label: "POSBANKUM", href: "/posbankum" },
+    { label: "FAQ", href: "/faq" },
     { label: "Kontak", href: "/kontak" },
 ] as const;
 export function Navbar() {
@@ -27,9 +29,9 @@ export function Navbar() {
                 </Link>
                 <nav className="hidden items-center gap-1 rounded-full border border-white/70 bg-white/45 p-1 xl:flex">
                     {nav.map((n) => (
-                        <Link key={n.href} href={n.href} className="rounded-full px-3 py-2 text-xs font-black text-slate-650 transition hover:bg-white hover:text-gov-800">
+                        <a key={n.href} href={n.href} className="rounded-full px-3 py-2 text-xs font-black text-slate-650 transition hover:bg-white hover:text-gov-800">
                             {n.label}
-                        </Link>
+                        </a>
                     ))}
                 </nav>
                 <div className="flex items-center gap-2">

@@ -1,1 +1,8 @@
-export default function PosbankumPage() { return <main className="mesh-bg min-h-screen px-4 py-12"><section className="glass mx-auto max-w-3xl rounded-[2rem] p-8"><h1 className="text-4xl font-black text-gov-900">POSBANKUM</h1><p className="mt-3 text-slate-600">Booking konsultasi, nomor antrian, konsultasi, dan tracking bantuan hukum warga.</p></section></main>; }
+import { CalendarCheck, MessageCircle, Scale, ShieldCheck } from "lucide-react";
+import { InfoCard, PageHero } from "@/components/common/page-shell";
+import { Section } from "@/components/ui/section";
+import { site } from "@/constants/site";
+
+export default function PosbankumPage() {
+    return <main className="mesh-bg min-h-screen overflow-hidden"><PageHero eyebrow="POSBANKUM" title="Konsultasi bantuan hukum warga dengan alur jelas." description="Warga dapat melakukan booking konsultasi, menyampaikan topik hukum, memperoleh nomor antrian, dan menindaklanjuti hasil konsultasi melalui kanal resmi." actions={[{ label: "Booking via WhatsApp", href: `${site.wa}?text=Halo%20Kelurahan%20Tamansari,%20saya%20ingin%20booking%20konsultasi%20POSBANKUM`, icon: MessageCircle, external: true }, { label: "Lihat kontak", href: "/kontak", icon: CalendarCheck }]} /><Section className="pt-8" eyebrow="Alur bantuan hukum" title="Dari booking sampai tindak lanjut"><div className="grid gap-5 md:grid-cols-3"><InfoCard icon={CalendarCheck} title="Booking jadwal">Kirim identitas dan topik konsultasi agar petugas dapat menyiapkan jadwal layanan POSBANKUM.</InfoCard><InfoCard icon={Scale} title="Konsultasi awal">Warga memperoleh arahan awal sesuai topik hukum dan kebutuhan dokumen pendukung.</InfoCard><InfoCard icon={ShieldCheck} title="Tindak lanjut">Hasil konsultasi ditindaklanjuti sesuai kewenangan dan jadwal layanan kelurahan.</InfoCard></div></Section></main>;
+}
