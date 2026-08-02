@@ -1,7 +1,12 @@
+"use client";
+
 import Link from "next/link";
 import Image from "next/image";
-import { Headset, Menu, Search } from "lucide-react";
+import type { Route } from "next";
+import { useEffect, useState } from "react";
+import { ChevronRight, Headset, Menu, Search, X } from "lucide-react";
 import { site } from "@/constants/site";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 const nav = [
     { label: "Beranda", href: "/" },
@@ -14,10 +19,26 @@ const nav = [
     { label: "FAQ", href: "/faq" },
 ] as const;
 
+const mobileNav: { label: string; href: Route; }[] = [
+    ...nav,
+    { label: "Kontak", href: "/kontak" },
+    { label: "TAMSAR CS", href: "/#chat" },
+];
+
 export function Navbar() {
+    const [open, setOpen] = useState(false);
+
+    useEffect(() => {
+        const onResize = () => {
+            if (window.innerWidth >= 1280) setOpen(false);
+        };
+        window.addEventListener("resize", onResize);
+        return () => window.removeEventListener("resize", onResize);
+    }, []);
+
     return (
-        <header className="sticky top-0 z-50 px-2 pt-2 sm:px-5 lg:px-8 lg:pt-3">
-            <div className="glass mx-auto flex h-16 max-w-7xl items-center gap-3 rounded-[1.4rem] border border-white/80 px-3 shadow-[0_18px_60px_rgba(15,39,72,.14)] backdrop-blur-2xl sm:h-auto sm:rounded-[1.8rem] sm:px-4 sm:py-3">
+        <header className="sticky top-0 z-[100] px-2 pt-2 sm:px-5 lg:px-8 lg:pt-3">
+            <div className="glass relative z-[101] mx-auto flex h-16 max-w-7xl items-center gap-3 rounded-[1.4rem] border border-white/80 px-3 shadow-[0_18px_60px_rgba(15,39,72,.14)] backdrop-blur-2xl sm:h-auto sm:rounded-[1.8rem] sm:px-4 sm:py-3">
                 <Link href="/" className="flex min-w-0 items-center gap-2 pr-1 sm:gap-3 sm:pr-2">
                     <div className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white shadow-soft ring-1 ring-border-soft sm:size-12">
                         <Image src="/assets/logo-cilegon.png" alt="Logo Cilegon" width={28} height={28} className="h-7 w-7 object-contain" />
@@ -45,9 +66,57 @@ export function Navbar() {
                         <span className="hidden sm:inline">TAMSAR CS</span>
                         <span className="sm:hidden">CS</span>
                     </Link>
-                    <button className="grid size-10 place-items-center rounded-full bg-gov-800 text-white shadow-soft transition hover:-translate-y-0.5 xl:hidden sm:size-11" aria-label="Menu navigasi">
-                        <Menu size={19} />
-                    </button>
+                    <div className="xl:hidden">
+                        <Sheet open={open} onOpenChange={setOpen}>
+                            <SheetTrigger
+                                aria-label="Buka menu navigasi"
+                                className="pointer-events-auto grid size-10 place-items-center rounded-full bg-gov-800 text-white shadow-soft transition hover:-translate-y-0.5 sm:size-11"
+                            >
+                                {open ? <X size={19} /> : <Menu size={19} />}
+                            </SheetTrigger>
+                            <SheetContent side="right" className="flex flex-col overflow-y-auto bg-white p-5 sm:p-6">
+                                <div className="pr-12">
+                                    <div className="flex items-center gap-3">
+                                        <div className="grid size-11 shrink-0 place-items-center overflow-hidden rounded-2xl bg-gov-950 ring-1 ring-border-soft">
+                                            <Image src="/assets/logo-cilegon.png" alt="Logo Kelurahan" width={28} height={28} className="h-7 w-7 object-contain" />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <p className="text-lg font-black text-gov-950">Kelurahan Tamansari</p>
+                                            <p className="text-xs font-semibold text-slate-650">Kecamatan Pulomerak</p>
+                                            <p className="text-xs font-semibold text-slate-650">Kota Cilegon</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="mt-8 space-y-2">
+                                    {mobileNav.map((item) => (
+                                        <Link
+                                            key={item.href}
+                                            href={item.href}
+                                            onClick={() => setOpen(false)}
+                                            className="flex items-center justify-between rounded-2xl border border-slate-100 px-4 py-4 text-base font-bold text-gov-950 transition hover:border-gov-200 hover:bg-slate-50"
+                                        >
+                                            {item.label}
+                                            <ChevronRight size={18} className="text-slate-400" />
+                                        </Link>
+                                    ))}
+                                </div>
+
+                                <div className="mt-auto pt-8">
+                                    <div className="rounded-[1.5rem] bg-gov-950 p-5 text-white">
+                                        <p className="text-xs font-black uppercase tracking-[0.24em] text-accent-200">Jam Pelayanan</p>
+                                        <p className="mt-4 text-sm font-bold">Senin–Jumat</p>
+                                        <p className="text-sm text-white/75">08.00–16.00 WIB</p>
+                                        <div className="mt-5 grid gap-3 text-sm text-white/80">
+                                            <a className="rounded-xl bg-white/10 px-3 py-2" href={`tel:${site.phone}`}>WhatsApp</a>
+                                            <a className="rounded-xl bg-white/10 px-3 py-2" href={`mailto:${site.email}`}>Email</a>
+                                            <p className="rounded-xl bg-white/10 px-3 py-2">Alamat: {site.address}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </SheetContent>
+                        </Sheet>
+                    </div>
                 </div>
             </div>
         </header>

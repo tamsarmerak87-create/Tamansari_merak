@@ -10,12 +10,12 @@ const badges = ["Modern", "Cepat", "Transparan", "Terpercaya"];
 export function HomeHero() {
     return (
         <section className="relative px-4 pb-12 pt-6 sm:px-6 sm:pb-16 sm:pt-8 lg:px-8 lg:pt-10">
-            <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 hidden h-[44rem] bg-[radial-gradient(circle_at_22%_28%,rgba(244,180,0,.26),transparent_24rem),radial-gradient(circle_at_82%_26%,rgba(15,39,72,.18),transparent_28rem)] md:block" />
-            <div className="pointer-events-none absolute inset-0 -z-10 hidden bg-[linear-gradient(rgba(15,39,72,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(15,39,72,0.045)_1px,transparent_1px)] bg-[size:76px_76px] [mask-image:linear-gradient(to_bottom,black,transparent_86%)] md:block" />
-            <div className="pointer-events-none absolute left-[46%] top-16 -z-10 hidden h-72 w-72 rounded-full border-[18px] border-accent-400/24 lg:block" />
-            <div className="pointer-events-none absolute right-10 top-56 -z-10 hidden size-28 rounded-full bg-white/80 shadow-gold lg:block" />
+            <div className="pointer-events-none absolute inset-x-0 top-0 -z-20 hidden h-[44rem] bg-[radial-gradient(circle_at_22%_28%,rgba(244,180,0,.26),transparent_24rem),radial-gradient(circle_at_82%_26%,rgba(15,39,72,.18),transparent_28rem)] md:block" />
+            <div className="pointer-events-none absolute inset-0 -z-20 hidden bg-[linear-gradient(rgba(15,39,72,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(15,39,72,0.045)_1px,transparent_1px)] bg-[size:76px_76px] [mask-image:linear-gradient(to_bottom,black,transparent_86%)] md:block" />
+            <div className="pointer-events-none absolute left-[46%] top-16 -z-20 hidden h-72 w-72 rounded-full border-[18px] border-accent-400/24 lg:block" />
+            <div className="pointer-events-none absolute right-10 top-56 -z-20 hidden size-28 rounded-full bg-white/80 shadow-gold lg:block" />
 
-            <div className="mx-auto grid max-w-7xl items-start gap-8 lg:grid-cols-[.92fr_1.08fr] xl:gap-12">
+            <div className="relative z-10 mx-auto grid max-w-7xl items-start gap-8 lg:grid-cols-[.92fr_1.08fr] xl:gap-12">
                 <MotionShell className="relative z-10 pt-4 lg:pt-0 lg:self-start">
                     <div className="inline-flex flex-wrap items-center gap-2 rounded-full border border-white/80 bg-white/88 px-4 py-2 text-[11px] font-black uppercase tracking-[0.18em] text-gov-800 shadow-soft backdrop-blur-xl sm:text-sm">
                         <Sparkles size={16} className="text-accent-700" />
@@ -39,7 +39,7 @@ export function HomeHero() {
                     <HeroStats />
                 </MotionShell>
 
-                <MotionShell delay={0.12} className="relative aspect-[4/3] w-full self-start sm:aspect-[5/4] lg:aspect-[5/4] lg:mt-2 lg:w-[55%] lg:justify-self-end">
+                <MotionShell delay={0.12} className="relative z-10 aspect-[4/3] w-full self-start sm:aspect-[5/4] lg:aspect-[5/4] lg:mt-2 lg:w-[55%] lg:justify-self-end">
                     <div className="absolute -left-5 top-8 hidden h-[86%] w-[60%] rounded-[999px] border-[16px] border-accent-400/32 bg-accent-100/25 lg:block" />
                     <div className="absolute right-0 top-2 hidden size-28 rounded-[2.25rem] bg-accent-400/75 shadow-gold lg:block" />
                     <div className="absolute -right-3 bottom-10 hidden size-36 rounded-full bg-white/80 shadow-gold backdrop-blur-2xl lg:block" />
