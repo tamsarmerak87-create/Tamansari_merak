@@ -36,14 +36,14 @@ const sourcePemkot = "Sumber: Pemerintah Kota Cilegon / Kelurahan Tamansari, mud
 
 const profileStats = [
     { label: "Rukun Warga", value: 6, suffix: " RW", source: sourcePemkot },
-    { label: "Rukun Tetangga", value: 24, suffix: " RT", source: sourcePemkot },
+    { label: "Rukun Tetangga", value: 36, suffix: " RT", source: sourcePemkot },
     { label: "Wilayah Pelayanan", value: 100, suffix: "%", source: sourcePemkot },
     { label: "Status Administrasi", value: 1, suffix: " Kelurahan", source: sourcePemkot },
 ];
 
 const populationStats = [
-    { label: "Penduduk terdata", value: 8340, suffix: " jiwa", source: sourceBps },
-    { label: "Kepala keluarga", value: 2386, suffix: " KK", source: sourcePemkot },
+    { label: "Penduduk terdata", value: 14.142, suffix: " jiwa", source: sourceBps },
+    { label: "Kepala keluarga", value: 4386, suffix: " KK", source: sourcePemkot },
     { label: "Laki-laki", value: 4218, suffix: " jiwa", source: sourceBps },
     { label: "Perempuan", value: 4122, suffix: " jiwa", source: sourceBps },
 ];
