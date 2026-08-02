@@ -1,30 +1,31 @@
-import { ArrowRight, CalendarDays, Landmark, MapPin, Sparkles, UsersRound } from "lucide-react";
-import { site, statistics, services, news, agenda, gallery } from "@/constants/site";
-import { Badge } from "@/components/ui/badge";
-import { GlassCard } from "@/components/ui/card";
-import { Section } from "@/components/ui/section";
-import { MotionShell } from "@/components/common/motion-shell";
+import { HomeHero } from "@/components/hero/home-hero";
 import { ServicesCarousel } from "@/components/services/services-carousel";
+import { QuickAccess } from "@/components/quick-access/quick-access";
+import { services } from "@/constants/site";
+import { MotionShell } from "@/components/common/motion-shell";
+import { Headset, Star } from "lucide-react";
 
 export default function HomePage() {
     return (
-        <main id="top" className="mesh-bg min-h-screen overflow-hidden">
-            <section className="relative -mt-[88px] flex min-h-screen items-center px-4 pb-16 pt-32 sm:px-6 lg:px-8 lg:pt-36">
-                <div className="mx-auto grid w-full max-w-7xl items-center gap-10 lg:grid-cols-[1.05fr_.95fr]">
-                    <MotionShell className="relative z-10 space-y-7">
-                        <Badge><Sparkles size={15} /> Modern Government Portal</Badge>
-                        <h1 className="max-w-4xl font-display text-5xl font-black leading-[.95] tracking-[-.06em] text-gov-950 text-balance sm:text-7xl lg:text-8xl">Kelurahan Tamansari, layanan publik tanpa antre panjang.</h1>
-                        <p className="max-w-2xl text-lg leading-8 text-slate-650 sm:text-xl">Pelayanan digital yang rapi, mudah, transparan untuk administrasi, pengaduan, POSBANKUM, berita, agenda, dan informasi publik.</p>
-                        <div className="flex flex-col gap-3 sm:flex-row"><a className="group inline-flex items-center justify-center gap-2 rounded-full bg-gov-950 px-7 py-4 text-sm font-black text-white shadow-glass transition hover:-translate-y-1" href="#layanan">Ajukan Surat <ArrowRight size={18} className="transition group-hover:translate-x-1" /></a><a className="inline-flex items-center justify-center rounded-full border border-white/80 bg-white/70 px-7 py-4 text-sm font-black text-gov-900 shadow-soft backdrop-blur-xl transition hover:-translate-y-1" href="#chat">Chat TAMSAR AI</a></div>
-                        <div className="grid max-w-3xl grid-cols-2 gap-3 sm:grid-cols-3">{statistics.slice(0, 3).map((item) => <GlassCard key={item.label} className="rounded-3xl p-4"><p className="text-xs font-bold text-slate-650">{item.label}</p><b className="mt-1 block font-display text-3xl text-gov-950">{item.value.toLocaleString("id-ID")}</b></GlassCard>)}</div>
-                    </MotionShell>
-                    <MotionShell delay={0.12} className="relative"><div className="absolute -inset-8 rounded-[3rem] bg-gradient-to-br from-gov-500/20 via-white/20 to-accent-400/25 blur-2xl" /><GlassCard className="relative overflow-hidden rounded-[2.5rem] p-3"><div className="aspect-[4/5] rounded-[2rem] bg-[url('/assets/kantor-tamansari.jpg')] bg-cover bg-center" /><div className="absolute bottom-6 left-6 right-6 rounded-[1.5rem] border border-white/60 bg-white/72 p-5 shadow-soft backdrop-blur-2xl"><p className="text-xs font-black uppercase tracking-[.24em] text-accent-700">Kantor Kelurahan</p><h2 className="mt-2 font-display text-2xl font-black text-gov-950">{site.district}</h2><p className="mt-2 flex items-center gap-2 text-sm font-semibold text-slate-650"><MapPin size={16} /> {site.city}</p></div></GlassCard></MotionShell>
-                </div>
-            </section>
+        <main id="top" className="premium-shell min-h-screen overflow-hidden">
+            <HomeHero />
             <ServicesCarousel services={services} />
-            <Section eyebrow="Dashboard warga" title="Angka pelayanan dalam satu pandangan"><div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">{statistics.map((item, index) => <MotionShell key={item.label} delay={index * .025}><GlassCard className="rounded-3xl p-5"><p className="text-sm font-bold text-slate-650">{item.label}</p><b className="mt-3 block font-display text-4xl font-black text-gov-950">{item.value.toLocaleString("id-ID")}</b></GlassCard></MotionShell>)}</div></Section>
-            <Section className="grid gap-8 lg:grid-cols-[1.05fr_.95fr]" eyebrow="Informasi publik" title="Berita, agenda, dan dokumentasi terbaru"><div className="space-y-4">{news.map((n, index) => <MotionShell key={n.id} delay={index * .04}><article className="glass overflow-hidden rounded-[2rem] p-4 md:grid md:grid-cols-[13rem_1fr] md:gap-5"><div className="h-48 rounded-[1.5rem] bg-cover bg-center md:h-full" style={{ backgroundImage: `url(${n.image})` }} /><div className="pt-5 md:py-3"><p className="text-xs font-black uppercase tracking-[.22em] text-accent-700">{n.category}</p><h3 className="mt-3 font-display text-2xl font-black tracking-tight text-gov-950">{n.title}</h3><p className="mt-3 leading-7 text-slate-650">{n.excerpt}</p></div></article></MotionShell>)}</div><div className="space-y-6"><GlassCard className="rounded-[2rem] p-6"><div className="flex items-center gap-3"><CalendarDays className="text-accent-700" /><h3 className="font-display text-2xl font-black text-gov-950">Agenda</h3></div><div className="mt-5 space-y-4">{agenda.map((a) => <article key={a.id} className="rounded-3xl border border-white/70 bg-white/55 p-4"><h4 className="font-black text-gov-950">{a.title}</h4><p className="mt-1 text-sm font-semibold text-slate-650">{a.date} - {a.location}</p></article>)}</div></GlassCard><div className="grid grid-cols-2 gap-4">{gallery.slice(0, 4).map((g) => <div key={g.id} className="aspect-square rounded-[2rem] bg-cover bg-center shadow-soft ring-1 ring-white/70" style={{ backgroundImage: `url(${g.src})` }} aria-label={g.title} />)}</div></div></Section>
-            <Section id="chat" className="pb-24"><GlassCard className="relative overflow-hidden rounded-[2.5rem] p-8 sm:p-10 lg:p-12"><div className="absolute right-0 top-0 h-64 w-64 translate-x-1/3 -translate-y-1/3 rounded-full bg-accent-400/28 blur-3xl" /><div className="relative grid gap-8 lg:grid-cols-[1fr_auto] lg:items-center"><div><Badge className="bg-gov-950 text-white"><Landmark size={15} /> TAMSAR AI</Badge><h2 className="mt-5 font-display text-4xl font-black tracking-tight text-gov-950 sm:text-6xl">Asisten digital untuk menemukan layanan lebih cepat.</h2><p className="mt-4 max-w-2xl text-lg leading-8 text-slate-650">Asisten digital untuk FAQ, rekomendasi layanan, dan pencarian pintar.</p></div><div className="grid size-28 place-items-center rounded-[2rem] bg-gradient-to-br from-gov-950 to-accent-600 text-white shadow-glass"><UsersRound size={46} /></div></div></GlassCard></Section>
+            <QuickAccess />
+            <section id="chat" className="mx-auto max-w-7xl px-4 pb-24 sm:px-6 lg:px-8">
+                <MotionShell>
+                    <div className="relative overflow-hidden rounded-[2.5rem] bg-gov-800 p-8 text-white shadow-glass sm:p-10 lg:p-12">
+                        <div className="absolute right-0 top-0 h-72 w-72 translate-x-1/3 -translate-y-1/3 rounded-full bg-accent-400/35 blur-3xl" />
+                        <div className="relative grid gap-8 lg:grid-cols-[1fr_auto] lg:items-center">
+                            <div>
+                                <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-bold text-accent-200 ring-1 ring-white/15"><Star size={16} /> TAMSAR CS</span>
+                                <h2 className="mt-5 text-balance text-4xl font-black tracking-tight sm:text-5xl">Customer service digital untuk menemukan layanan lebih cepat.</h2>
+                                <p className="mt-4 max-w-2xl text-lg leading-8 text-white/72">Bantuan informasi layanan, alur pengajuan, dokumen persyaratan, dan kontak cepat Kelurahan Tamansari.</p>
+                            </div>
+                            <div className="grid size-28 place-items-center rounded-[2rem] bg-accent-400 text-gov-950 shadow-gold"><Headset size={48} /></div>
+                        </div>
+                    </div>
+                </MotionShell>
+            </section>
         </main>
     );
 }

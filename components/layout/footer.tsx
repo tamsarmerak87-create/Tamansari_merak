@@ -15,7 +15,7 @@ export function Footer() {
                 </div>
                 <div className="rounded-[1.5rem] border border-white/10 bg-white/6 p-6 backdrop-blur-xl">
                     <b className="font-display text-lg">Layanan</b>
-                    <p className="mt-4 leading-7 text-white/68">Administrasi, Pengaduan, POSBANKUM, Tracking Surat, AI FAQ.</p>
+                    <p className="mt-4 leading-7 text-white/68">Administrasi, Pengaduan, POSBANKUM, Tracking Surat, dan TAMSAR CS.</p>
                 </div>
                 <div className="rounded-[1.5rem] border border-white/10 bg-white/6 p-6 backdrop-blur-xl">
                     <b className="font-display text-lg">Kontak</b>

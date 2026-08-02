@@ -66,32 +66,32 @@ export function ServicesCarousel({ services }: ServicesCarouselProps) {
     return (
         <section
             id="layanan"
-            className="mx-auto w-full max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24"
+            className="mx-auto w-full max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20"
             aria-labelledby="services-carousel-title"
             onKeyDown={handleKeyDown}
         >
             <div className="mb-10 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
                 <div className="max-w-3xl">
-                    <Badge>
+                    <Badge className="border-accent-200 bg-accent-100 text-gov-800">
                         <Sparkles size={15} /> {services.length} Layanan
                     </Badge>
                     <h2 id="services-carousel-title" className="mt-4 font-display text-3xl font-black tracking-tight text-gov-950 sm:text-5xl">
-                        Jenis Pelayanan Kelurahan
+                        Jenis Pelayanan Online
                     </h2>
                     <p className="mt-4 text-base leading-8 text-slate-650 sm:text-lg">
-                        33 Pelayanan Resmi Kelurahan Tamansari
+                        Temukan layanan administrasi, pengaduan, dan POSBANKUM dalam satu alur digital yang rapi.
                     </p>
                 </div>
                 <Link
                     href="/layanan"
-                    className="group inline-flex w-fit items-center gap-2 rounded-full border border-white/75 bg-white/70 px-5 py-3 text-sm font-black text-gov-900 shadow-soft backdrop-blur-2xl transition hover:-translate-y-1 hover:bg-white"
+                    className="group inline-flex w-fit items-center gap-2 rounded-2xl bg-gov-800 px-5 py-3 text-sm font-black text-white shadow-soft transition hover:-translate-y-1 hover:bg-gov-900"
                 >
                     Lihat Semua <ArrowRight size={17} className="transition group-hover:translate-x-1" />
                 </Link>
             </div>
 
             <div className="relative" aria-roledescription="carousel" aria-label="Daftar layanan Kelurahan Tamansari">
-                <div className="pointer-events-none absolute -inset-5 rounded-[3rem] bg-gradient-to-r from-gov-500/12 via-white/30 to-accent-400/18 blur-2xl" />
+                <div className="pointer-events-none absolute -inset-5 rounded-[3rem] bg-gradient-to-r from-accent-400/20 via-white/40 to-gov-800/10 blur-2xl" />
                 <div
                     className="relative overflow-hidden py-2"
                     ref={emblaRef}
@@ -113,10 +113,10 @@ export function ServicesCarousel({ services }: ServicesCarouselProps) {
                                     transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1], delay: Math.min(index * 0.025, 0.25) }}
                                     aria-label={`${item.title}, kategori ${item.category}`}
                                 >
-                                    <GlassCard className="group relative h-full min-h-[22rem] overflow-hidden rounded-[2rem] border border-white/70 bg-white/62 p-6 shadow-soft transition duration-500 will-change-transform before:absolute before:inset-0 before:-z-10 before:rounded-[2rem] before:bg-gradient-to-br before:from-white/80 before:via-gov-400/20 before:to-accent-400/30 hover:-translate-y-2 hover:scale-[1.015] hover:border-white hover:shadow-glass">
+                                    <GlassCard className="group relative h-full min-h-[22rem] overflow-hidden rounded-[2rem] border border-border-soft bg-white/72 p-6 shadow-soft transition duration-500 will-change-transform before:absolute before:inset-0 before:-z-10 before:rounded-[2rem] before:bg-gradient-to-br before:from-white/80 before:via-accent-100/60 before:to-accent-400/20 hover:-translate-y-2 hover:scale-[1.015] hover:border-white hover:shadow-gold">
                                         <div className="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-accent-500/70 to-transparent" />
                                         <div className="absolute -right-10 -top-10 size-32 rounded-full bg-accent-400/0 blur-2xl transition duration-500 group-hover:bg-accent-400/28" />
-                                        <div className="relative grid size-12 place-items-center rounded-2xl bg-gov-950 text-white shadow-soft transition duration-500 group-hover:scale-110 group-hover:bg-gradient-to-br group-hover:from-gov-950 group-hover:to-accent-600">
+                                        <div className="relative grid size-12 place-items-center rounded-2xl bg-gov-800 text-white shadow-soft transition duration-500 group-hover:scale-110 group-hover:bg-accent-400 group-hover:text-gov-950">
                                             <Icon size={22} />
                                         </div>
                                         <p className="mt-6 text-xs font-black uppercase tracking-[.22em] text-accent-700">{item.category}</p>

@@ -1,5 +1,24 @@
+import React from "react";
+import Link from "next/link";
 import { cn } from "@/utils/cn";
 
-export function Button({ className, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-    return <button className={cn("rounded-full bg-gov-700 px-5 py-3 text-sm font-bold text-white shadow-soft transition hover:-translate-y-0.5 hover:bg-gov-500 focus:outline-none focus:ring-4 focus:ring-gov-100", className)} {...props} />;
+type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & React.AnchorHTMLAttributes<HTMLAnchorElement> & {
+    variant?: "primary" | "gold" | "glass";
+    href?: string;
+};
+
+const variants = {
+    primary: "bg-gov-800 text-white hover:bg-gov-900 focus:ring-gov-100",
+    gold: "bg-accent-400 text-gov-950 hover:bg-accent-200 focus:ring-accent-200",
+    glass: "border border-border-soft bg-white/82 text-gov-900 backdrop-blur-xl hover:bg-white focus:ring-gov-100",
+};
+
+export function Button({ className, variant = "primary", href, children, ...props }: ButtonProps) {
+    const classes = cn("inline-flex items-center justify-center gap-3 rounded-2xl px-6 py-3.5 text-sm font-black shadow-soft transition hover:-translate-y-0.5 focus:outline-none focus:ring-4", variants[variant], className);
+
+    if (href) {
+        return <Link className={classes} href={href as never}>{children}</Link>;
+    }
+
+    return <button className={classes} {...props}>{children}</button>;
 }
