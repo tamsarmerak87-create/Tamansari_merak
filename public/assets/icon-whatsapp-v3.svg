@@ -1,0 +1,87 @@
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      @keyframes pulse {
+        0%, 100% { r: 98; opacity: 0.2; }
+        50% { r: 110; opacity: 0; }
+      }
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      .wa-pulse { animation: pulse 2s ease-out infinite; }
+      .wa-icon { animation: spin 8s linear infinite; }
+      @keyframes hop {
+        0%, 100% { transform: translateY(0px) scale(1); }
+        50% { transform: translateY(-6px) scale(1.05); }
+      }
+      .wa-main { animation: hop 1.5s ease-in-out infinite; }
+    </style>
+  </defs>
+
+  <!-- Pulse ring -->
+  <circle cx="100" cy="100" r="98" fill="none" stroke="#25d366" stroke-width="2" class="wa-pulse"/>
+
+  <!-- Main mascot -->
+  <g class="wa-main">
+    <!-- Chat bubble container -->
+    <g class="wa-icon" style="transform-origin: 100px 100px; animation: none;">
+      <!-- Large bubble -->
+      <rect x="40" y="50" width="120" height="90" rx="25" fill="#25d366"/>
+      
+      <!-- Small tail bubbles (showing messages) -->
+      <circle cx="155" cy="110" r="12" fill="#25d366" opacity="0.7"/>
+      <circle cx="170" cy="125" r="8" fill="#25d366" opacity="0.5"/>
+      
+      <!-- Bubble pointer tail -->
+      <path d="M 155 135 L 165 150 L 145 140 Z" fill="#25d366"/>
+    </g>
+
+    <!-- Eyes with shine -->
+    <g>
+      <!-- Left eye -->
+      <ellipse cx="70" cy="80" rx="12" ry="14" fill="white"/>
+      <ellipse cx="70" cy="82" rx="8" ry="11" fill="#333"/>
+      <circle cx="72" cy="78" r="3" fill="white"/>
+      
+      <!-- Right eye -->
+      <ellipse cx="130" cy="80" rx="12" ry="14" fill="white"/>
+      <ellipse cx="130" cy="82" rx="8" ry="11" fill="#333"/>
+      <circle cx="132" cy="78" r="3" fill="white"/>
+    </g>
+
+    <!-- Happy expression -->
+    <g>
+      <!-- Smile mouth -->
+      <path d="M 85 105 Q 100 115 115 105" stroke="#333" stroke-width="3" fill="none" stroke-linecap="round"/>
+      
+      <!-- Sparkle expressions -->
+      <g opacity="0.8">
+        <!-- Left sparkle -->
+        <circle cx="55" cy="75" r="1.5" fill="#FFD700"/>
+        <line x1="55" y1="70" x2="55" y2="60" stroke="#FFD700" stroke-width="1" opacity="0.6"/>
+        <line x1="50" y1="75" x2="40" y2="75" stroke="#FFD700" stroke-width="1" opacity="0.6"/>
+        <line x1="60" y1="75" x2="70" y2="75" stroke="#FFD700" stroke-width="1" opacity="0.6"/>
+        <line x1="55" y1="80" x2="55" y2="90" stroke="#FFD700" stroke-width="1" opacity="0.6"/>
+        
+        <!-- Right sparkle -->
+        <circle cx="145" cy="75" r="1.5" fill="#FFD700"/>
+        <line x1="145" y1="70" x2="145" y2="60" stroke="#FFD700" stroke-width="1" opacity="0.6"/>
+        <line x1="140" y1="75" x2="130" y2="75" stroke="#FFD700" stroke-width="1" opacity="0.6"/>
+        <line x1="150" y1="75" x2="160" y2="75" stroke="#FFD700" stroke-width="1" opacity="0.6"/>
+        <line x1="145" y1="80" x2="145" y2="90" stroke="#FFD700" stroke-width="1" opacity="0.6"/>
+      </g>
+    </g>
+
+    <!-- Checkmark badge (modern style) -->
+    <g transform="translate(155, 50)">
+      <circle r="14" fill="white" stroke="#25d366" stroke-width="2"/>
+      <path d="M -5 0 L -2 4 L 5 -3" stroke="#25d366" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+
+    <!-- Heart (showing love/friendly) -->
+    <g transform="translate(45, 140)" opacity="0.8">
+      <path d="M 0 4 C -3 1 -6 1 -6 -2 C -6 -4 -4 -6 -2 -6 C 0 -6 0 -4 0 -2 C 0 -4 0 -6 2 -6 C 4 -6 6 -4 6 -2 C 6 1 3 1 0 4 Z" fill="#FFB3BA"/>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,1 @@
+export default function PosbankumPage() { return <main className="mesh-bg min-h-screen px-4 py-12"><section className="glass mx-auto max-w-3xl rounded-[2rem] p-8"><h1 className="text-4xl font-black text-gov-900">POSBANKUM</h1><p className="mt-3 text-slate-600">Booking konsultasi, nomor antrian, konsultasi, dan tracking bantuan hukum warga.</p></section></main>; }

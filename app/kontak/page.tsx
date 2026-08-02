@@ -1,0 +1,2 @@
+import { site } from "@/constants/site";
+export default function KontakPage() { return <main className="mesh-bg min-h-screen px-4 py-12"><section className="glass mx-auto max-w-4xl rounded-[2rem] p-8"><h1 className="text-4xl font-black text-gov-900">Kontak</h1><p className="mt-3 text-slate-600">{site.phone}<br />{site.email}<br />{site.address}</p></section></main>; }

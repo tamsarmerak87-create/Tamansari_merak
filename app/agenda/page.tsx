@@ -1,0 +1,2 @@
+import { agenda } from "@/constants/site";
+export default function AgendaPage() { return <main className="mesh-bg min-h-screen px-4 py-12"><section className="mx-auto max-w-4xl"><h1 className="text-4xl font-black text-gov-900">Agenda</h1><div className="mt-8 space-y-4">{agenda.map((a) => <article key={a.id} className="glass rounded-3xl p-6"><h2 className="text-xl font-bold text-gov-900">{a.title}</h2><p className="mt-2 text-slate-600">{a.date} - {a.location}</p></article>)}</div></section></main>; }

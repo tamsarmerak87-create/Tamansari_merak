@@ -1,0 +1,2 @@
+import { gallery } from "@/constants/site";
+export default function GaleriPage() { return <main className="mesh-bg min-h-screen px-4 py-12"><section className="mx-auto max-w-7xl"><h1 className="text-4xl font-black text-gov-900">Galeri</h1><div className="mt-8 columns-1 gap-5 md:columns-3">{gallery.map((g) => <div key={g.id} className="mb-5 aspect-square break-inside-avoid rounded-3xl bg-cover bg-center shadow-soft" style={{ backgroundImage: `url(${g.src})` }} />)}</div></section></main>; }

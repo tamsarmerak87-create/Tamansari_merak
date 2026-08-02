@@ -1,0 +1,9 @@
+{
+  "name": "Kelurahan Tamansari",
+  "short_name": "Tamansari",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#075aa8",
+  "icons": []
+}
