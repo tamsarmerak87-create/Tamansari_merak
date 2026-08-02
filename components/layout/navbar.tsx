@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { Headset, Menu, Search, ShieldCheck } from "lucide-react";
+import { Headset, Menu, Search } from "lucide-react";
 import { site } from "@/constants/site";
 
 const nav = [
@@ -17,7 +17,7 @@ const nav = [
 export function Navbar() {
     return (
         <header className="sticky top-0 z-50 px-3 pt-3 sm:px-5 lg:px-8">
-            <div className="glass mx-auto flex max-w-7xl items-center gap-4 rounded-[1.6rem] border border-white/75 px-4 py-3 shadow-gold backdrop-blur-2xl">
+            <div className="glass mx-auto flex max-w-7xl items-center gap-4 rounded-[1.8rem] border border-white/80 px-4 py-3 shadow-[0_18px_60px_rgba(15,39,72,.14)] backdrop-blur-2xl">
                 <Link href="/" className="flex min-w-0 items-center gap-3 pr-2">
                     <div className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white shadow-soft ring-1 ring-border-soft">
                         <Image src="/assets/logo-cilegon.png" alt="Logo Cilegon" width={28} height={28} className="h-7 w-7 object-contain" />
@@ -37,7 +37,7 @@ export function Navbar() {
                 </nav>
 
                 <div className="ml-auto flex items-center gap-2 sm:gap-3">
-                    <button className="grid size-11 place-items-center rounded-full border border-white/80 bg-white/70 text-gov-900 shadow-soft transition hover:-translate-y-0.5" aria-label="Pencarian">
+                    <button className="hidden size-11 place-items-center rounded-full border border-white/80 bg-white/70 text-gov-900 shadow-soft transition hover:-translate-y-0.5 sm:grid" aria-label="Pencarian">
                         <Search size={18} />
                     </button>
                     <Link href="/#chat" className="inline-flex items-center gap-2 rounded-full bg-gov-800 px-5 py-3 text-sm font-black text-white shadow-soft transition hover:-translate-y-0.5 hover:bg-gov-900">
