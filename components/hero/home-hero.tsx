@@ -15,8 +15,8 @@ export function HomeHero() {
             <div className="pointer-events-none absolute left-[46%] top-16 -z-10 h-72 w-72 rounded-full border-[18px] border-accent-400/24" />
             <div className="pointer-events-none absolute right-10 top-56 -z-10 size-28 rounded-full bg-white/80 shadow-gold" />
 
-            <div className="mx-auto grid min-h-[calc(100vh-9rem)] max-w-7xl items-center gap-8 lg:grid-cols-[.92fr_1.08fr] xl:gap-12">
-                <MotionShell className="relative z-10 pt-4 lg:pt-0">
+            <div className="mx-auto grid min-h-[calc(100vh-9rem)] max-w-7xl items-start gap-8 lg:grid-cols-[.92fr_1.08fr] xl:gap-12">
+                <MotionShell className="relative z-10 pt-4 lg:pt-0 lg:self-start">
                     <div className="inline-flex flex-wrap items-center gap-2 rounded-full border border-white/80 bg-white/88 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-gov-800 shadow-soft backdrop-blur-xl sm:text-sm">
                         <Sparkles size={16} className="text-accent-700" />
                         {badges.map((badge, index) => <span key={badge}>{index > 0 ? <span className="mx-1 text-accent-600">•</span> : null}{badge}</span>)}
@@ -39,7 +39,7 @@ export function HomeHero() {
                     <HeroStats />
                 </MotionShell>
 
-                <MotionShell delay={0.12} className="relative h-[30rem] sm:h-[34rem] lg:h-[40rem]">
+                <MotionShell delay={0.12} className="relative h-[30rem] self-start sm:h-[34rem] lg:h-[40rem] lg:mt-2">
                     <div className="absolute -left-5 top-8 h-[86%] w-[60%] rounded-[999px] border-[16px] border-accent-400/32 bg-accent-100/25" />
                     <div className="absolute right-0 top-2 size-28 rounded-[2.25rem] bg-accent-400/75 shadow-gold" />
                     <div className="absolute -right-3 bottom-10 size-36 rounded-full bg-white/80 shadow-gold backdrop-blur-2xl" />

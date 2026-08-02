@@ -5,6 +5,7 @@ import { site } from "@/constants/site";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { FloatingActions } from "@/components/common/floating-actions";
+import { TamsarChatWidget } from "@/components/chat/tamsar-chat-widget";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 
@@ -27,6 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 {children}
                 <Footer />
                 <FloatingActions />
+                <TamsarChatWidget />
             </body>
         </html>
     );
