@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import { ArrowRight } from "lucide-react";
+import Image from "next/image";
 import { Badge } from "@/components/ui/badge";
 import { GlassCard } from "@/components/ui/card";
 import { cn } from "@/utils/cn";
@@ -9,13 +10,14 @@ type PageHeroProps = {
     title: string;
     description: string;
     actions?: { label: string; href: string; icon?: LucideIcon; external?: boolean }[];
+    image?: { src: string; alt: string };
 };
 
-export function PageHero({ eyebrow, title, description, actions = [] }: PageHeroProps) {
+export function PageHero({ eyebrow, title, description, actions = [], image }: PageHeroProps) {
     return (
         <section className="relative mx-auto w-full max-w-7xl px-4 pb-8 pt-16 sm:px-6 lg:px-8 lg:pt-24">
             <div className="absolute left-10 top-16 h-56 w-56 rounded-full bg-accent-400/20 blur-3xl" />
-            <GlassCard className="relative overflow-hidden rounded-[2.75rem] p-8 sm:p-10 lg:p-14">
+            <GlassCard className={cn("relative overflow-hidden rounded-[2.75rem] p-8 sm:p-10 lg:p-14", image ? "lg:grid lg:grid-cols-[1.1fr_.9fr] lg:gap-10" : "")}>
                 <div className="absolute right-0 top-0 h-72 w-72 translate-x-1/3 -translate-y-1/3 rounded-full bg-gov-500/20 blur-3xl" />
                 <div className="relative max-w-4xl">
                     <Badge>{eyebrow}</Badge>
@@ -23,6 +25,12 @@ export function PageHero({ eyebrow, title, description, actions = [] }: PageHero
                     <p className="mt-5 max-w-3xl text-lg leading-8 text-slate-650">{description}</p>
                     {actions.length > 0 && <div className="mt-7 flex flex-col gap-3 sm:flex-row">{actions.map((action, index) => <HeroAction key={action.href} action={action} primary={index === 0} />)}</div>}
                 </div>
+                {image ? (
+                    <div className="relative mt-8 min-h-72 overflow-hidden rounded-[2rem] border border-white/75 shadow-xl lg:mt-0">
+                        <Image src={image.src} alt={image.alt} fill className="object-cover" sizes="(min-width: 1024px) 38vw, 100vw" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-gov-950/28 via-transparent to-white/10" />
+                    </div>
+                ) : null}
             </GlassCard>
         </section>
     );

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { Headset, Menu, Search, ShieldCheck } from "lucide-react";
 import { site } from "@/constants/site";
 
@@ -18,8 +19,8 @@ export function Navbar() {
         <header className="sticky top-0 z-50 px-3 pt-3 sm:px-5 lg:px-8">
             <div className="glass mx-auto flex max-w-7xl items-center gap-4 rounded-[1.6rem] border border-white/75 px-4 py-3 shadow-gold backdrop-blur-2xl">
                 <Link href="/" className="flex min-w-0 items-center gap-3 pr-2">
-                    <div className="grid size-12 shrink-0 place-items-center rounded-2xl bg-gov-800 text-white shadow-soft">
-                        <ShieldCheck size={22} />
+                    <div className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white shadow-soft ring-1 ring-border-soft">
+                        <Image src="/assets/logo-cilegon.png" alt="Logo Cilegon" width={28} height={28} className="h-7 w-7 object-contain" />
                     </div>
                     <div className="min-w-0 leading-tight">
                         <b className="block truncate text-sm font-black text-gov-950 sm:text-base">{site.name}</b>

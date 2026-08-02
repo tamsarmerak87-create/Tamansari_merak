@@ -1,4 +1,5 @@
 import { site } from "@/constants/site";
+import Image from "next/image";
 import { Mail, MapPin, Phone, ShieldCheck } from "lucide-react";
 
 export function Footer() {
@@ -8,7 +9,7 @@ export function Footer() {
             <div className="relative mx-auto grid max-w-7xl gap-8 px-4 py-14 sm:px-6 lg:grid-cols-[1.4fr_.8fr_.8fr] lg:px-8 lg:py-18">
                 <div>
                     <div className="flex items-center gap-3">
-                        <div className="grid size-12 place-items-center rounded-2xl bg-white/10 text-accent-400 ring-1 ring-white/15"><ShieldCheck /></div>
+                        <div className="grid size-12 place-items-center overflow-hidden rounded-2xl bg-white/10 ring-1 ring-white/15"><Image src="/assets/logo-cilegon.png" alt="Logo Cilegon" width={30} height={30} className="h-7 w-7 object-contain" /></div>
                         <h2 className="font-display text-3xl font-black tracking-tight">{site.name}</h2>
                     </div>
                     <p className="mt-5 max-w-2xl text-base leading-8 text-white/68">Portal pemerintahan digital modern untuk masyarakat Tamansari: cepat, mudah, transparan, dan siap berkembang menjadi Super App Kelurahan.</p>
