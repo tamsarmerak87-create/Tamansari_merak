@@ -6,7 +6,6 @@ export type PublicService = {
     category: ServiceCategory;
     description: string;
     requirements: string[];
-    duration: string;
     online: boolean;
     legalBasis?: string;
     flow?: string[];

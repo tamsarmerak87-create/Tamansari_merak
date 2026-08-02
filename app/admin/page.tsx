@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/card";
 
 const nav = ["Dashboard", "Pegawai", "Berita", "Agenda", "Banner", "FAQ", "Surat", "Pengaduan", "POSBANKUM"];
-const stats = [["Total layanan", "1.284", "+12% bulan ini"], ["Konten aktif", "86", "Publish & draft"], ["Pengaduan", "24", "7 pending"], ["Respon rata-rata", "18m", "SLA aktif"]];
+const stats = [["Total layanan", "1.284", "+12% bulan ini"], ["Konten aktif", "86", "Publish & draft"], ["Pengaduan", "24", "7 pending"], ["Respon rata-rata", "18", "Status aktif"]];
 const pegawai = [["Siti Aisyah", "Kasi Pemerintahan", "Aktif"], ["Ahmad Fauzi", "Operator Pelayanan", "Aktif"], ["Rina Melati", "Admin Konten", "Draft"]];
 const cruds = [
     ["CRUD Berita", "Publikasi ritual warga", "Kegiatan pelayanan", "Kabar kecamatan"],

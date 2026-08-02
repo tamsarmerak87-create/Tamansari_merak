@@ -5,10 +5,10 @@ import { Section } from "@/components/ui/section";
 import { site } from "@/constants/site";
 
 const faqs = [
-    ["Bagaimana mengajukan surat online?", "Buka halaman Surat Online, pilih jenis surat, siapkan KTP/KK, formulir, dan dokumen pendukung, lalu hubungi petugas melalui kanal resmi."],
-    ["Berapa lama proses administrasi?", "Estimasi standar pada katalog layanan adalah 1 hari kerja setelah berkas dinyatakan lengkap oleh petugas."],
+    ["Bagaimana mengajukan surat online?", "Buka halaman Surat Online, pilih jenis surat, siapkan KTP/KK, formulir, dan dokumen pendukung, lalu kirim melalui kanal resmi."],
+    ["Berapa lama proses administrasi?", "Informasi layanan tersedia pada katalog resmi setelah berkas dinyatakan lengkap oleh petugas."],
     ["Bagaimana mengirim pengaduan?", "Gunakan halaman Pengaduan untuk melihat kanal laporan resmi, lalu kirim identitas, deskripsi masalah, dan foto atau lokasi jika tersedia."],
-    ["Apa itu POSBANKUM?", "POSBANKUM adalah kanal konsultasi dan bantuan hukum warga melalui booking topik konsultasi serta tindak lanjut sesuai jadwal."],
+    ["Apa itu POSBANKUM?", "POSBANKUM adalah kanal konsultasi dan bantuan hukum warga melalui booking topik konsultasi serta tindak lanjut resmi."],
     ["Apakah semua tombol aktif?", "Ya. Tombol mengarah ke route internal, WhatsApp, telepon, atau email resmi Kelurahan Tamansari."],
 ];
 
