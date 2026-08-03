@@ -29,7 +29,7 @@ export default function HomePage() {
             <HomeHero />
             <ServicesCarousel services={services} />
             <QuickAccess />
-            <section id="dokumentasi" className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
+            <section id="dokumentasi" className="mx-auto max-w-[1440px] px-5 py-[60px] sm:px-10 sm:py-[80px] lg:px-20 lg:py-[120px]">
                 <MotionShell>
                     <div className="mx-auto mb-10 max-w-3xl text-center">
                         <Badge><Camera className="h-4 w-4" /> Dokumentasi Kelurahan Tamansari</Badge>
@@ -42,7 +42,7 @@ export default function HomePage() {
                         <MotionShell key={item.src} delay={index * 0.08}>
                             <GlassCard className="group h-full overflow-hidden p-2">
                                 <div className="relative h-72 overflow-hidden rounded-[1.6rem]">
-                                    <Image src={item.src} alt={item.title} fill sizes="(min-width: 1024px) 33vw, 100vw" className="object-cover transition duration-700 group-hover:scale-105" />
+                                    <Image src={item.src} alt={item.title} fill loading="lazy" sizes="(min-width: 1024px) 33vw, 100vw" className="object-cover transition duration-700 group-hover:scale-105" />
                                     <div className="absolute inset-0 bg-gradient-to-t from-gov-950/76 via-gov-950/10 to-transparent" />
                                     <div className="absolute bottom-4 left-4 right-4 text-white">
                                         <p className="text-xs font-black uppercase tracking-[0.2em] text-accent-200">Dokumentasi</p>
@@ -56,7 +56,7 @@ export default function HomePage() {
                 </div>
             </section>
 
-            <section id="galeri-kegiatan" className="mx-auto max-w-7xl px-4 pb-20 sm:px-6 lg:px-8">
+            <section id="galeri-kegiatan" className="mx-auto max-w-[1440px] px-5 pb-[60px] sm:px-10 sm:pb-[80px] lg:px-20 lg:pb-[120px]">
                 <MotionShell>
                     <div className="relative overflow-hidden rounded-[2.5rem] bg-white/72 p-6 shadow-glass ring-1 ring-white/80 backdrop-blur-2xl sm:p-8">
                         <div className="absolute -right-12 -top-12 h-56 w-56 rounded-full bg-accent-400/25 blur-3xl" />
@@ -70,7 +70,7 @@ export default function HomePage() {
                         <div className="relative grid auto-rows-[210px] gap-4 md:grid-cols-4">
                             {activityGallery.map((item, index) => (
                                 <div key={item.src} className={index === 0 || index === 5 ? "group relative overflow-hidden rounded-[1.8rem] md:col-span-2" : "group relative overflow-hidden rounded-[1.8rem]"}>
-                                    <Image src={item.src} alt={item.label} fill sizes="(min-width: 768px) 25vw, 100vw" className="object-cover transition duration-700 group-hover:scale-105" />
+                                    <Image src={item.src} alt={item.label} fill loading="lazy" sizes="(min-width: 768px) 25vw, 100vw" className="object-cover transition duration-700 group-hover:scale-105" />
                                     <div className="absolute inset-0 bg-gradient-to-t from-gov-950/72 via-transparent to-transparent" />
                                     <div className="absolute bottom-4 left-4 right-4 flex items-center gap-2 text-sm font-black text-white"><MapPin className="h-4 w-4 text-accent-200" /> {item.label}</div>
                                 </div>
@@ -79,7 +79,7 @@ export default function HomePage() {
                     </div>
                 </MotionShell>
             </section>
-            <section id="chat" className="mx-auto max-w-7xl px-4 pb-24 sm:px-6 lg:px-8">
+            <section id="chat" className="mx-auto max-w-[1440px] px-5 pb-[80px] sm:px-10 sm:pb-[100px] lg:px-20 lg:pb-[120px]">
                 <MotionShell>
                     <div className="relative overflow-hidden rounded-[2.5rem] bg-gov-800 p-8 text-white shadow-glass sm:p-10 lg:p-12">
                         <div className="absolute right-0 top-0 h-72 w-72 translate-x-1/3 -translate-y-1/3 rounded-full bg-accent-400/35 blur-3xl" />
