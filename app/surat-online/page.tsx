@@ -33,16 +33,7 @@ import { cn } from "@/utils/cn";
 
 const adminServices = services.filter((item) => item.category === "administrasi");
 
-const extraServices = [
-    { id: "legalisasi", title: "Legalisasi Dokumen", description: "Pengesahan salinan dokumen warga untuk kebutuhan resmi.", requirements: ["KTP", "Dokumen asli", "Fotokopi dokumen"] },
-    { id: "surat-lahir", title: "Surat Kelahiran", description: "Pengantar administrasi kelahiran dan pencatatan sipil.", requirements: ["KTP orang tua", "KK", "Surat keterangan lahir"] },
-    { id: "skck", title: "Pengantar SKCK", description: "Surat pengantar kebutuhan penerbitan SKCK di kepolisian.", requirements: ["KTP", "KK", "Pas foto"] },
-    { id: "keramaian", title: "Izin Keramaian", description: "Rekomendasi kegiatan warga agar tertib dan terdokumentasi.", requirements: ["KTP penanggung jawab", "Rencana kegiatan", "Persetujuan lingkungan"] },
-    { id: "rekomendasi-umkm", title: "Rekomendasi UMKM", description: "Pengantar pendataan dan pengembangan usaha mikro warga.", requirements: ["KTP", "KK", "Data usaha"] },
-    { id: "surat-pernyataan", title: "Surat Pernyataan Warga", description: "Fasilitasi surat pernyataan untuk kebutuhan administrasi umum.", requirements: ["KTP", "KK", "Materai bila diperlukan"] },
-];
-
-const serviceCatalog = [...adminServices, ...extraServices].slice(0, 33).map((item, index) => ({
+const serviceCatalog = adminServices.slice(0, 33).map((item, index) => ({
     ...item,
     estimate: index % 3 === 0 ? "1 hari kerja" : index % 3 === 1 ? "2 hari kerja" : "3 hari kerja",
 }));
