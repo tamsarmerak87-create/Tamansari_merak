@@ -1,56 +1,131 @@
 "use client";
 
-import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Bot, ChevronDown, Send, Sparkles, X } from "lucide-react";
-import { MotionShell } from "@/components/common/motion-shell";
-import { cn } from "@/utils/cn";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChatLauncher } from "@/components/chat/chat-launcher";
+import { ChatOverlay } from "@/components/chat/chat-overlay";
+import { ChatWindow } from "@/components/chat/chat-window";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
+type Position = { x: number; y: number };
 
+const STORAGE_OPEN = "tamsar-chat-open";
+const STORAGE_POSITION = "tamsar-chat-position";
 const quickPrompts = ["Bagaimana mengajukan surat online?", "Apa jam pelayanan Kelurahan Tamansari?", "Bagaimana kontak WhatsApp resmi?", "Apa layanan POSBANKUM?"];
+const defaultPosition = { x: 24, y: 24 };
 
-function formatReply(text: string) {
-    return text.split("\n").map((line, index) => line ? <p key={`${line}-${index}`} className={cn(index > 0 && "mt-2")}>{line}</p> : <br key={`br-${index}`} />);
+function isDesktopWidth() {
+    return window.innerWidth >= 1024;
+}
+
+function getStoredBoolean(key: string, fallback: boolean) {
+    if (typeof window === "undefined") return fallback;
+    const raw = window.localStorage.getItem(key);
+    return raw == null ? fallback : raw === "true";
+}
+
+function getLauncherSize() {
+    const w = window.innerWidth;
+    if (w < 640) return 56;
+    if (w < 1024) return 58;
+    return 64;
+}
+
+function clampPosition(next: Position, size: number) {
+    const x = Math.max(16, Math.min(next.x, window.innerWidth - size - 16));
+    const y = Math.max(16, Math.min(next.y, window.innerHeight - size - 16));
+    return { x, y };
 }
 
 export function TamsarChatWidget() {
-    const [open, setOpen] = useState(false);
+    const [open, setOpen] = useState(() => getStoredBoolean(STORAGE_OPEN, false));
+    const [closing, setClosing] = useState(false);
     const [messages, setMessages] = useState<ChatMessage[]>([{ role: "assistant", content: "Halo, saya TAMSAR CS. Tanyakan layanan, surat online, POSBANKUM, atau kontak resmi Kelurahan Tamansari." }]);
     const [input, setInput] = useState("");
     const [loading, setLoading] = useState(false);
+    const [position, setPosition] = useState<Position>(() => {
+        if (typeof window === "undefined") return defaultPosition;
+        const storedPosition = window.localStorage.getItem(STORAGE_POSITION);
+        if (!storedPosition) return defaultPosition;
+        try {
+            return clampPosition(JSON.parse(storedPosition) as Position, getLauncherSize());
+        } catch {
+            return defaultPosition;
+        }
+    });
+    const [dragging, setDragging] = useState(false);
     const endRef = useRef<HTMLDivElement>(null);
+    const launcherRef = useRef<HTMLButtonElement>(null);
+    const dragState = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null);
+
     const canSend = useMemo(() => input.trim().length > 0 && !loading, [input, loading]);
 
-    useEffect(() => {
-        const onHash = () => setOpen(window.location.hash === "#chat");
-        onHash();
-        window.addEventListener("hashchange", onHash);
-        return () => window.removeEventListener("hashchange", onHash);
+    const syncOpen = useCallback((next: boolean) => {
+        setOpen(next);
+        window.localStorage.setItem(STORAGE_OPEN, String(next));
     }, []);
 
-    useEffect(() => {
-        const openFromNavbar = (event: MouseEvent) => {
-            const target = event.target as HTMLElement | null;
-            const trigger = target?.closest('a[href="/#chat"], a[href="#chat"]');
-            if (trigger) setOpen(true);
-        };
+    const closeChat = useCallback(() => {
+        setClosing(true);
+        window.setTimeout(() => {
+            syncOpen(false);
+            setClosing(false);
+            if (window.location.hash === "#chat") {
+                window.history.replaceState(null, "", window.location.pathname + window.location.search);
+            }
+        }, 220);
+    }, [syncOpen]);
 
-        document.addEventListener("click", openFromNavbar);
-        return () => document.removeEventListener("click", openFromNavbar);
+    const openChat = useCallback(() => syncOpen(true), [syncOpen]);
+
+    const handleEscape = useCallback((event: KeyboardEvent) => {
+        if (event.key === "Escape") closeChat();
+    }, [closeChat]);
+
+    const persistPosition = useCallback((next: Position) => {
+        setPosition(next);
+        window.localStorage.setItem(STORAGE_POSITION, JSON.stringify(next));
     }, []);
 
-    function closeChat(event?: MouseEvent<HTMLButtonElement>) {
-        event?.preventDefault();
-        event?.stopPropagation();
-        setOpen(false);
-        if (window.location.hash === "#chat") {
-            window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    const onPointerDown = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+        if (!isDesktopWidth()) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        dragState.current = { pointerId: event.pointerId, offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top };
+        setDragging(true);
+        event.currentTarget.setPointerCapture(event.pointerId);
+    }, []);
+
+    const onPointerMove = useCallback((event: PointerEvent) => {
+        if (!dragState.current || !isDesktopWidth()) return;
+        const size = getLauncherSize();
+        persistPosition(clampPosition({ x: event.clientX - dragState.current.offsetX, y: event.clientY - dragState.current.offsetY }, size));
+        if (position.x + size > window.innerWidth) persistPosition({ x: window.innerWidth - size - 16, y: position.y });
+    }, [persistPosition, position.x, position.y]);
+
+    const onPointerUp = useCallback(() => {
+        if (dragState.current) {
+            dragState.current = null;
+            setDragging(false);
         }
-    }
+    }, []);
+
+    useEffect(() => {
+        window.addEventListener("keydown", handleEscape);
+        window.addEventListener("pointermove", onPointerMove);
+        window.addEventListener("pointerup", onPointerUp);
+        const onResize = () => setPosition((current) => clampPosition(current, getLauncherSize()));
+        window.addEventListener("resize", onResize);
+        return () => {
+            window.removeEventListener("keydown", handleEscape);
+            window.removeEventListener("pointermove", onPointerMove);
+            window.removeEventListener("pointerup", onPointerUp);
+            window.removeEventListener("resize", onResize);
+        };
+    }, [handleEscape, onPointerMove, onPointerUp]);
 
     useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, open]);
+    useEffect(() => { document.body.style.overflow = open ? "hidden" : ""; return () => { document.body.style.overflow = ""; }; }, [open]);
 
-    async function sendMessage(text?: string) {
+    const sendMessage = useCallback(async (text?: string) => {
         const content = (text ?? input).trim();
         if (!content || loading) return;
         const nextMessages: ChatMessage[] = [...messages, { role: "user", content }];
@@ -66,7 +141,16 @@ export function TamsarChatWidget() {
         } finally {
             setLoading(false);
         }
-    }
+    }, [input, loading, messages]);
 
-    return open ? <MotionShell className="fixed bottom-24 right-5 z-[80] w-[min(92vw,24rem)]"><div className="overflow-hidden rounded-[2rem] border border-white/80 bg-white shadow-[0_30px_100px_rgba(15,39,72,.22)] backdrop-blur-2xl"><div className="flex items-start justify-between gap-4 bg-gov-800 p-5 text-white"><div className="flex items-center gap-3"><div className="grid size-11 place-items-center rounded-2xl bg-accent-400 text-gov-950"><Bot size={20} /></div><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-accent-200">TAMSAR CS</p><h3 className="text-lg font-black">Layanan cepat Kelurahan Tamansari</h3></div></div><div className="flex gap-1"><button type="button" onClick={closeChat} className="rounded-full p-2 hover:bg-white/10" aria-label="Minimize"><ChevronDown size={16} /></button><button type="button" onClick={closeChat} className="rounded-full p-2 hover:bg-white/10" aria-label="Tutup TAMSAR CS"><X size={16} /></button></div></div><div className="max-h-[24rem] space-y-3 overflow-y-auto bg-slate-50 p-4 text-sm">{messages.map((message, index) => <div key={`${message.role}-${index}`} className={cn("flex", message.role === "user" ? "justify-end" : "justify-start")}><div className={cn("max-w-[85%] rounded-[1.5rem] px-4 py-3 leading-6 shadow-sm", message.role === "user" ? "bg-gov-800 text-white" : "bg-white text-gov-950")}>{formatReply(message.content)}</div></div>)}{loading ? <div className="text-xs font-semibold text-slate-500">Mengetik...</div> : null}<div ref={endRef} /></div><div className="space-y-3 border-t border-slate-200 bg-white p-4"><div className="flex flex-wrap gap-2">{quickPrompts.map((prompt) => <button key={prompt} onClick={() => void sendMessage(prompt)} className="rounded-full bg-slate-100 px-3 py-2 text-xs font-bold text-gov-800 transition hover:bg-accent-100"><Sparkles size={12} className="mr-1 inline" />{prompt}</button>)}</div><form onSubmit={(event) => { event.preventDefault(); void sendMessage(); }} className="flex gap-2"><input value={input} onChange={(event) => setInput(event.target.value)} placeholder="Tulis pertanyaan Anda..." className="min-w-0 flex-1 rounded-full border border-slate-200 px-4 py-3 text-sm outline-none focus:border-gov-800" /><button type="submit" disabled={!canSend} className="inline-flex items-center justify-center rounded-full bg-gov-800 px-4 py-3 text-white disabled:opacity-50"><Send size={16} /></button></form></div></div></MotionShell> : null;
+    const launcherSize = getLauncherSize();
+    const launcherStyle: React.CSSProperties = isDesktopWidth()
+        ? { left: position.x, top: position.y, width: launcherSize, height: launcherSize, transform: "translate3d(0,0,0)" }
+        : { right: 16, bottom: 16, width: launcherSize, height: launcherSize, transform: "translate3d(0,0,0)" };
+
+    return <>
+        <ChatOverlay open={open} onClose={closeChat} />
+        <ChatLauncher onClick={openChat} onPointerDown={onPointerDown} dragging={dragging} style={launcherStyle} />
+        {(open || closing) && <div className={`fixed ${open ? "animate-[chatIn_250ms_ease]" : "animate-[chatOut_200ms_ease]"} z-[9999]`}><ChatWindow messages={messages} loading={loading} input={input} quickPrompts={quickPrompts} endRef={endRef} onClose={closeChat} onMinimize={closeChat} onInputChange={setInput} onSend={sendMessage} /></div>}
+    </>;
 }
