@@ -7,6 +7,27 @@ import { HeroStats } from "@/components/stats/hero-stats";
 
 const badges = ["Modern", "Cepat", "Transparan", "Terpercaya"];
 
+const heroInfoCards = [
+    {
+        icon: Clock3,
+        label: "Jam Pelayanan",
+        title: "Senin-Jumat",
+        description: "08.00-16.00 WIB",
+    },
+    {
+        icon: BadgeCheck,
+        label: "Pelayanan Terpadu",
+        title: "33 Layanan",
+        description: "Administrasi, konsultasi, dan pengaduan.",
+    },
+    {
+        icon: MapPin,
+        label: "Kota Cilegon",
+        title: site.city,
+        description: "Portal resmi Kelurahan Tamansari.",
+    },
+];
+
 export function HomeHero() {
     return (
         <section className="relative overflow-hidden px-5 pb-[60px] pt-6 sm:px-10 sm:pb-20 sm:pt-8 lg:px-20 lg:pt-10 xl:pb-[120px]">
@@ -15,7 +36,7 @@ export function HomeHero() {
             <div className="pointer-events-none absolute left-[46%] top-16 -z-20 hidden h-72 w-72 rounded-full border-[18px] border-accent-400/24 lg:block" />
             <div className="pointer-events-none absolute right-10 top-56 -z-20 hidden size-28 rounded-full bg-white/80 shadow-gold lg:block" />
 
-            <div className="relative z-10 mx-auto grid w-full max-w-[1440px] items-center gap-10 md:grid-cols-2 lg:grid-cols-[55fr_45fr] xl:gap-14">
+            <div className="relative z-10 mx-auto grid w-full max-w-[1440px] items-center gap-12 md:grid-cols-2 lg:grid-cols-[52fr_48fr] xl:gap-16">
                 <MotionShell className="relative z-10 min-w-0 pt-4 lg:pt-0">
                     <div className="inline-flex max-w-full flex-wrap items-center gap-2 rounded-full border border-white/80 bg-white/88 px-4 py-2 text-[11px] font-black uppercase tracking-[0.16em] text-gov-800 shadow-soft backdrop-blur-xl sm:text-sm">
                         <Sparkles size={16} className="text-accent-700" />
@@ -39,12 +60,12 @@ export function HomeHero() {
                     <HeroStats />
                 </MotionShell>
 
-                <MotionShell delay={0.12} className="relative z-10 w-full min-w-0 self-start md:mt-6 lg:mt-2">
-                    <div className="absolute -left-5 top-8 hidden h-[86%] w-[60%] rounded-[999px] border-[16px] border-accent-400/32 bg-accent-100/25 lg:block" />
-                    <div className="absolute right-0 top-2 hidden size-28 rounded-[2.25rem] bg-accent-400/75 shadow-gold lg:block" />
-                    <div className="absolute -right-3 bottom-10 hidden size-36 rounded-full bg-white/80 shadow-gold backdrop-blur-2xl lg:block" />
+                <MotionShell delay={0.12} className="relative z-10 w-full min-w-0 self-start md:mt-6 lg:mt-0">
+                    <div className="pointer-events-none absolute -left-5 top-10 hidden h-[76%] w-[58%] rounded-[999px] border-[16px] border-accent-400/24 bg-accent-100/20 lg:block" />
+                    <div className="pointer-events-none absolute -right-4 -top-4 hidden size-28 rounded-[2.25rem] bg-accent-400/65 shadow-gold lg:block" />
+                    <div className="pointer-events-none absolute -bottom-5 right-12 hidden size-32 rounded-full bg-white/80 shadow-gold backdrop-blur-2xl lg:block" />
 
-                    <div className="relative aspect-[4/3] w-full overflow-hidden rounded-[32px] border border-white bg-white shadow-[0_28px_80px_rgba(15,39,72,.18)] ring-1 ring-border-soft/80 lg:border-[10px]">
+                    <div className="relative aspect-[4/3] w-full overflow-hidden rounded-[32px] border border-white bg-white shadow-[0_28px_80px_rgba(15,39,72,.18)] ring-1 ring-border-soft/80 sm:aspect-[16/11] lg:border-[10px]">
                         <Image
                             src="/assets/kantor-tamansari.jpg"
                             alt="Gedung Kantor Kelurahan Tamansari"
@@ -53,21 +74,23 @@ export function HomeHero() {
                             sizes="(min-width: 1280px) 45vw, (min-width: 640px) 50vw, 100vw"
                             className="h-auto max-w-full object-cover object-center"
                         />
-                        <div className="absolute inset-0 bg-gradient-to-t from-gov-950/62 via-gov-950/12 to-white/4" />
-                        <div className="absolute left-4 top-4 rounded-2xl border border-white/60 bg-white/82 px-3 py-2 text-xs font-black text-gov-950 shadow-soft backdrop-blur-xl sm:left-6 sm:top-6 sm:px-4 sm:py-3 sm:text-sm">
-                            <MapPin size={16} className="mr-2 inline text-accent-700" />{site.city}
-                        </div>
-                        <div className="absolute left-5 top-24 hidden max-w-xs rounded-[1.6rem] border border-white/40 bg-white/84 p-4 text-gov-950 shadow-soft backdrop-blur-2xl sm:block">
-                            <div className="flex items-center gap-3"><BadgeCheck className="text-accent-700" /><b className="text-sm font-black">Pelayanan Terpadu</b></div>
-                            <p className="mt-2 text-sm font-semibold leading-6 text-slate-650">Administrasi, konsultasi, dan pengaduan dalam satu portal.</p>
-                        </div>
-                        <div className="absolute bottom-4 left-4 right-4 rounded-[24px] border border-white/15 bg-gov-800/94 p-4 text-white shadow-glass backdrop-blur-2xl sm:bottom-6 sm:left-auto sm:right-6 sm:max-w-md sm:p-5 lg:p-6">
-                            <div className="flex items-center gap-3"><Clock3 className="text-accent-400" /><b className="text-sm font-black">Jam Pelayanan</b></div>
-                            <div className="mt-4 grid grid-cols-1 gap-3 text-sm font-medium leading-[1.5] text-white/88 sm:grid-cols-2 sm:gap-4">
-                                <p><b className="block text-white">Senin-Jumat</b>08.00-16.00 WIB</p>
-                                <p><b className="block text-white">Istirahat</b>12.00-13.00 WIB</p>
-                            </div>
-                        </div>
+                    </div>
+
+                    <div className="mt-6 grid gap-3 sm:grid-cols-3 lg:gap-4">
+                        {heroInfoCards.map((card) => {
+                            const Icon = card.icon;
+
+                            return (
+                                <div key={card.label} className="rounded-[18px] border border-white/85 bg-white/92 p-[18px] text-gov-950 shadow-[0_14px_34px_rgba(15,39,72,.09)] backdrop-blur-xl sm:p-5 xl:p-[22px]">
+                                    <div className="mb-4 flex size-10 items-center justify-center rounded-2xl bg-accent-100 text-accent-700 ring-1 ring-accent-400/20">
+                                        <Icon size={20} />
+                                    </div>
+                                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-accent-700 sm:text-[11px]">{card.label}</p>
+                                    <h2 className="mt-2 text-base font-black leading-tight text-gov-950">{card.title}</h2>
+                                    <p className="mt-2 text-sm font-semibold leading-6 text-slate-650">{card.description}</p>
+                                </div>
+                            );
+                        })}
                     </div>
                 </MotionShell>
             </div>
