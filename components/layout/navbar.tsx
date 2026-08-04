@@ -29,6 +29,11 @@ export function Navbar() {
     const [open, setOpen] = useState(false);
     const [scrolled, setScrolled] = useState(false);
 
+    const openChat = () => {
+        window.dispatchEvent(new CustomEvent("tamsar-chat:open"));
+        setOpen(false);
+    };
+
     useEffect(() => {
         const onResize = () => {
             if (window.innerWidth >= 1280) setOpen(false);
@@ -45,8 +50,8 @@ export function Navbar() {
     }, []);
 
     return (
-        <header className="sticky top-0 z-[100] px-5 pt-2 sm:px-10 lg:px-20 lg:pt-3">
-            <div className={`glass relative z-[101] mx-auto flex min-h-16 w-full max-w-[1440px] items-center gap-3 rounded-[1.4rem] border border-white/80 px-3 py-2 backdrop-blur-2xl transition-all duration-300 sm:rounded-[1.8rem] sm:px-4 sm:py-3 ${scrolled ? "shadow-[0_18px_60px_rgba(15,39,72,.18)]" : "shadow-[0_10px_35px_rgba(15,39,72,.10)]"}`}>
+        <header className="sticky top-0 z-50 px-5 pt-2 sm:px-10 lg:px-20 lg:pt-3">
+            <div className={`glass relative z-50 mx-auto flex min-h-16 w-full max-w-[1440px] items-center gap-3 rounded-[1.4rem] border border-white/80 px-3 py-2 backdrop-blur-2xl transition-all duration-300 sm:rounded-[1.8rem] sm:px-4 sm:py-3 ${scrolled ? "shadow-[0_18px_60px_rgba(15,39,72,.18)]" : "shadow-[0_10px_35px_rgba(15,39,72,.10)]"}`}>
                 <Link href="/" className="flex min-w-0 items-center gap-2 pr-1 sm:gap-3 sm:pr-2">
                     <div className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white shadow-soft ring-1 ring-border-soft sm:size-12">
                         <Image src="/assets/logo-cilegon.png" alt="Logo Cilegon" width={28} height={28} className="h-7 w-7 object-contain" />
@@ -69,11 +74,11 @@ export function Navbar() {
                     <button className="grid size-11 place-items-center rounded-full border border-white/80 bg-white/70 text-gov-900 shadow-soft transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-gov-100" aria-label="Pencarian">
                         <Search size={17} />
                     </button>
-                    <Link href="/#chat" className="hidden min-h-11 items-center gap-2 rounded-full bg-gov-800 px-5 py-3 text-sm font-black text-white shadow-soft transition hover:-translate-y-0.5 hover:bg-gov-900 focus:outline-none focus:ring-4 focus:ring-gov-100 sm:inline-flex">
+                    <button type="button" onClick={openChat} className="hidden min-h-11 items-center gap-2 rounded-full bg-gov-800 px-5 py-3 text-sm font-black text-white shadow-soft transition hover:-translate-y-0.5 hover:bg-gov-900 focus:outline-none focus:ring-4 focus:ring-gov-100 sm:inline-flex">
                         <Headset size={16} />
                         <span className="hidden sm:inline">TAMSAR CS</span>
                         <span className="sm:hidden">CS</span>
-                    </Link>
+                    </button>
                     <div className="xl:hidden">
                         <Sheet open={open} onOpenChange={setOpen}>
                             <SheetTrigger
@@ -97,7 +102,17 @@ export function Navbar() {
                                 </div>
 
                                 <div className="mt-8 space-y-2">
-                                    {mobileNav.map((item) => (
+                                    {mobileNav.map((item) => item.href === "/#chat" ? (
+                                        <button
+                                            key={item.href}
+                                            type="button"
+                                            onClick={openChat}
+                                            className="flex w-full items-center justify-between rounded-2xl border border-slate-100 px-4 py-4 text-left text-base font-bold text-gov-950 transition hover:border-gov-200 hover:bg-slate-50"
+                                        >
+                                            {item.label}
+                                            <ChevronRight size={18} className="text-slate-400" />
+                                        </button>
+                                    ) : (
                                         <Link
                                             key={item.href}
                                             href={item.href}

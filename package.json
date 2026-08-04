@@ -20,7 +20,7 @@
     "framer-motion": "latest",
     "gsap": "latest",
     "lenis": "latest",
-    "lucide-react": "latest",
+    "lucide-react": "^1.28.0",
     "next": "latest",
     "next-themes": "latest",
     "react": "latest",

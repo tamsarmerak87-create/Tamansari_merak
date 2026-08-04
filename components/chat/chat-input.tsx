@@ -1,16 +1,18 @@
 "use client";
 
+import type { RefObject } from "react";
 import { Send, Sparkles } from "lucide-react";
 
 type ChatInputProps = {
     input: string;
     loading: boolean;
     quickPrompts: string[];
+    inputRef?: RefObject<HTMLInputElement | null>;
     onInputChange: (value: string) => void;
     onSend: (text?: string) => void;
 };
 
-export function ChatInput({ input, loading, quickPrompts, onInputChange, onSend }: ChatInputProps) {
+export function ChatInput({ input, loading, quickPrompts, inputRef, onInputChange, onSend }: ChatInputProps) {
     const canSend = input.trim().length > 0 && !loading;
 
     return (
@@ -24,6 +26,7 @@ export function ChatInput({ input, loading, quickPrompts, onInputChange, onSend 
             </div>
             <form onSubmit={(event) => { event.preventDefault(); onSend(); }} className="flex gap-2">
                 <input
+                    ref={inputRef}
                     value={input}
                     onChange={(event) => onInputChange(event.target.value)}
                     placeholder="Tulis pertanyaan Anda..."

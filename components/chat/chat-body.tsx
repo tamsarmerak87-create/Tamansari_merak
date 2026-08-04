@@ -16,7 +16,7 @@ function formatReply(text: string) {
 
 export function ChatBody({ messages, loading, endRef }: ChatBodyProps) {
     return (
-        <div className="max-h-[24rem] flex-1 space-y-3 overflow-y-auto bg-slate-50 p-4 text-sm overscroll-contain">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-slate-50 p-4 text-sm overscroll-contain">
             {messages.map((message, index) => (
                 <div key={`${message.role}-${index}`} className={cn("flex", message.role === "user" ? "justify-end" : "justify-start")}>
                     <div className={cn("max-w-[85%] rounded-[1.5rem] px-4 py-3 leading-6 shadow-sm", message.role === "user" ? "bg-gov-800 text-white" : "bg-white text-gov-950")}>{formatReply(message.content)}</div>
