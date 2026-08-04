@@ -8,14 +8,7 @@ import { ChatWindow } from "@/components/chat/chat-window";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
-const STORAGE_OPEN = "tamsar-chat-open";
 const quickPrompts = ["Bagaimana mengajukan surat online?", "Apa jam pelayanan Kelurahan Tamansari?", "Bagaimana kontak WhatsApp resmi?", "Apa layanan POSBANKUM?"];
-
-function getStoredBoolean(key: string, fallback: boolean) {
-    if (typeof window === "undefined") return fallback;
-    const raw = window.localStorage.getItem(key);
-    return raw == null ? fallback : raw === "true";
-}
 
 export function TamsarChatWidget() {
     const [isOpen, setIsOpen] = useState(false);
@@ -27,7 +20,6 @@ export function TamsarChatWidget() {
 
     const syncOpen = useCallback((next: boolean) => {
         setIsOpen(next);
-        window.localStorage.setItem(STORAGE_OPEN, String(next));
     }, []);
 
     const focusInput = useCallback(() => {
@@ -40,14 +32,10 @@ export function TamsarChatWidget() {
     }, [focusInput, syncOpen]);
 
     const closeChat = useCallback(() => {
-        syncOpen(false);
+        setIsOpen(false);
         if (window.location.hash === "#chat") {
             window.history.replaceState(null, "", window.location.pathname + window.location.search);
         }
-    }, [syncOpen]);
-
-    useEffect(() => {
-        setIsOpen(getStoredBoolean(STORAGE_OPEN, false));
     }, []);
 
     useEffect(() => {
@@ -68,7 +56,6 @@ export function TamsarChatWidget() {
     }, [handleEscape]);
 
     useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isOpen]);
-    useEffect(() => { document.body.style.overflow = isOpen ? "hidden" : ""; return () => { document.body.style.overflow = ""; }; }, [isOpen]);
 
     const sendMessage = useCallback(async (text?: string) => {
         const content = (text ?? input).trim();
@@ -95,10 +82,11 @@ export function TamsarChatWidget() {
             {isOpen ? (
                 <motion.div
                     key="tamsar-chat-window"
+                    className="fixed bottom-[80px] left-[10px] right-[10px] z-[9999] h-[70vh] w-[calc(100vw-20px)] overflow-hidden rounded-[24px] bg-white shadow-[0_30px_100px_rgba(15,39,72,.22)] backdrop-blur-2xl md:bottom-[90px] md:left-auto md:right-[20px] md:h-[650px] md:w-[340px] md:max-h-[calc(100vh-120px)] lg:w-[380px]"
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 30 }}
-                    transition={{ duration: 0.25, ease: "easeOut" }}
+                    transition={{ duration: 0.25, ease: "easeInOut" }}
                 >
                     <ChatWindow messages={messages} loading={loading} input={input} quickPrompts={quickPrompts} endRef={endRef} inputRef={inputRef} onClose={closeChat} onMinimize={closeChat} onInputChange={setInput} onSend={sendMessage} />
                 </motion.div>
