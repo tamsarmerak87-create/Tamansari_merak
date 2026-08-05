@@ -3,7 +3,7 @@ import { PageHero } from "@/components/common/page-shell";
 import { MotionShell } from "@/components/common/motion-shell";
 import { GlassCard } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
-import { services } from "@/constants/site";
+import { publicRepository } from "@/services/repository";
 
 const categoryMeta = {
     administrasi: { icon: FileText, label: "Administrasi", href: "/surat-online" },
@@ -11,13 +11,15 @@ const categoryMeta = {
     posbankum: { icon: Scale, label: "POSBANKUM", href: "/posbankum" },
 };
 
-export default function LayananPage() {
+export default async function LayananPage() {
+    const layanan = await publicRepository.getServices();
+
     return (
         <main className="mesh-bg min-h-screen overflow-hidden">
             <PageHero eyebrow="Layanan warga" title="Semua kanal pelayanan dalam satu portal resmi." description="Pilih layanan administrasi, pengaduan, atau bantuan hukum. Setiap kartu berisi syarat dan tombol pengajuan yang langsung aktif." actions={[{ label: "Buka Surat Online", href: "/surat-online", icon: FileText }, { label: "Kirim Pengaduan", href: "/pengaduan", icon: MessageSquareText }]} />
             <Section className="pt-8" eyebrow="Katalog layanan" title="Kartu layanan digital yang siap dipakai warga">
                 <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-                    {services.map((service, index) => {
+                    {layanan.map((service, index) => {
                         const meta = categoryMeta[service.category];
                         const Icon = meta.icon;
                         return (

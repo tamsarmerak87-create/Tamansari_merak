@@ -27,6 +27,11 @@ function requireClient(client: SupabaseClient | null) {
     return client;
 }
 
+export function logSupabaseError(error: unknown, context?: string) {
+    if (!error) return;
+    console.error(`[Supabase${context ? `:${context}` : ""}]`, error);
+}
+
 export const authService = {
     signIn: ({ email, password }: AuthCredentials) => requireClient(createSupabaseBrowserClient()).auth.signInWithPassword({ email, password }),
     signOut: () => requireClient(createSupabaseBrowserClient()).auth.signOut(),

@@ -1,4 +1,5 @@
-import { agenda, news, services, site } from "@/constants/site";
+import { agenda, news, site } from "@/constants/site";
+import { publicRepository } from "@/services/repository";
 
 export type ChatMessage = {
     role: "user" | "assistant";
@@ -25,33 +26,46 @@ const profileKnowledge = [
     "Profil: Kelurahan Tamansari melayani administrasi, koordinasi kewilayahan, pemberdayaan masyarakat, ketenteraman, ketertiban, POSBANKUM, pengaduan, dan informasi publik.",
 ];
 
-const knowledgeBase = [
-    "SYSTEM KNOWLEDGE TAMSAR CS",
-    ...profileKnowledge,
-    "33 pelayanan dan layanan portal:",
-    ...services.map((service, index) => {
-        const flow = service.flow ?? [];
-        return `${index + 1}. ${service.title}: ${service.description} Persyaratan: ${service.requirements.join(", ")}. Alur: ${flow.join(" -> ")}. Dasar hukum: ${service.legalBasis}. Output: ${service.output}. Kanal: ${service.channel}.`;
-    }),
-    "FAQ:",
-    ...faq.map(([question, answer]) => `Q: ${question} A: ${answer}`),
-    "POSBANKUM: booking jadwal, isi identitas dan topik konsultasi, konfirmasi petugas, konsultasi awal, tindak lanjut sesuai kewenangan kelurahan.",
-    "Kontak kelurahan: WhatsApp/telepon, email resmi, dan kantor kelurahan.",
-    "Berita:",
-    ...news.map((item) => `${item.date} - ${item.title}: ${item.excerpt}`),
-    "Agenda:",
-    ...agenda.map((item) => `${item.date} - ${item.title} di ${item.location}`),
-].join("\n");
+async function getServices() {
+    return publicRepository.getServices();
+}
 
-const systemPrompt = `Nama AI: TAMSAR CS.
+async function buildKnowledgeBase() {
+    const services = await getServices();
+
+    return [
+        "SYSTEM KNOWLEDGE TAMSAR CS",
+        ...profileKnowledge,
+        "33 pelayanan dan layanan portal:",
+        ...services.map((service, index) => {
+            const flow = service.flow ?? [];
+            return `${index + 1}. ${service.title}: ${service.description} Persyaratan: ${service.requirements.join(", ")}. Alur: ${flow.join(" -> ")}. Dasar hukum: ${service.legalBasis}. Output: ${service.output}. Kanal: ${service.channel}.`;
+        }),
+        "FAQ:",
+        ...faq.map(([question, answer]) => `Q: ${question} A: ${answer}`),
+        "POSBANKUM: booking jadwal, isi identitas dan topik konsultasi, konfirmasi petugas, konsultasi awal, tindak lanjut sesuai kewenangan kelurahan.",
+        "Kontak kelurahan: WhatsApp/telepon, email resmi, dan kantor kelurahan.",
+        "Berita:",
+        ...news.map((item) => `${item.date} - ${item.title}: ${item.excerpt}`),
+        "Agenda:",
+        ...agenda.map((item) => `${item.date} - ${item.title} di ${item.location}`),
+    ].join("\n");
+}
+
+async function buildSystemPrompt() {
+    const knowledgeBase = await buildKnowledgeBase();
+
+    return `Nama AI: TAMSAR CS.
 Role: Customer Service Digital Kelurahan Tamansari.
 Selalu sopan, ramah, berbahasa Indonesia, dan menjawab singkat tetapi jelas.
 Gunakan hanya knowledge resmi yang diberikan. Jika informasi tidak tersedia, jawab persis:
 "${fallbackAnswer}"
 
 ${knowledgeBase}`;
+}
 
-function localAnswer(message: string) {
+async function localAnswer(message: string) {
+    const services = await getServices();
     const query = message.toLowerCase();
     const matchedService = services.find((service) => [service.title, service.id, service.category, service.description].join(" ").toLowerCase().includes(query) || query.includes(service.title.toLowerCase()));
 
@@ -84,7 +98,7 @@ function localAnswer(message: string) {
     return fallbackAnswer;
 }
 
-async function callOpenAi(messages: ChatMessage[]) {
+async function callOpenAi(messages: ChatMessage[], systemPrompt: string) {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) return null;
 
@@ -104,7 +118,7 @@ async function callOpenAi(messages: ChatMessage[]) {
     return data.choices?.[0]?.message?.content ?? null;
 }
 
-async function callGemini(messages: ChatMessage[]) {
+async function callGemini(messages: ChatMessage[], systemPrompt: string) {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) return null;
 
@@ -127,9 +141,10 @@ export async function getTamsarCsReply(messages: ChatMessage[]) {
 
     try {
         const provider = (process.env.AI_PROVIDER ?? "local").toLowerCase();
-        const aiReply = provider.includes("openai") ? await callOpenAi(messages) : provider.includes("gemini") ? await callGemini(messages) : null;
-        return aiReply?.trim() || localAnswer(latest);
+        const systemPrompt = await buildSystemPrompt();
+        const aiReply = provider.includes("openai") ? await callOpenAi(messages, systemPrompt) : provider.includes("gemini") ? await callGemini(messages, systemPrompt) : null;
+        return aiReply?.trim() || await localAnswer(latest);
     } catch {
-        return localAnswer(latest);
+        return await localAnswer(latest);
     }
 }

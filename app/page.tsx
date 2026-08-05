@@ -2,7 +2,7 @@ import Image from "next/image";
 import { HomeHero } from "@/components/hero/home-hero";
 import { ServicesCarousel } from "@/components/services/services-carousel";
 import { QuickAccess } from "@/components/quick-access/quick-access";
-import { services } from "@/constants/site";
+import { publicRepository } from "@/services/repository";
 import { MotionShell } from "@/components/common/motion-shell";
 import { Badge } from "@/components/ui/badge";
 import { GlassCard } from "@/components/ui/card";
@@ -23,7 +23,9 @@ const activityGallery = [
     { src: "/assets/galeri-6.jpg", label: "Dokumentasi lapangan" },
 ];
 
-export default function HomePage() {
+export default async function HomePage() {
+    const services = await publicRepository.getServices();
+
     return (
         <main id="top" className="premium-shell min-h-screen overflow-hidden">
             <HomeHero />

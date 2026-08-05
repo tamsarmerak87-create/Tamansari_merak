@@ -1,9 +1,37 @@
-import { agenda, gallery, news, services, statistics } from "@/constants/site";
+import { agenda, gallery, news, statistics } from "@/constants/site";
 import type { AdminProfile, AgendaItem, BannerRecord, ComplaintRecord, EmployeeRecord, FaqRecord, LetterRecord, NewsItem, PosbankumRecord, PublicService, Statistic } from "@/types";
 import { createSupabaseBrowserClient, createSupabaseServerClient, subscribeToTable } from "@/services/supabase";
 
-type TableName = "admin_profiles" | "employees" | "news" | "agenda" | "banners" | "faqs" | "letters" | "complaints" | "posbankum_cases" | "public_services" | "statistics";
+type TableName = "admin_profiles" | "employees" | "news" | "agenda" | "banners" | "faqs" | "letters" | "complaints" | "posbankum_cases" | "statistics";
 type RepositoryPayload = Record<string, unknown>;
+
+type LayananRow = {
+    id: string;
+    nama: string;
+    deskripsi: string | null;
+    aktif: boolean;
+
+    persyaratan: string[] | null;
+    alur: string[] | null;
+    dasar_hukum: string | null;
+    output: string | null;
+    kanal: string | null;
+};
+
+function mapLayananRow(row: LayananRow): PublicService {
+    return {
+        id: row.id,
+        title: row.nama,
+        category: "administrasi",
+        description: row.deskripsi ?? "",
+        requirements: row.persyaratan ?? [],
+        flow: row.alur ?? [],
+        legalBasis: row.dasar_hukum ?? "",
+        output: row.output ?? "",
+        channel: row.kanal ?? "",
+        online: row.aktif,
+    };
+}
 
 function getClient() {
     return createSupabaseServerClient() ?? createSupabaseBrowserClient();
@@ -54,7 +82,23 @@ export function createRepository<T extends { id: string }>(table: TableName) {
 
 export const publicRepository = {
     getStatistics: async () => createRepository<Statistic & { id: string }>("statistics").list(statistics.map((item) => ({ id: item.label, ...item }))),
-    getServices: async () => createRepository<PublicService>("public_services").list(services),
+    getServices: async () => {
+        const client = getClient();
+        if (!client) return [] as PublicService[];
+
+        const { data, error } = await client
+            .from("layanan")
+            .select("*")
+            .eq("aktif", true)
+            .order("nama", { ascending: true });
+
+        if (error) {
+            console.error("Supabase layanan error:", error);
+            throw error;
+        }
+
+        return ((data ?? []) as LayananRow[]).map(mapLayananRow);
+    },
     getNews: async () => createRepository<NewsItem>("news").list(news),
     getAgenda: async () => createRepository<AgendaItem>("agenda").list(agenda),
     getGallery: async () => gallery,
