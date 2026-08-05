@@ -1,5 +1,5 @@
 import { agenda, gallery, news, statistics } from "@/constants/site";
-import type { AdminProfile, AgendaItem, BannerRecord, ComplaintRecord, EmployeeRecord, FaqRecord, LetterRecord, NewsItem, PosbankumRecord, PublicService, Statistic } from "@/types";
+import type { AdminProfile, AgendaItem, BannerRecord, ComplaintRecord, EmployeeRecord, FaqRecord, LetterRecord, NewsItem, PosbankumRecord, PublicService, ServiceCategory, Statistic } from "@/types";
 import { createSupabaseBrowserClient, createSupabaseServerClient, subscribeToTable } from "@/services/supabase";
 
 type TableName = "admin_profiles" | "employees" | "news" | "agenda" | "banners" | "faqs" | "letters" | "complaints" | "posbankum_cases" | "statistics";
@@ -9,6 +9,7 @@ type LayananRow = {
     id: string;
     nama: string;
     deskripsi: string | null;
+    kategori: ServiceCategory | null;
     aktif: boolean;
 
     persyaratan: string[] | null;
@@ -16,19 +17,21 @@ type LayananRow = {
     dasar_hukum: string | null;
     output: string | null;
     kanal: string | null;
+    estimasi: string | null;
 };
 
 function mapLayananRow(row: LayananRow): PublicService {
     return {
         id: row.id,
         title: row.nama,
-        category: "administrasi",
+        category: row.kategori ?? "administrasi",
         description: row.deskripsi ?? "",
         requirements: row.persyaratan ?? [],
         flow: row.alur ?? [],
         legalBasis: row.dasar_hukum ?? "",
         output: row.output ?? "",
         channel: row.kanal ?? "",
+        estimation: row.estimasi ?? "",
         online: row.aktif,
     };
 }

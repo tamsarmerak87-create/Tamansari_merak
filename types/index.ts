@@ -11,6 +11,7 @@ export type PublicService = {
     flow?: string[];
     output?: string;
     channel?: string;
+    estimation?: string;
 };
 
 export type NewsItem = {
