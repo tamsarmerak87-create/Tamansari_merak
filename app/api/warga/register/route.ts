@@ -31,7 +31,7 @@ export async function POST(request: Request) {
         const createUserResponse = await supabaseAdmin.auth.admin.createUser({
             email: payload.email,
             password: payload.password,
-            email_confirm: false,
+            email_confirm: true,
             user_metadata: { nama_lengkap: payload.nama_lengkap, nik: payload.nik, role: "warga" },
         });
         if (createUserResponse.error) throw new Error(createUserResponse.error.message || "Auth error saat membuat akun warga.");
