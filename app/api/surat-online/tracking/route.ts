@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createSupabaseAdminClient } from "@/services/supabase";
+import { searchSubmission } from "@/services/surat-online.service";
 
 export async function GET(request: Request) {
   try {
@@ -9,21 +9,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: false, error: "Query pencarian wajib diisi." }, { status: 400 });
     }
 
-    const client = createSupabaseAdminClient();
-    if (!client) {
-      return NextResponse.json({ ok: false, error: "Supabase service role belum dikonfigurasi." }, { status: 500 });
-    }
-
-    const { data, error } = await client
-      .from("pengajuan_surat")
-      .select("*, tracking_pengajuan(*)")
-      .or(`nomor_pengajuan.eq.${query},nik.eq.${query}`)
-      .order("created_at", { ascending: false })
-      .maybeSingle();
-
-    if (error) {
-      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
-    }
+    const data = await searchSubmission(query);
 
     return NextResponse.json({ ok: true, data });
   } catch (error) {

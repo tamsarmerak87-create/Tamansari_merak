@@ -59,6 +59,13 @@ export async function getLayananList() {
 }
 
 export async function createSubmission(formData: FormData) {
+    if (typeof window !== "undefined") {
+        const response = await fetch("/api/surat-online/pengajuan", { method: "POST", body: formData });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.error ?? "Gagal mengirim pengajuan.");
+        return result.data;
+    }
+
     const client = createSupabaseAdminClient();
     if (!client) throw new Error("Supabase service role belum dikonfigurasi.");
 
@@ -73,34 +80,68 @@ export async function createSubmission(formData: FormData) {
     const { count } = await client.from("pengajuan_surat").select("id", { count: "exact", head: true }).gte("created_at", `${today}T00:00:00`).lte("created_at", `${today}T23:59:59`);
     const nomor_pengajuan = createNomorPengajuan((count ?? 0) + 1);
 
+    const uploadedPaths: string[] = [];
+    let pengajuanId: string | null = null;
+
+    const cleanup = async () => {
+        try {
+            if (pengajuanId) {
+                await client.from("tracking_pengajuan").delete().eq("id_pengajuan", pengajuanId);
+                await client.from("dokumen_pengajuan").delete().eq("id_pengajuan", pengajuanId);
+                await client.from("pengajuan_surat").delete().eq("id", pengajuanId);
+            }
+            if (uploadedPaths.length > 0) await client.storage.from("surat").remove(uploadedPaths);
+        } catch (cleanupError) {
+            console.error("[surat-online:rollback]", cleanupError);
+        }
+    };
+
     const uploadOne = async (folder: "ktp" | "kk" | "pendukung", file: File | null) => {
         if (!file) return null;
         const ext = file.name.split(".").pop() ?? "bin";
-        const path = `surat/${folder}/${nomor_pengajuan}-${Date.now()}.${ext}`;
+        const path = `${folder}/${nomor_pengajuan}-${Date.now()}.${ext}`;
         const { error } = await client.storage.from("surat").upload(path, file, { upsert: false, contentType: file.type });
         if (error) throw error;
+        uploadedPaths.push(path);
         return client.storage.from("surat").getPublicUrl(path).data.publicUrl;
     };
 
-    const ktp_url = await uploadOne("ktp", ktp);
-    const kk_url = await uploadOne("kk", kk);
-    const pendukung_url = await uploadOne("pendukung", pendukung);
+    try {
+        const ktp_url = await uploadOne("ktp", ktp);
+        const kk_url = await uploadOne("kk", kk);
+        const pendukung_url = await uploadOne("pendukung", pendukung);
 
-    const { data: pengajuan, error } = await client.from("pengajuan_surat").insert({ ...payload, nomor_pengajuan, status: "Menunggu Verifikasi", ktp_url, kk_url, pendukung_url }).select("*").single();
-    if (error) throw error;
+        const { data: pengajuan, error } = await client.from("pengajuan_surat").insert({ ...payload, nomor_pengajuan, status: "Menunggu Verifikasi", ktp_url, kk_url, pendukung_url }).select("*").single();
+        if (error) throw error;
+        pengajuanId = pengajuan.id;
 
-    await client.from("dokumen_pengajuan").insert([
-        { id_pengajuan: pengajuan.id, jenis_dokumen: "KTP", file_url: ktp_url },
-        { id_pengajuan: pengajuan.id, jenis_dokumen: "KK", file_url: kk_url },
-        ...(pendukung_url ? [{ id_pengajuan: pengajuan.id, jenis_dokumen: "Dokumen Pendukung", file_url: pendukung_url }] : []),
-    ]);
-    await client.from("tracking_pengajuan").insert({ id_pengajuan: pengajuan.id, status: "Menunggu Verifikasi", progress: 1, catatan: "Permohonan diterima dan menunggu verifikasi." });
-    await forwardToN8n("surat-online/created", { nomor_pengajuan, email: payload.email, nomor_hp: payload.nomor_hp, status: "Menunggu Verifikasi" });
+        const { error: dokumenError } = await client.from("dokumen_pengajuan").insert([
+            { id_pengajuan: pengajuan.id, jenis_dokumen: "KTP", file_url: ktp_url },
+            { id_pengajuan: pengajuan.id, jenis_dokumen: "KK", file_url: kk_url },
+            ...(pendukung_url ? [{ id_pengajuan: pengajuan.id, jenis_dokumen: "Dokumen Pendukung", file_url: pendukung_url }] : []),
+        ]);
+        if (dokumenError) throw dokumenError;
 
-    return pengajuan;
+        const { error: trackingError } = await client.from("tracking_pengajuan").insert({ id_pengajuan: pengajuan.id, status: "Menunggu Verifikasi", progress: 1, catatan: "Permohonan diterima dan menunggu verifikasi." });
+        if (trackingError) throw trackingError;
+
+        await forwardToN8n("surat-online/created", { nomor_pengajuan, email: payload.email, nomor_hp: payload.nomor_hp, status: "Menunggu Verifikasi" });
+
+        return pengajuan;
+    } catch (error) {
+        await cleanup();
+        throw error;
+    }
 }
 
 export async function searchSubmission(query: string) {
+    if (typeof window !== "undefined") {
+        const response = await fetch(`/api/surat-online/tracking?q=${encodeURIComponent(query)}`);
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.error ?? "Gagal mengambil status pengajuan.");
+        return result.data ?? [];
+    }
+
     const client = createSupabaseAdminClient();
     if (!client) throw new Error("Supabase service role belum dikonfigurasi.");
     const q = query.trim();
