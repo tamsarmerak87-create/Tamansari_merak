@@ -13,6 +13,22 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ ok: true, data });
   } catch (error) {
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Gagal mengambil data layanan." }, { status: 500 });
+    console.error("===== FULL ERROR =====");
+    console.dir(error, { depth: null });
+
+    return Response.json(
+      {
+        success: false,
+        error:
+          error instanceof Error
+            ? {
+              name: error.name,
+              message: error.message,
+              stack: error.stack,
+            }
+            : error,
+      },
+      { status: 500 },
+    );
   }
 }

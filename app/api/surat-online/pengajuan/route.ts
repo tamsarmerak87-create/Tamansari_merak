@@ -7,17 +7,20 @@ export async function POST(request: Request) {
     const data = await createSubmission(formData);
     return NextResponse.json({ ok: true, data });
   } catch (error) {
-    console.error("===== SURAT ONLINE ERROR =====");
-    console.error(error);
+    console.error("===== FULL ERROR =====");
+    console.dir(error, { depth: null });
 
-    return NextResponse.json(
+    return Response.json(
       {
         success: false,
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-        stack: process.env.NODE_ENV === "development"
-          ? (error instanceof Error ? error.stack : undefined)
-          : undefined,
+        error:
+          error instanceof Error
+            ? {
+              name: error.name,
+              message: error.message,
+              stack: error.stack,
+            }
+            : error,
       },
       { status: 500 },
     );

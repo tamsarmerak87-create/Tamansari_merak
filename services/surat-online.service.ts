@@ -54,7 +54,11 @@ export async function getLayananList() {
     const client = createSupabaseBrowserClient();
     if (!client) return [];
     const { data, error } = await client.from("layanan").select("*").order("nama_layanan", { ascending: true });
-    if (error) throw error;
+    if (error) {
+        console.error("SUPABASE LAYANAN LIST ERROR");
+        console.dir(error, { depth: null });
+        throw error;
+    }
     return data ?? [];
 }
 
@@ -101,7 +105,11 @@ export async function createSubmission(formData: FormData) {
         const ext = file.name.split(".").pop() ?? "bin";
         const path = `${folder}/${nomor_pengajuan}-${Date.now()}.${ext}`;
         const { error } = await client.storage.from("surat").upload(path, file, { upsert: false, contentType: file.type });
-        if (error) throw error;
+        if (error) {
+            console.error("SUPABASE STORAGE UPLOAD ERROR");
+            console.dir(error, { depth: null });
+            throw error;
+        }
         uploadedPaths.push(path);
         return client.storage.from("surat").getPublicUrl(path).data.publicUrl;
     };
@@ -142,7 +150,8 @@ export async function createSubmission(formData: FormData) {
         const { data: pengajuan, error } = await client.from("pengajuan_surat").insert(pengajuanPayload).select("*").single();
         if (error) {
             console.error("INSERT ERROR:", error);
-            console.error(error);
+            console.error("SUPABASE INSERT PENGAJUAN_SURAT ERROR");
+            console.dir(error, { depth: null });
             throw error;
         }
         pengajuanId = pengajuan.id;
@@ -153,21 +162,35 @@ export async function createSubmission(formData: FormData) {
             ...(pendukung_url ? [{ id_pengajuan: pengajuan.id, jenis_dokumen: "Dokumen Pendukung", file_url: pendukung_url }] : []),
         ]);
         if (dokumenError) {
-            console.error(dokumenError);
+            console.error("SUPABASE INSERT DOKUMEN_PENGAJUAN ERROR");
+            console.dir(dokumenError, { depth: null });
             throw dokumenError;
         }
 
         const { error: trackingError } = await client.from("tracking_pengajuan").insert({ id_pengajuan: pengajuan.id, status: "Menunggu Verifikasi", progress: 1, catatan: "Permohonan diterima dan menunggu verifikasi." });
         if (trackingError) {
-            console.error(trackingError);
+            console.error("SUPABASE INSERT TRACKING_PENGAJUAN ERROR");
+            console.dir(trackingError, { depth: null });
             throw trackingError;
         }
 
-        await forwardToN8n("surat-online/created", { nomor_pengajuan, email: payload.email, nomor_hp: payload.nomor_hp, status: "Menunggu Verifikasi" });
+        try {
+            const n8nResult = await forwardToN8n("surat-online/created", { nomor_pengajuan, email: payload.email, nomor_hp: payload.nomor_hp, status: "Menunggu Verifikasi" });
+            if ("ok" in n8nResult && n8nResult.ok === false) {
+                console.error("N8N FORWARD ERROR");
+                console.dir(n8nResult, { depth: null });
+                throw n8nResult;
+            }
+        } catch (n8nError) {
+            console.error("N8N FORWARD ERROR");
+            console.dir(n8nError, { depth: null });
+            throw n8nError;
+        }
 
         return pengajuan;
     } catch (error) {
-        console.error(error);
+        console.error("===== CREATE SUBMISSION FULL ERROR =====");
+        console.dir(error, { depth: null });
         await cleanup();
         throw error;
     }
@@ -185,7 +208,11 @@ export async function searchSubmission(query: string) {
     if (!client) throw new Error("Supabase service role belum dikonfigurasi.");
     const q = query.trim();
     const { data, error } = await client.from("pengajuan_surat").select("*, tracking_pengajuan(*), dokumen_pengajuan(*)").or(`nomor_pengajuan.eq.${q},nik.eq.${q}`).order("created_at", { referencedTable: "tracking_pengajuan", ascending: true });
-    if (error) throw error;
+    if (error) {
+        console.error("SUPABASE SEARCH SUBMISSION ERROR");
+        console.dir(error, { depth: null });
+        throw error;
+    }
     return data ?? [];
 }
 
@@ -194,8 +221,30 @@ export async function updateSubmissionStatus(id: string, status: string, catatan
     if (!client) throw new Error("Supabase service role belum dikonfigurasi.");
     const progress = getProgressFromStatus(status);
     const { data, error } = await client.from("pengajuan_surat").update({ status, catatan_admin: catatan, petugas, file_surat_url }).eq("id", id).select("*").single();
-    if (error) throw error;
-    await client.from("tracking_pengajuan").insert({ id_pengajuan: id, status, progress, petugas, catatan });
-    await forwardToN8n("surat-online/status", { nomor_pengajuan: data.nomor_pengajuan, status, catatan, petugas });
+    if (error) {
+        console.error("SUPABASE UPDATE PENGAJUAN_SURAT ERROR");
+        console.dir(error, { depth: null });
+        throw error;
+    }
+
+    const { error: trackingError } = await client.from("tracking_pengajuan").insert({ id_pengajuan: id, status, progress, petugas, catatan });
+    if (trackingError) {
+        console.error("SUPABASE INSERT STATUS TRACKING_PENGAJUAN ERROR");
+        console.dir(trackingError, { depth: null });
+        throw trackingError;
+    }
+
+    try {
+        const n8nResult = await forwardToN8n("surat-online/status", { nomor_pengajuan: data.nomor_pengajuan, status, catatan, petugas });
+        if ("ok" in n8nResult && n8nResult.ok === false) {
+            console.error("N8N STATUS FORWARD ERROR");
+            console.dir(n8nResult, { depth: null });
+            throw n8nResult;
+        }
+    } catch (n8nError) {
+        console.error("N8N STATUS FORWARD ERROR");
+        console.dir(n8nError, { depth: null });
+        throw n8nError;
+    }
     return data;
 }
