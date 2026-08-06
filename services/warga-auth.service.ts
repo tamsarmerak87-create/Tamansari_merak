@@ -59,7 +59,11 @@ export type WargaLoginInput = z.infer<typeof wargaLoginSchema>;
 
 function client() {
     const supabase = createSupabaseBrowserClient();
-    if (!supabase) throw new Error("Supabase env belum dikonfigurasi.");
+    console.log("Supabase env check", {
+        hasUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
+        hasAnonKey: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
+    });
+    if (!supabase) throw new Error("Supabase env belum dikonfigurasi. Periksa NEXT_PUBLIC_SUPABASE_URL dan NEXT_PUBLIC_SUPABASE_ANON_KEY.");
     return supabase;
 }
 
@@ -83,55 +87,84 @@ export async function getCurrentWarga() {
 }
 
 export async function registerWarga(input: WargaRegisterInput) {
-    const payload = wargaRegisterSchema.parse(input);
-    const supabase = client();
+    let createdUserId = "";
+    try {
+        const payload = wargaRegisterSchema.parse(input);
+        const supabase = client();
 
-    const { data: nikExists, error: nikError } = await supabase.from("warga_profiles").select("id").eq("nik", payload.nik).maybeSingle();
-    if (nikError) throw nikError;
-    if (nikExists) throw new Error("NIK sudah terdaftar.");
+        const nikResponse = await supabase.from("warga_profiles").select("id").eq("nik", payload.nik).maybeSingle();
+        console.log("NIK check response", nikResponse);
+        console.log("NIK check data", nikResponse.data);
+        if (nikResponse.error) {
+            console.error(nikResponse.error);
+            throw new Error(nikResponse.error.message || "Database error saat memeriksa NIK.");
+        }
+        if (nikResponse.data) throw new Error("NIK sudah terdaftar.");
 
-    const { data: phoneExists, error: phoneError } = await supabase.from("warga_profiles").select("id").eq("nomor_whatsapp", payload.nomor_whatsapp).maybeSingle();
-    if (phoneError) throw phoneError;
-    if (phoneExists) throw new Error("Nomor HP sudah terdaftar.");
+        const phoneResponse = await supabase.from("warga_profiles").select("id").eq("nomor_whatsapp", payload.nomor_whatsapp).maybeSingle();
+        console.log("Phone check response", phoneResponse);
+        console.log("Phone check data", phoneResponse.data);
+        if (phoneResponse.error) {
+            console.error(phoneResponse.error);
+            throw new Error(phoneResponse.error.message || "Database error saat memeriksa Nomor HP.");
+        }
+        if (phoneResponse.data) throw new Error("Nomor HP sudah terdaftar.");
 
-    const otp = createOtp();
-    const { data, error } = await supabase.auth.signUp({
-        email: payload.email,
-        password: payload.password,
-        options: {
-            data: { nama_lengkap: payload.nama_lengkap, nik: payload.nik, role: "warga" },
-            emailRedirectTo: typeof window !== "undefined" ? `${window.location.origin}/verify` : undefined,
-        },
-    });
-    if (error) throw error;
-    const user = data.user;
-    if (!user) throw new Error("Gagal membuat akun warga.");
+        const otp = createOtp();
+        const signUpResponse = await supabase.auth.signUp({
+            email: payload.email,
+            password: payload.password,
+            options: {
+                data: { nama_lengkap: payload.nama_lengkap, nik: payload.nik, role: "warga" },
+                emailRedirectTo: typeof window !== "undefined" ? `${window.location.origin}/verify` : undefined,
+            },
+        });
+        console.log("signUp response", signUpResponse);
+        console.log("signUp data", signUpResponse.data);
+        if (signUpResponse.error) {
+            console.error(signUpResponse.error);
+            throw new Error(signUpResponse.error.message || "Auth error saat membuat akun.");
+        }
+        const user = signUpResponse.data.user;
+        if (!user) throw new Error("Auth error: Supabase tidak mengembalikan user setelah pendaftaran.");
+        if (Array.isArray(user.identities) && user.identities.length === 0) throw new Error("Email sudah digunakan.");
+        createdUserId = user.id;
 
-    const profilePayload: Omit<WargaProfile, "id" | "created_at" | "updated_at"> = {
-        user_id: user.id,
-        nama_lengkap: payload.nama_lengkap,
-        nik: payload.nik,
-        nomor_kk: payload.nomor_kk,
-        email: payload.email,
-        nomor_whatsapp: payload.nomor_whatsapp,
-        tempat_lahir: payload.tempat_lahir,
-        tanggal_lahir: payload.tanggal_lahir,
-        jenis_kelamin: payload.jenis_kelamin,
-        alamat: payload.alamat,
-        rt: payload.rt,
-        rw: payload.rw,
-        kelurahan: payload.kelurahan,
-        kecamatan: payload.kecamatan,
-        role: "warga",
-        status_verifikasi: "Belum Terverifikasi",
-        otp_code: otp,
-        otp_expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-        foto_url: null,
-    };
-    const { error: profileError } = await supabase.from("warga_profiles").insert(profilePayload);
-    if (profileError) throw profileError;
-    await sendOtpNotification(profilePayload);
-    return { user, otpSent: true };
+        const profilePayload: Omit<WargaProfile, "id" | "created_at" | "updated_at"> = {
+            user_id: user.id,
+            nama_lengkap: payload.nama_lengkap,
+            nik: payload.nik,
+            nomor_kk: payload.nomor_kk,
+            email: payload.email,
+            nomor_whatsapp: payload.nomor_whatsapp,
+            tempat_lahir: payload.tempat_lahir,
+            tanggal_lahir: payload.tanggal_lahir,
+            jenis_kelamin: payload.jenis_kelamin,
+            alamat: payload.alamat,
+            rt: payload.rt,
+            rw: payload.rw,
+            kelurahan: payload.kelurahan,
+            kecamatan: payload.kecamatan,
+            role: "warga",
+            status_verifikasi: "Belum Terverifikasi",
+            otp_code: otp,
+            otp_expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+            foto_url: null,
+        };
+        const profileResponse = await supabase.from("warga_profiles").insert(profilePayload).select("*").single();
+        console.log("profile insert response", profileResponse);
+        console.log("profile insert data", profileResponse.data);
+        if (profileResponse.error) {
+            console.error(profileResponse.error);
+            await supabase.auth.signOut().catch((rollbackError: unknown) => console.error("Rollback signOut failed", rollbackError));
+            throw new Error(`${profileResponse.error.message || "Database error saat menyimpan profil warga."} Akun auth sudah dibuat dengan user_id ${createdUserId}, tetapi profil gagal dibuat. Hubungi admin untuk rollback/delete auth user.`);
+        }
+        await sendOtpNotification(profilePayload);
+        return { user, profile: profileResponse.data as WargaProfile, otpSent: true };
+    } catch (error) {
+        console.error(error);
+        throw error;
+    }
 }
 
 async function findEmailByNik(nik: string) {
