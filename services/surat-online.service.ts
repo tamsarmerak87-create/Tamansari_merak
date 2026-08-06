@@ -90,7 +90,7 @@ export async function createSubmission(formData: FormData) {
     const cleanup = async () => {
         try {
             if (pengajuanId) {
-                await client.from("tracking_pengajuan").delete().eq("id_pengajuan", pengajuanId);
+                await client.from("tracking_pengajuan").delete().eq("pengajuan_id", pengajuanId);
                 await client.from("dokumen_pengajuan").delete().eq("pengajuan_id", pengajuanId);
                 await client.from("pengajuan_surat").delete().eq("id", pengajuanId);
             }
@@ -184,7 +184,12 @@ export async function createSubmission(formData: FormData) {
             throw dokumenError;
         }
 
-        const { error: trackingError } = await client.from("tracking_pengajuan").insert({ id_pengajuan: pengajuan.id, status: "Menunggu Verifikasi", progress: 1, catatan: "Permohonan diterima dan menunggu verifikasi." });
+        const { error: trackingError } = await client.from("tracking_pengajuan").insert({
+            pengajuan_id: pengajuan.id,
+            status: "Menunggu Verifikasi",
+            keterangan: "Permohonan diterima dan menunggu verifikasi.",
+            petugas: null,
+        });
         if (trackingError) {
             console.error("SUPABASE INSERT TRACKING_PENGAJUAN ERROR");
             console.dir(trackingError, { depth: null });
@@ -236,7 +241,6 @@ export async function searchSubmission(query: string) {
 export async function updateSubmissionStatus(id: string, status: string, catatan?: string, petugas?: string, file_surat_url?: string) {
     const client = createSupabaseAdminClient();
     if (!client) throw new Error("Supabase service role belum dikonfigurasi.");
-    const progress = getProgressFromStatus(status);
     const { data, error } = await client.from("pengajuan_surat").update({ status, catatan_admin: catatan, petugas, file_surat_url }).eq("id", id).select("*").single();
     if (error) {
         console.error("SUPABASE UPDATE PENGAJUAN_SURAT ERROR");
@@ -244,7 +248,12 @@ export async function updateSubmissionStatus(id: string, status: string, catatan
         throw error;
     }
 
-    const { error: trackingError } = await client.from("tracking_pengajuan").insert({ id_pengajuan: id, status, progress, petugas, catatan });
+    const { error: trackingError } = await client.from("tracking_pengajuan").insert({
+        pengajuan_id: id,
+        status,
+        keterangan: catatan,
+        petugas,
+    });
     if (trackingError) {
         console.error("SUPABASE INSERT STATUS TRACKING_PENGAJUAN ERROR");
         console.dir(trackingError, { depth: null });
