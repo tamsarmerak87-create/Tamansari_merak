@@ -111,8 +111,39 @@ export async function createSubmission(formData: FormData) {
         const kk_url = await uploadOne("kk", kk);
         const pendukung_url = await uploadOne("pendukung", pendukung);
 
-        const { data: pengajuan, error } = await client.from("pengajuan_surat").insert({ ...payload, nomor_pengajuan, status: "Menunggu Verifikasi", ktp_url, kk_url, pendukung_url }).select("*").single();
-        if (error) throw error;
+        const [rt = "", rw = ""] = payload.rt_rw.split("/").map((part) => part.trim());
+        const pengajuanPayload = {
+            layanan_id: payload.layanan_id,
+            nik: payload.nik,
+            nama_lengkap: payload.nama_lengkap,
+            nomor_kk: payload.nomor_kk,
+            tempat_lahir: payload.tempat_lahir,
+            tanggal_lahir: payload.tanggal_lahir,
+            jenis_kelamin: payload.jenis_kelamin,
+            agama: payload.agama,
+            status_perkawinan: payload.status_perkawinan,
+            pekerjaan: payload.pekerjaan,
+            alamat: payload.alamat,
+            rt,
+            rw,
+            kelurahan: payload.kelurahan,
+            kecamatan: payload.kecamatan,
+            no_hp: payload.nomor_hp,
+            email: payload.email,
+            keperluan: payload.keperluan,
+            catatan: payload.catatan,
+            nomor_pengajuan,
+            status: "Menunggu Verifikasi",
+            file_ktp: ktp_url,
+            file_kk: kk_url,
+            file_pendukung: pendukung_url,
+        };
+
+        const { data: pengajuan, error } = await client.from("pengajuan_surat").insert(pengajuanPayload).select("*").single();
+        if (error) {
+            console.error(error);
+            throw error;
+        }
         pengajuanId = pengajuan.id;
 
         const { error: dokumenError } = await client.from("dokumen_pengajuan").insert([
@@ -120,15 +151,22 @@ export async function createSubmission(formData: FormData) {
             { id_pengajuan: pengajuan.id, jenis_dokumen: "KK", file_url: kk_url },
             ...(pendukung_url ? [{ id_pengajuan: pengajuan.id, jenis_dokumen: "Dokumen Pendukung", file_url: pendukung_url }] : []),
         ]);
-        if (dokumenError) throw dokumenError;
+        if (dokumenError) {
+            console.error(dokumenError);
+            throw dokumenError;
+        }
 
         const { error: trackingError } = await client.from("tracking_pengajuan").insert({ id_pengajuan: pengajuan.id, status: "Menunggu Verifikasi", progress: 1, catatan: "Permohonan diterima dan menunggu verifikasi." });
-        if (trackingError) throw trackingError;
+        if (trackingError) {
+            console.error(trackingError);
+            throw trackingError;
+        }
 
         await forwardToN8n("surat-online/created", { nomor_pengajuan, email: payload.email, nomor_hp: payload.nomor_hp, status: "Menunggu Verifikasi" });
 
         return pengajuan;
     } catch (error) {
+        console.error(error);
         await cleanup();
         throw error;
     }
