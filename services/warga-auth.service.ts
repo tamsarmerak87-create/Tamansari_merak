@@ -5,12 +5,12 @@ import { createSupabaseBrowserClient } from "@/services/supabase";
 export type WargaRole = "admin" | "petugas" | "warga";
 
 export type WargaProfile = {
-    id?: string;
-    user_id: string;
+    id: string;
     nama_lengkap: string;
     nik: string;
     nomor_kk: string;
     email: string;
+    nomor_hp?: string | null;
     nomor_whatsapp: string;
     tempat_lahir: string;
     tanggal_lahir: string;
@@ -23,8 +23,6 @@ export type WargaProfile = {
     foto_url?: string | null;
     role: WargaRole;
     status_verifikasi: "Belum Terverifikasi" | "Akun Terverifikasi";
-    otp_code?: string | null;
-    otp_expires_at?: string | null;
     created_at?: string;
     updated_at?: string;
 };
@@ -58,46 +56,48 @@ export type WargaRegisterInput = z.infer<typeof wargaRegisterSchema>;
 export type WargaLoginInput = z.infer<typeof wargaLoginSchema>;
 
 export const wargaProfileInsertColumns = [
-    "user_id",
+    "id",
     "nama_lengkap",
     "nik",
-    "nomor_kk",
-    "email",
+    "nomor_hp",
     "nomor_whatsapp",
-    "tempat_lahir",
-    "tanggal_lahir",
+    "email",
     "alamat",
     "rt",
     "rw",
     "kelurahan",
     "kecamatan",
+    "nomor_kk",
+    "tempat_lahir",
+    "tanggal_lahir",
+    "jenis_kelamin",
+    "foto_url",
     "role",
     "status_verifikasi",
-    "otp_code",
-    "otp_expires_at",
 ] as const;
 
 export type WargaProfileInsertColumn = (typeof wargaProfileInsertColumns)[number];
 export type WargaProfileInsertPayload = Pick<WargaProfile, WargaProfileInsertColumn>;
 
 export const wargaProfileInsertSchema = z.object({
-    user_id: z.string().uuid("User ID auth tidak valid"),
+    id: z.string().uuid("User ID auth tidak valid"),
     nama_lengkap: z.string().min(3),
     nik: z.string().regex(/^\d{16}$/),
-    nomor_kk: z.string().regex(/^\d{16}$/),
-    email: z.string().email(),
+    nomor_hp: z.string().min(8),
     nomor_whatsapp: z.string().min(8),
-    tempat_lahir: z.string().min(2),
-    tanggal_lahir: z.string().min(1),
+    email: z.string().email(),
     alamat: z.string().min(8),
     rt: z.string().min(1),
     rw: z.string().min(1),
     kelurahan: z.string().min(2),
     kecamatan: z.string().min(2),
+    nomor_kk: z.string().regex(/^\d{16}$/),
+    tempat_lahir: z.string().min(2),
+    tanggal_lahir: z.string().min(1),
+    jenis_kelamin: z.string().min(1),
+    foto_url: z.string().nullable().optional(),
     role: z.literal("warga"),
     status_verifikasi: z.enum(["Belum Terverifikasi", "Akun Terverifikasi"]),
-    otp_code: z.string().regex(/^\d{6}$/),
-    otp_expires_at: z.string().datetime(),
 }).strict();
 
 export function assertWargaProfilePayloadIsSchemaSafe(payload: Record<string, unknown>) {
@@ -107,6 +107,11 @@ export function assertWargaProfilePayloadIsSchemaSafe(payload: Record<string, un
         throw new Error(`Payload warga_profiles tidak sinkron dengan schema database. Kolom tidak tersedia: ${invalidColumns.join(", ")}.`);
     }
     return wargaProfileInsertSchema.parse(payload);
+}
+
+export function sanitizeWargaProfileUpdatePayload(profile: Partial<WargaProfile>) {
+    const allowed = new Set<string>(wargaProfileInsertColumns.filter((column) => column !== "id"));
+    return Object.fromEntries(Object.entries(profile).filter(([key]) => allowed.has(key)));
 }
 
 function client() {
@@ -119,10 +124,6 @@ function client() {
     return supabase;
 }
 
-export function createOtp() {
-    return String(Math.floor(100000 + Math.random() * 900000));
-}
-
 export function isVerified(profile?: WargaProfile | null) {
     return profile?.status_verifikasi === "Akun Terverifikasi";
 }
@@ -133,7 +134,7 @@ export async function getCurrentWarga() {
     if (userError) throw userError;
     const user = userData.user;
     if (!user) return { user: null, profile: null };
-    const { data: profile, error } = await supabase.from("warga_profiles").select("*").eq("user_id", user.id).maybeSingle();
+    const { data: profile, error } = await supabase.from("warga_profiles").select("*").eq("id", user.id).maybeSingle();
     if (error) throw error;
     return { user, profile: profile as WargaProfile | null };
 }
@@ -209,10 +210,8 @@ export async function logoutWarga() {
 export async function resendWargaOtp() {
     const { user, profile } = await getCurrentWarga();
     if (!user || !profile) throw new Error("Silakan login terlebih dahulu.");
-    const otp = createOtp();
-    const { error } = await client().from("warga_profiles").update({ otp_code: otp, otp_expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString() }).eq("user_id", user.id);
+    const { error } = await client().auth.resend({ type: "signup", email: profile.email });
     if (error) throw error;
-    await sendOtpNotification({ ...profile, otp_code: otp });
 }
 
 export async function verifyWargaOtp(code: string) {
@@ -220,9 +219,9 @@ export async function verifyWargaOtp(code: string) {
     if (!user || !profile) throw new Error("Silakan login terlebih dahulu.");
     if (!/^\d{6}$/.test(code)) throw new Error("OTP harus 6 digit.");
     if (profile.status_verifikasi === "Akun Terverifikasi") return profile;
-    if (profile.otp_code !== code) throw new Error("Kode OTP tidak sesuai.");
-    if (profile.otp_expires_at && new Date(profile.otp_expires_at).getTime() < Date.now()) throw new Error("Kode OTP sudah kedaluwarsa.");
-    const { data, error } = await client().from("warga_profiles").update({ status_verifikasi: "Akun Terverifikasi", otp_code: null, otp_expires_at: null }).eq("user_id", user.id).select("*").single();
+    const verify = await client().auth.verifyOtp({ email: profile.email, token: code, type: "signup" });
+    if (verify.error) throw verify.error;
+    const { data, error } = await client().from("warga_profiles").update({ status_verifikasi: "Akun Terverifikasi" }).eq("id", user.id).select("*").single();
     if (error) throw error;
     return data as WargaProfile;
 }
@@ -230,7 +229,8 @@ export async function verifyWargaOtp(code: string) {
 export async function updateWargaProfile(profile: Partial<WargaProfile>) {
     const { user } = await getCurrentWarga();
     if (!user) throw new Error("Silakan login terlebih dahulu.");
-    const { data, error } = await client().from("warga_profiles").update(profile).eq("user_id", user.id).select("*").single();
+    const profileData = sanitizeWargaProfileUpdatePayload(profile);
+    const { data, error } = await client().from("warga_profiles").update(profileData).eq("id", user.id).select("*").single();
     if (error) throw error;
     return data as WargaProfile;
 }
@@ -242,12 +242,12 @@ export async function getWargaSubmissions(profile?: WargaProfile | null) {
     return data ?? [];
 }
 
-export async function sendOtpNotification(profile: Pick<WargaProfile, "email" | "nomor_whatsapp" | "nama_lengkap" | "otp_code">) {
+export async function sendOtpNotification(profile: Pick<WargaProfile, "email" | "nomor_whatsapp" | "nama_lengkap">) {
     try {
         await fetch("/api/webhooks/n8n", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ event: "warga/otp", data: { ...profile, message: `Kode OTP Akun Warga Anda: ${profile.otp_code}` } }),
+            body: JSON.stringify({ event: "warga/otp", data: { ...profile, message: "Kode OTP/verifikasi akun dikirim melalui Supabase Auth." } }),
         });
     } catch (error) {
         console.error("OTP notification skipped", error);

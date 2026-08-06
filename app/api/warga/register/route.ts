@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/services/supabase";
-import { assertWargaProfilePayloadIsSchemaSafe, createOtp, sendOtpNotification, wargaRegisterSchema, type WargaProfileInsertPayload } from "@/services/warga-auth.service";
+import { assertWargaProfilePayloadIsSchemaSafe, wargaRegisterSchema, type WargaProfileInsertPayload } from "@/services/warga-auth.service";
 
 function errorMessage(error: unknown) {
     return error instanceof Error ? error.message : "Terjadi kesalahan tidak dikenal saat registrasi warga.";
@@ -23,7 +23,6 @@ export async function POST(request: Request) {
     try {
         const body = await request.json();
         const payload = wargaRegisterSchema.parse(body);
-        const otp = createOtp();
 
         const existingProfile = await supabaseAdmin.from("warga_profiles").select("id,email,nik").or(`email.eq.${payload.email},nik.eq.${payload.nik}`).limit(1).maybeSingle();
         if (existingProfile.error) throw existingProfile.error;
@@ -32,7 +31,7 @@ export async function POST(request: Request) {
         const createUserResponse = await supabaseAdmin.auth.admin.createUser({
             email: payload.email,
             password: payload.password,
-            email_confirm: true,
+            email_confirm: false,
             user_metadata: { nama_lengkap: payload.nama_lengkap, nik: payload.nik, role: "warga" },
         });
         if (createUserResponse.error) throw new Error(createUserResponse.error.message || "Auth error saat membuat akun warga.");
@@ -40,27 +39,29 @@ export async function POST(request: Request) {
         if (!user) throw new Error("Auth error: Supabase tidak mengembalikan user setelah pendaftaran.");
         createdUserId = user.id;
 
-        const profilePayload = assertWargaProfilePayloadIsSchemaSafe({
-            user_id: user.id,
+        const profileData = assertWargaProfilePayloadIsSchemaSafe({
+            id: user.id,
             nama_lengkap: payload.nama_lengkap,
             nik: payload.nik,
-            nomor_kk: payload.nomor_kk,
-            email: payload.email,
+            nomor_hp: payload.nomor_whatsapp,
             nomor_whatsapp: payload.nomor_whatsapp,
-            tempat_lahir: payload.tempat_lahir,
-            tanggal_lahir: payload.tanggal_lahir,
+            email: payload.email,
             alamat: payload.alamat,
             rt: payload.rt,
             rw: payload.rw,
             kelurahan: payload.kelurahan,
             kecamatan: payload.kecamatan,
+            nomor_kk: payload.nomor_kk,
+            tempat_lahir: payload.tempat_lahir,
+            tanggal_lahir: payload.tanggal_lahir,
+            jenis_kelamin: payload.jenis_kelamin,
+            foto_url: null,
             role: "warga",
             status_verifikasi: "Belum Terverifikasi",
-            otp_code: otp,
-            otp_expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
         }) satisfies WargaProfileInsertPayload;
 
-        const profileResponse = await supabaseAdmin.from("warga_profiles").insert(profilePayload).select("*").single();
+        console.log("Payload:", profileData);
+        const profileResponse = await supabaseAdmin.from("warga_profiles").insert(profileData).select("*").single();
         if (profileResponse.error) {
             let cleanupNote = "";
             try {
@@ -73,8 +74,7 @@ export async function POST(request: Request) {
             throw new Error(`Profil warga gagal dibuat: ${profileResponse.error.message}.${cleanupNote}`);
         }
 
-        await sendOtpNotification({ ...profilePayload, otp_code: otp });
-        return NextResponse.json({ user, profile: profileResponse.data, otpSent: true });
+        return NextResponse.json({ user, profile: profileResponse.data, otpSent: false });
     } catch (error) {
         if (createdUserId) {
             try {
