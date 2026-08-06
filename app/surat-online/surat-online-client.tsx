@@ -1,7 +1,7 @@
 "use client";
 
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { jsPDF } from "jspdf";
@@ -34,6 +34,7 @@ import { createSubmission, searchSubmission, submissionSchema } from "@/services
 import type { PublicService } from "@/types";
 import { cn } from "@/utils/cn";
 import QRCode from "qrcode";
+import { createSupabaseBrowserClient } from "@/services/supabase";
 
 type ServiceCatalogItem = PublicService & { estimate: string };
 
@@ -79,15 +80,19 @@ type FileKey = "ktp" | "kk" | "support";
 type UploadState = Record<FileKey, File | null>;
 type SubmissionResult = Record<string, unknown> & {
     nomor_pengajuan: string;
+    nomor_tiket?: string;
+    tracking_url?: string;
     created_at?: string;
     nama_lengkap?: string;
     nik?: string;
     jenis_surat?: string;
+    keperluan?: string;
     status?: string;
     petugas?: string | null;
+    layanan?: { nama_layanan?: string; title?: string; output?: string } | null;
 };
-type TrackingItem = { status?: string; progress?: number; petugas?: string | null; created_at?: string; catatan?: string | null };
-type DocumentItem = { jenis_dokumen?: string; file_url?: string; created_at?: string };
+type TrackingItem = { status?: string; progress?: number; petugas?: string | null; created_at?: string; catatan?: string | null; keterangan?: string | null };
+type DocumentItem = { jenis_dokumen?: string; file_url?: string; jenis?: string; url_file?: string; nama_file?: string; created_at?: string };
 type StatusItem = SubmissionResult & { tracking_pengajuan?: TrackingItem[]; dokumen_pengajuan?: DocumentItem[] };
 
 const inputClass = "min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-gov-950 outline-none transition focus:ring-4 focus:ring-accent-200";
@@ -121,6 +126,7 @@ export default function SuratOnlineClient({ services }: { services: PublicServic
     const [statusLoading, setStatusLoading] = useState(false);
     const [statusError, setStatusError] = useState("");
     const [statusResults, setStatusResults] = useState<StatusItem[]>([]);
+    const [lastStatusQuery, setLastStatusQuery] = useState("");
 
     const selectedService = useMemo(() => serviceCatalog.find((item) => item.id === selectedId) ?? serviceCatalog[0], [serviceCatalog, selectedId]);
 
@@ -236,8 +242,10 @@ export default function SuratOnlineClient({ services }: { services: PublicServic
             setStatusChecked(true);
             setStatusLoading(true);
             setStatusError("");
-            const data = await searchSubmission(statusQuery) as StatusItem[];
+            const query = statusQuery.trim();
+            const data = await searchSubmission(query) as StatusItem[];
             setStatusResults(data);
+            setLastStatusQuery(query);
             if (data.length === 0) setStatusError("Nomor pengajuan atau NIK tidak ditemukan.");
         } catch (error) {
             setStatusResults([]);
@@ -246,6 +254,47 @@ export default function SuratOnlineClient({ services }: { services: PublicServic
             setStatusLoading(false);
         }
     }
+
+    useEffect(() => {
+        const nomor = new URLSearchParams(window.location.search).get("nomor");
+        if (!nomor) return;
+        setStatusQuery(nomor);
+        setStatusChecked(true);
+        setStatusLoading(true);
+        searchSubmission(nomor)
+            .then((data) => {
+                const rows = data as StatusItem[];
+                setStatusResults(rows);
+                setLastStatusQuery(nomor);
+                setStatusError(rows.length === 0 ? "Nomor pengajuan atau NIK tidak ditemukan." : "");
+                document.getElementById("cek-status")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            })
+            .catch((error: unknown) => {
+                setStatusResults([]);
+                setStatusError(error instanceof Error ? error.message : "Gagal mengambil status pengajuan.");
+            })
+            .finally(() => setStatusLoading(false));
+    }, []);
+
+    useEffect(() => {
+        if (!lastStatusQuery) return;
+        const client = createSupabaseBrowserClient();
+        if (!client) return;
+        const refresh = () => {
+            searchSubmission(lastStatusQuery)
+                .then((data) => setStatusResults(data as StatusItem[]))
+                .catch((error: unknown) => setStatusError(error instanceof Error ? error.message : "Realtime gagal memuat status."));
+        };
+        const channel = client
+            .channel(`surat-online-tracking-${lastStatusQuery}`)
+            .on("postgres_changes", { event: "*", schema: "public", table: "pengajuan_surat" }, refresh)
+            .on("postgres_changes", { event: "*", schema: "public", table: "tracking_pengajuan" }, refresh)
+            .on("postgres_changes", { event: "*", schema: "public", table: "dokumen_pengajuan" }, refresh)
+            .subscribe();
+        return () => {
+            void client.removeChannel(channel);
+        };
+    }, [lastStatusQuery]);
 
     return (
         <main className="min-h-screen overflow-x-hidden bg-[#f7f4eb] text-slate-800">
@@ -301,37 +350,56 @@ function Review({ form, service, error, update }: { form: FormState; service: st
 
 function Success({ ticket, service, estimate, data }: { ticket: string; service: string; estimate: string; data: SubmissionResult | null }) {
     const date = data?.created_at ? new Date(data.created_at) : new Date();
+    const nomorTiket = data?.nomor_tiket ?? ticket.replace(/^TMS-/, "TIK-").replace(/-(\d{4})$/, "-00$1");
+    const trackingUrl = data?.tracking_url ?? `${window.location.origin}/surat-online/tracking?nomor=${encodeURIComponent(ticket)}`;
+    const [qrDataUrl, setQrDataUrl] = useState("");
+    useEffect(() => {
+        QRCode.toDataURL(trackingUrl, { margin: 1, width: 220 })
+            .then(setQrDataUrl)
+            .catch(() => setQrDataUrl(""));
+    }, [trackingUrl]);
     async function downloadProof() {
         try {
-            const qr = await QRCode.toDataURL(ticket);
-            const pdf = new jsPDF();
+            const qr = qrDataUrl || await QRCode.toDataURL(trackingUrl, { margin: 1, width: 260 });
+            const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
             pdf.setFillColor(7, 26, 51);
-            pdf.rect(0, 0, 210, 32, "F");
+            pdf.rect(0, 0, 210, 38, "F");
             pdf.setTextColor(255, 255, 255);
             pdf.setFont("helvetica", "bold");
-            pdf.setFontSize(16);
-            pdf.text("KELURAHAN TAMANSARI", 20, 15);
             pdf.setFontSize(10);
-            pdf.text("Bukti Pengajuan Surat Online", 20, 23);
+            pdf.text("LOGO KOTA CILEGON", 14, 14);
+            pdf.text("LOGO KELURAHAN", 154, 14);
+            pdf.setFontSize(18);
+            pdf.text("BUKTI PENGAJUAN SURAT ONLINE", 105, 20, { align: "center" });
+            pdf.setFontSize(10);
+            pdf.text("Kelurahan Tamansari - Kecamatan Pulomerak - Kota Cilegon", 105, 29, { align: "center" });
             pdf.setTextColor(15, 23, 42);
             pdf.setFontSize(12);
-            const rows = [["Nomor Pengajuan", ticket], ["Nama", data?.nama_lengkap ?? "-"], ["NIK", data?.nik ?? "-"], ["Jenis Pelayanan", service], ["Tanggal", date.toLocaleDateString("id-ID")], ["Status", data?.status ?? "Menunggu Verifikasi"]];
+            const rows = [["Nomor Pengajuan", ticket], ["Nomor Tiket", nomorTiket], ["Tanggal", date.toLocaleDateString("id-ID")], ["Nama", data?.nama_lengkap ?? "-"], ["NIK", data?.nik ?? "-"], ["Jenis Pelayanan", service], ["Keperluan", data?.keperluan ?? "-"], ["Status", data?.status ?? "Menunggu Verifikasi"]];
             rows.forEach(([label, value], index) => {
-                const y = 52 + index * 12;
+                const y = 58 + index * 12;
                 pdf.setFont("helvetica", "bold");
                 pdf.text(label, 20, y);
                 pdf.setFont("helvetica", "normal");
-                pdf.text(String(value), 78, y);
+                pdf.text(String(value).slice(0, 80), 78, y);
             });
-            pdf.addImage(qr, "PNG", 148, 48, 38, 38);
+            pdf.addImage(qr, "PNG", 144, 54, 42, 42);
             pdf.setFontSize(9);
-            pdf.text("QR Code berisi nomor pengajuan untuk verifikasi status.", 20, 138);
+            pdf.text("Scan QR Code untuk membuka halaman tracking pengajuan.", 20, 166);
+            pdf.text(trackingUrl, 20, 172);
+            pdf.setDrawColor(226, 232, 240);
+            pdf.line(20, 252, 190, 252);
+            pdf.setFont("helvetica", "bold");
+            pdf.text("Kelurahan Tamansari", 105, 262, { align: "center" });
+            pdf.setFont("helvetica", "normal");
+            pdf.text("Kecamatan Pulomerak", 105, 268, { align: "center" });
+            pdf.text("Kota Cilegon", 105, 274, { align: "center" });
             pdf.save(`bukti-${ticket}.pdf`);
         } catch (error) {
             alert(error instanceof Error ? error.message : "Gagal membuat PDF bukti pengajuan.");
         }
     }
-    return <div className="mt-8 rounded-[24px] border border-emerald-200 bg-emerald-50 p-6"><CheckCircle2 className="text-emerald-600" size={40} /><h2 className="mt-4 text-3xl font-black text-gov-950">Permohonan berhasil dikirim</h2><div className="mt-5 grid gap-3 md:grid-cols-2"><p><b>Nomor Tiket:</b> {ticket}</p><p><b>Tanggal:</b> {date.toLocaleDateString("id-ID")}</p><p><b>Jenis Pelayanan:</b> {service}</p><p><b>Estimasi selesai:</b> {estimate}</p></div><div className="mt-6 flex flex-wrap gap-3"><div className="grid size-28 place-items-center rounded-3xl bg-white text-gov-950"><QrCode size={76} /></div><Button type="button" variant="primary" onClick={downloadProof}><Download size={18} />Download Bukti Pengajuan</Button><Button type="button" variant="glass" onClick={() => window.print()}><Printer size={18} />Cetak Bukti</Button></div></div>;
+    return <div className="mt-8 rounded-[24px] border border-emerald-200 bg-emerald-50 p-6"><CheckCircle2 className="text-emerald-600" size={40} /><h2 className="mt-4 text-3xl font-black text-gov-950">Permohonan berhasil dikirim</h2><div className="mt-5 grid gap-3 md:grid-cols-2"><p><b>Nomor Pengajuan:</b> {ticket}</p><p><b>Nomor Tiket:</b> {nomorTiket}</p><p><b>Tanggal:</b> {date.toLocaleDateString("id-ID")}</p><p><b>Jenis Pelayanan:</b> {service}</p><p><b>Estimasi selesai:</b> {estimate}</p><p><b>Link Tracking:</b> <a className="underline" href={trackingUrl}>{trackingUrl}</a></p></div><div className="mt-6 flex flex-wrap gap-3"><div className="grid size-28 place-items-center rounded-3xl bg-white text-gov-950">{qrDataUrl ? <img src={qrDataUrl} alt="QR Code Tracking" className="size-24" /> : <QrCode size={76} />}</div><Button type="button" variant="primary" onClick={downloadProof}><Download size={18} />Download Bukti Pengajuan</Button><Button type="button" variant="glass" onClick={() => window.print()}><Printer size={18} />Cetak Bukti</Button></div></div>;
 }
 
 function InfoSidebar() {
@@ -345,6 +413,9 @@ function StatusResult({ results, loading, error }: { results: StatusItem[]; load
     if (!item) return <div className="mt-6 rounded-[24px] border border-dashed border-slate-200 p-6 text-center text-sm font-bold text-slate-500">Data tidak ditemukan.</div>;
     const tracking = [...(item.tracking_pengajuan ?? [])].sort((a, b) => new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime());
     const latest = tracking.at(-1);
-    const progress = Math.max(latest?.progress ?? 1, 1);
-    return <div className="mt-6 rounded-[24px] bg-gov-50 p-5"><p className="font-black text-gov-950">Status: {item.status ?? latest?.status ?? "Menunggu Verifikasi"}</p><p className="mt-2 text-sm font-bold text-slate-650">Nomor: {item.nomor_pengajuan} • Petugas: {latest?.petugas ?? item.petugas ?? "-"}</p><div className="mt-4 h-3 overflow-hidden rounded-full bg-white"><div className="h-full bg-gradient-to-r from-accent-300 to-emerald-500" style={{ width: `${Math.min(progress * 20, 100)}%` }} /></div><div className="mt-5 grid gap-3">{timeline.map((step, i) => <div key={step} className="flex items-start gap-3"><span className={cn("grid size-8 shrink-0 place-items-center rounded-full", i < progress ? "bg-emerald-500 text-white" : "bg-white text-slate-400")}><Check size={16} /></span><span className="font-bold"><span className="block">{step}</span>{tracking[i] ? <span className="block text-xs text-slate-500">{tracking[i].created_at ? new Date(tracking[i].created_at).toLocaleString("id-ID") : "-"} • {tracking[i].catatan ?? "-"} • Petugas: {tracking[i].petugas ?? "-"}</span> : null}</span></div>)}</div><div className="mt-5 rounded-2xl bg-white p-4"><p className="font-black text-gov-950">Dokumen</p><div className="mt-2 grid gap-2 text-sm font-bold">{(item.dokumen_pengajuan ?? []).map((doc) => <a key={`${doc.jenis_dokumen}-${doc.file_url}`} className="text-gov-950 underline" href={doc.file_url} target="_blank" rel="noreferrer">{doc.jenis_dokumen ?? "Dokumen"}</a>)}</div></div></div>;
+    const currentStatus = item.status ?? latest?.status ?? "Menunggu Verifikasi";
+    const stepMap: Record<string, number> = { "Menunggu Verifikasi": 1, Verifikasi: 2, Diproses: 3, Ditandatangani: 4, Selesai: 5, Ditolak: 0 };
+    const progress = currentStatus === "Ditolak" ? 0 : (stepMap[currentStatus] ?? Math.max(latest?.progress ?? 1, 1));
+    const stepsToShow = currentStatus === "Ditolak" ? [...timeline, "Ditolak"] : timeline;
+    return <div className="mt-6 rounded-[24px] bg-gov-50 p-5"><p className="font-black text-gov-950">Status: {currentStatus}</p><p className="mt-2 text-sm font-bold text-slate-650">Nomor: {item.nomor_pengajuan} • Petugas: {latest?.petugas ?? item.petugas ?? "-"} • Realtime aktif</p><div className="mt-4 h-3 overflow-hidden rounded-full bg-white"><div className={cn("h-full", currentStatus === "Ditolak" ? "bg-red-500" : currentStatus === "Selesai" ? "bg-emerald-500" : "bg-blue-500")} style={{ width: `${currentStatus === "Ditolak" ? 100 : Math.min(progress * 20, 100)}%` }} /></div><div className="mt-5 grid gap-3">{stepsToShow.map((step, i) => { const active = step === "Ditolak" ? currentStatus === "Ditolak" : i < progress; return <div key={step} className="flex items-start gap-3"><span className={cn("grid size-8 shrink-0 place-items-center rounded-full", active ? currentStatus === "Ditolak" && step === "Ditolak" ? "bg-red-500 text-white" : currentStatus === "Selesai" ? "bg-emerald-500 text-white" : "bg-blue-500 text-white" : "bg-white text-slate-400")}><Check size={16} /></span><span className="font-bold"><span className="block">{step}</span>{tracking[i] ? <span className="block text-xs text-slate-500">{tracking[i].created_at ? new Date(tracking[i].created_at).toLocaleString("id-ID") : "-"} • {tracking[i].keterangan ?? tracking[i].catatan ?? "-"} • Petugas: {tracking[i].petugas ?? "-"}</span> : null}</span></div>; })}</div><div className="mt-5 rounded-2xl bg-white p-4"><p className="font-black text-gov-950">Dokumen</p><div className="mt-2 grid gap-2 text-sm font-bold">{(item.dokumen_pengajuan ?? []).map((doc) => { const url = doc.url_file ?? doc.file_url ?? "#"; return <a key={`${doc.jenis ?? doc.jenis_dokumen}-${url}`} className="text-gov-950 underline" href={url} target="_blank" rel="noreferrer">{doc.jenis ?? doc.jenis_dokumen ?? doc.nama_file ?? "Dokumen"}</a>; })}</div></div></div>;
 }

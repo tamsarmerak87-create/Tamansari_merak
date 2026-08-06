@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createSupabaseAdminClient, createSupabaseBrowserClient } from "@/services/supabase";
-import { forwardToN8n } from "@/services/integrations";
+import { forwardToN8n, getAppBaseUrl } from "@/services/integrations";
 
 export const STATUS_STEPS = ["Permohonan diterima", "Verifikasi", "Diproses", "Ditandatangani", "Selesai"] as const;
 export const SUBMISSION_STATUS = ["Menunggu Verifikasi", "Verifikasi", "Diproses", "Ditandatangani", "Selesai", "Ditolak"] as const;
@@ -50,6 +50,60 @@ export function createNomorPengajuan(sequence: number, date = new Date()) {
     return `TMS-${stamp}-${String(sequence).padStart(4, "0")}`;
 }
 
+export function createNomorTiket(sequence: number, date = new Date()) {
+    const stamp = date.toISOString().slice(0, 10).replace(/-/g, "");
+    return `TIK-${stamp}-${String(sequence).padStart(6, "0")}`;
+}
+
+export function createTrackingUrl(nomorPengajuan: string) {
+    return `${getAppBaseUrl()}/surat-online/tracking?nomor=${encodeURIComponent(nomorPengajuan)}`;
+}
+
+async function sendPengajuanEmail(payload: {
+    to: string;
+    nama: string;
+    nomor_pengajuan: string;
+    nomor_tiket: string;
+    tanggal: string;
+    jenis_pelayanan: string;
+    tracking_url: string;
+}) {
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey || !payload.to) return { skipped: true, reason: "RESEND_API_KEY/email belum tersedia" };
+
+    const response = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+            authorization: `Bearer ${apiKey}`,
+            "content-type": "application/json",
+        },
+        body: JSON.stringify({
+            from: process.env.RESEND_FROM_EMAIL ?? "Kelurahan Tamansari <noreply@tamansari-merak.vercel.app>",
+            to: payload.to,
+            subject: "Pengajuan Surat Berhasil",
+            html: `
+                <div style="font-family:Arial,sans-serif;line-height:1.7;color:#0f172a">
+                    <h2>Pengajuan Surat Berhasil</h2>
+                    <p>Yth. ${payload.nama}, permohonan surat online Anda berhasil diterima.</p>
+                    <ul>
+                        <li><b>Nomor Pengajuan:</b> ${payload.nomor_pengajuan}</li>
+                        <li><b>Nomor Tiket:</b> ${payload.nomor_tiket}</li>
+                        <li><b>Tanggal:</b> ${payload.tanggal}</li>
+                        <li><b>Jenis Pelayanan:</b> ${payload.jenis_pelayanan}</li>
+                    </ul>
+                    <p>Cek status melalui tautan berikut:</p>
+                    <p><a href="${payload.tracking_url}">${payload.tracking_url}</a></p>
+                    <p>Kelurahan Tamansari<br/>Kecamatan Pulomerak<br/>Kota Cilegon</p>
+                </div>
+            `,
+        }),
+    });
+
+    const data = await response.json().catch(() => null);
+    if (!response.ok) return { ok: false, status: response.status, data };
+    return { ok: true, status: response.status, data };
+}
+
 export async function getLayananList() {
     const client = createSupabaseBrowserClient();
     if (!client) return [];
@@ -82,7 +136,10 @@ export async function createSubmission(formData: FormData) {
 
     const today = new Date().toISOString().slice(0, 10);
     const { count } = await client.from("pengajuan_surat").select("id", { count: "exact", head: true }).gte("created_at", `${today}T00:00:00`).lte("created_at", `${today}T23:59:59`);
-    const nomor_pengajuan = createNomorPengajuan((count ?? 0) + 1);
+    const sequence = (count ?? 0) + 1;
+    const nomor_pengajuan = createNomorPengajuan(sequence);
+    const nomor_tiket = createNomorTiket(sequence);
+    const tracking_url = createTrackingUrl(nomor_pengajuan);
 
     const uploadedPaths: string[] = [];
     let pengajuanId: string | null = null;
@@ -197,19 +254,36 @@ export async function createSubmission(formData: FormData) {
         }
 
         try {
-            const n8nResult = await forwardToN8n("surat-online/created", { nomor_pengajuan, email: payload.email, nomor_hp: payload.nomor_hp, status: "Menunggu Verifikasi" });
+            const n8nResult = await forwardToN8n("surat-online/created", { nomor_pengajuan, nomor_tiket, tracking_url, email: payload.email, nomor_hp: payload.nomor_hp, status: "Menunggu Verifikasi" });
             if ("ok" in n8nResult && n8nResult.ok === false) {
                 console.error("N8N FORWARD ERROR");
                 console.dir(n8nResult, { depth: null });
-                throw n8nResult;
             }
         } catch (n8nError) {
             console.error("N8N FORWARD ERROR");
             console.dir(n8nError, { depth: null });
-            throw n8nError;
         }
 
-        return pengajuan;
+        try {
+            const emailResult = await sendPengajuanEmail({
+                to: payload.email,
+                nama: payload.nama_lengkap,
+                nomor_pengajuan,
+                nomor_tiket,
+                tanggal: pengajuan.created_at ?? new Date().toISOString(),
+                jenis_pelayanan: payload.jenis_surat,
+                tracking_url,
+            });
+            if ("ok" in emailResult && emailResult.ok === false) {
+                console.error("RESEND EMAIL ERROR");
+                console.dir(emailResult, { depth: null });
+            }
+        } catch (emailError) {
+            console.error("RESEND EMAIL ERROR");
+            console.dir(emailError, { depth: null });
+        }
+
+        return { ...pengajuan, nomor_tiket, tracking_url };
     } catch (error) {
         console.error("===== CREATE SUBMISSION FULL ERROR =====");
         console.dir(error, { depth: null });
@@ -261,16 +335,22 @@ export async function updateSubmissionStatus(id: string, status: string, catatan
     }
 
     try {
-        const n8nResult = await forwardToN8n("surat-online/status", { nomor_pengajuan: data.nomor_pengajuan, status, catatan, petugas });
+        const tracking_url = createTrackingUrl(data.nomor_pengajuan);
+        const n8nResult = await forwardToN8n("surat-online/status", {
+            nomor_pengajuan: data.nomor_pengajuan,
+            status,
+            catatan,
+            petugas,
+            tracking_url,
+            whatsapp_message: `Assalamu'alaikum.\n\nPermohonan Surat Anda\n\nNomor:\n${data.nomor_pengajuan}\n\nStatus:\n${status}\n\nSilakan cek:\n${tracking_url}\n\nKelurahan Tamansari`,
+        });
         if ("ok" in n8nResult && n8nResult.ok === false) {
             console.error("N8N STATUS FORWARD ERROR");
             console.dir(n8nResult, { depth: null });
-            throw n8nResult;
         }
     } catch (n8nError) {
         console.error("N8N STATUS FORWARD ERROR");
         console.dir(n8nError, { depth: null });
-        throw n8nError;
     }
     return data;
 }

@@ -151,31 +151,23 @@ export function AdminShell({
     ],
   ];
   const updateStatus = async (row: Row, next: string) => {
-    if (!client) return;
-    setToast({ type: "loading", text: "Menyimpan perubahan..." });
-    const note =
-      next === "Sedang Diproses"
-        ? "Pengajuan sedang diproses petugas."
-        : `Status pengajuan diubah menjadi ${next}.`;
-    const { error } = await client
-      .from("pengajuan_surat")
-      .update({ status: next, catatan_admin: note })
-      .eq("id", row.id);
-    if (!error)
-      await client
-        .from("tracking_pengajuan")
-        .insert({
-          id_pengajuan: row.id,
-          status: next,
-          progress: next === "Selesai" ? 5 : next === "Ditolak" ? 0 : 3,
-          catatan: note,
-        });
-    setToast(
-      error
-        ? { type: "error", text: error.message }
-        : { type: "success", text: "Status berhasil diperbarui" },
-    );
-    await load();
+    try {
+      setToast({ type: "loading", text: "Menyimpan perubahan..." });
+      const normalized = next === "Sedang Diproses" ? "Diproses" : next;
+      const note = normalized === "Diproses" ? "Pengajuan sedang diproses petugas." : `Status pengajuan diubah menjadi ${normalized}.`;
+      const res = await fetch("/api/surat-online/admin", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: row.id, status: normalized, catatan: note, petugas: "Admin Kelurahan" }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Gagal memperbarui status");
+      setToast({ type: "success", text: "Status berhasil diperbarui" });
+    } catch (error) {
+      setToast({ type: "error", text: error instanceof Error ? error.message : "Gagal memperbarui status" });
+    } finally {
+      await load();
+    }
   };
   const exportCsv = () => {
     const csv = [
@@ -187,7 +179,7 @@ export function AdminShell({
           r.nama_lengkap,
           r.nik,
           r.layanan?.nama_layanan ?? r.jenis_surat,
-          r.nomor_hp,
+          r.nomor_hp ?? r.no_hp,
           r.status,
         ].join(","),
       ),
@@ -451,7 +443,7 @@ function Table({
               <td>{r.nama_lengkap}</td>
               <td>{r.nik}</td>
               <td>{r.layanan?.nama_layanan ?? r.jenis_surat}</td>
-              <td>{r.nomor_hp}</td>
+              <td>{r.nomor_hp ?? r.no_hp}</td>
               <td>
                 <span className="rounded-full bg-accent-100 px-3 py-1 font-bold">
                   {r.status}
@@ -466,7 +458,7 @@ function Table({
                     Ubah
                   </option>
                   {statuses.map((s) => (
-                    <option key={s}>{s}</option>
+                    <option key={s} value={s === "Sedang Diproses" ? "Diproses" : s}>{s}</option>
                   ))}
                 </select>
               </td>
@@ -501,24 +493,21 @@ function Upload({
   setToast: (t: Toast) => void;
 }) {
   const up = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f || !client) return;
-    const path = `dokumen-pengajuan/${id}/${Date.now()}-${f.name}`;
-    const { error } = await client.storage
-      .from("public-assets")
-      .upload(path, f, { upsert: true });
-    if (!error) {
-      const url = client.storage.from("public-assets").getPublicUrl(path)
-        .data.publicUrl;
-      await client
+    try {
+      const f = e.target.files?.[0];
+      if (!f || !client) return;
+      const path = `pendukung/${id}-${Date.now()}-${f.name}`;
+      const { error } = await client.storage.from("surat").upload(path, f, { upsert: true });
+      if (error) throw error;
+      const url = client.storage.from("surat").getPublicUrl(path).data.publicUrl;
+      const { error: insertError } = await client
         .from("dokumen_pengajuan")
-        .insert({ id_pengajuan: id, jenis_dokumen: f.name, file_url: url });
+        .insert({ pengajuan_id: id, nama_file: f.name, jenis: "Hasil Surat", url_file: url });
+      if (insertError) throw insertError;
+      setToast({ type: "success", text: "Dokumen berhasil diupload" });
+    } catch (error) {
+      setToast({ type: "error", text: error instanceof Error ? error.message : "Dokumen gagal diupload" });
     }
-    setToast(
-      error
-        ? { type: "error", text: error.message }
-        : { type: "success", text: "Dokumen berhasil diupload" },
-    );
   };
   return (
     <label className="mt-6 block rounded-2xl border-2 border-dashed p-6 font-bold">
