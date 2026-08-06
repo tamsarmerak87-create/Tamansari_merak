@@ -7,13 +7,9 @@ import {
     ArrowLeft,
     ArrowRight,
     Building2,
-    CheckCircle2,
-    Clock3,
     FileText,
-    HeartHandshake,
     Megaphone,
     Search,
-    ShieldCheck,
     X,
 } from "lucide-react";
 import Image from "next/image";
@@ -26,13 +22,6 @@ import { cn } from "@/utils/cn";
 type Props = { services: PublicService[] };
 const AUTO_MS = 5000;
 const fadeUp = { hidden: { opacity: 0, y: 24 }, visible: { opacity: 1, y: 0 } };
-
-const featureItems = [
-    { icon: CheckCircle2, label: "Resmi & Terpercaya" },
-    { icon: Clock3, label: "Proses Cepat" },
-    { icon: HeartHandshake, label: "Melayani Sepenuh Hati" },
-    { icon: ShieldCheck, label: "Data Aman" },
-] as const;
 
 const categoryChips = [
     { key: "all", label: "⭐ Semua" },
@@ -191,7 +180,6 @@ export function LayananCatalog({ services }: Props) {
                             ))}
                         </div>
                     </div>
-                    <FeatureGrid />
 
                     <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} transition={{ duration: 0.4 }} className="mt-10">
                         <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -250,10 +238,6 @@ function Hero({ total }: { total: number }) {
             </div>
         </motion.div>
     );
-}
-
-function FeatureGrid() {
-    return <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{featureItems.map((item, index) => { const Icon = item.icon; return <motion.div key={item.label} initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} transition={{ duration: 0.4, delay: index * 0.04 }} className="flex min-h-20 items-center gap-4 rounded-[24px] border border-[#E8EDF5] bg-white p-5 shadow-[0_16px_45px_rgba(13,43,92,0.07)]"><span className="grid size-12 place-items-center rounded-full bg-[#FFF8DD] text-[#F4C542]"><Icon size={22} /></span><p className="font-extrabold text-[#0D2B5C]">{item.label}</p></motion.div>; })}</div>;
 }
 
 const ServiceCard = memo(function ServiceCard({ service, number, onDetail }: { service: PublicService; number: number; onDetail: () => void }) {
