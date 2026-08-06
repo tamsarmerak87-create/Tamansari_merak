@@ -142,7 +142,27 @@ export async function createSubmission(formData: FormData) {
     let pendukung: File | null = null;
 
     try {
-        payload = submissionSchema.parse(Object.fromEntries(formData.entries()));
+        payload = submissionSchema.parse({
+            layanan_id: formData.get("layanan_id"),
+            nik: formData.get("nik"),
+            nama_lengkap: formData.get("nama_lengkap"),
+            nomor_kk: formData.get("nomor_kk"),
+            tempat_lahir: formData.get("tempat_lahir"),
+            tanggal_lahir: formData.get("tanggal_lahir"),
+            jenis_kelamin: formData.get("jenis_kelamin"),
+            agama: formData.get("agama"),
+            status_perkawinan: formData.get("status_perkawinan"),
+            pekerjaan: formData.get("pekerjaan"),
+            alamat: formData.get("alamat"),
+            rt_rw: formData.get("rt_rw"),
+            kelurahan: formData.get("kelurahan"),
+            kecamatan: formData.get("kecamatan"),
+            nomor_hp: formData.get("nomor_hp"),
+            email: formData.get("email"),
+            jenis_surat: formData.get("jenis_surat"),
+            keperluan: formData.get("keperluan"),
+            catatan: formData.get("catatan") ?? "",
+        });
         ktp = formData.get("ktp") as File | null;
         kk = formData.get("kk") as File | null;
         pendukung = formData.get("pendukung") as File | null;
@@ -155,28 +175,6 @@ export async function createSubmission(formData: FormData) {
     } finally {
         // Tidak ada resource yang perlu dibersihkan pada tahap validasi.
     }
-
-    const { data: layanan, error: layananError } = await client
-        .from("layanan")
-        .select("*")
-        .eq("id", payload.layanan_id)
-        .maybeSingle();
-    if (layananError) {
-        console.error("SUPABASE SELECT LAYANAN ERROR");
-        console.dir(layananError, { depth: null });
-        throw layananError;
-    }
-    if (!layanan) throw new Error("Jenis layanan tidak ditemukan atau tidak aktif.");
-
-    const layananRecord = layanan as Record<string, unknown>;
-    const jenisSuratFromDatabase = String(layananRecord.nama ?? layananRecord.nama_layanan ?? layananRecord.title ?? payload.jenis_surat);
-
-    const today = new Date().toISOString().slice(0, 10);
-    const { count } = await client.from("pengajuan_surat").select("id", { count: "exact", head: true }).gte("created_at", `${today}T00:00:00`).lte("created_at", `${today}T23:59:59`);
-    const sequence = (count ?? 0) + 1;
-    const nomor_pengajuan = createNomorPengajuan(sequence);
-    const nomor_tiket = createNomorTiket(sequence);
-    const tracking_url = createTrackingUrl(nomor_pengajuan);
 
     const uploadedPaths: string[] = [];
     let pengajuanId: string | null = null;
@@ -197,7 +195,7 @@ export async function createSubmission(formData: FormData) {
     const uploadOne = async (folder: "ktp" | "kk" | "pendukung", file: File | null) => {
         if (!file) return null;
         const ext = file.name.split(".").pop() ?? "bin";
-        const path = `${folder}/${nomor_pengajuan}-${Date.now()}.${ext}`;
+        const path = `${folder}/${nomor_pengajuan}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
         const { error } = await client.storage.from("surat").upload(path, file, { upsert: false, contentType: file.type });
         if (error) {
             console.error("SUPABASE STORAGE UPLOAD ERROR");
@@ -208,7 +206,38 @@ export async function createSubmission(formData: FormData) {
         return client.storage.from("surat").getPublicUrl(path).data.publicUrl;
     };
 
+    let nomor_pengajuan = "";
+    let nomor_tiket = "";
+    let tracking_url = "";
+
     try {
+        const { data: layanan, error: layananError } = await client
+            .from("layanan")
+            .select("*")
+            .eq("id", payload.layanan_id)
+            .maybeSingle();
+        if (layananError) {
+            console.error("SUPABASE SELECT LAYANAN ERROR");
+            console.dir(layananError, { depth: null });
+            throw layananError;
+        }
+        if (!layanan) throw new Error("Jenis layanan tidak ditemukan atau tidak aktif.");
+
+        const layananRecord = layanan as Record<string, unknown>;
+        const jenisSuratFromDatabase = String(layananRecord.nama ?? layananRecord.nama_layanan ?? layananRecord.title ?? payload.jenis_surat);
+
+        const today = new Date().toISOString().slice(0, 10);
+        const { count, error: countError } = await client.from("pengajuan_surat").select("id", { count: "exact", head: true }).gte("created_at", `${today}T00:00:00`).lte("created_at", `${today}T23:59:59`);
+        if (countError) {
+            console.error("SUPABASE COUNT PENGAJUAN_SURAT ERROR");
+            console.dir(countError, { depth: null });
+            throw countError;
+        }
+        const sequence = (count ?? 0) + 1;
+        nomor_pengajuan = createNomorPengajuan(sequence);
+        nomor_tiket = createNomorTiket(sequence);
+        tracking_url = createTrackingUrl(nomor_pengajuan);
+
         const ktp_url = await uploadOne("ktp", ktp);
         const kk_url = await uploadOne("kk", kk);
         const pendukung_url = await uploadOne("pendukung", pendukung);
@@ -329,6 +358,8 @@ export async function createSubmission(formData: FormData) {
         console.dir(error, { depth: null });
         await cleanup();
         throw error;
+    } finally {
+        // State loading/hasil ditangani oleh client pemanggil; cleanup error ditangani di catch.
     }
 }
 

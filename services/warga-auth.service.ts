@@ -14,7 +14,7 @@ export type WargaProfile = {
     nomor_whatsapp: string;
     tempat_lahir: string;
     tanggal_lahir: string;
-    jenis_kelamin: string;
+    jenis_kelamin?: string | null;
     alamat: string;
     rt: string;
     rw: string;
@@ -57,6 +57,58 @@ export const wargaLoginSchema = z.object({
 export type WargaRegisterInput = z.infer<typeof wargaRegisterSchema>;
 export type WargaLoginInput = z.infer<typeof wargaLoginSchema>;
 
+export const wargaProfileInsertColumns = [
+    "user_id",
+    "nama_lengkap",
+    "nik",
+    "nomor_kk",
+    "email",
+    "nomor_whatsapp",
+    "tempat_lahir",
+    "tanggal_lahir",
+    "alamat",
+    "rt",
+    "rw",
+    "kelurahan",
+    "kecamatan",
+    "role",
+    "status_verifikasi",
+    "otp_code",
+    "otp_expires_at",
+] as const;
+
+export type WargaProfileInsertColumn = (typeof wargaProfileInsertColumns)[number];
+export type WargaProfileInsertPayload = Pick<WargaProfile, WargaProfileInsertColumn>;
+
+export const wargaProfileInsertSchema = z.object({
+    user_id: z.string().uuid("User ID auth tidak valid"),
+    nama_lengkap: z.string().min(3),
+    nik: z.string().regex(/^\d{16}$/),
+    nomor_kk: z.string().regex(/^\d{16}$/),
+    email: z.string().email(),
+    nomor_whatsapp: z.string().min(8),
+    tempat_lahir: z.string().min(2),
+    tanggal_lahir: z.string().min(1),
+    alamat: z.string().min(8),
+    rt: z.string().min(1),
+    rw: z.string().min(1),
+    kelurahan: z.string().min(2),
+    kecamatan: z.string().min(2),
+    role: z.literal("warga"),
+    status_verifikasi: z.enum(["Belum Terverifikasi", "Akun Terverifikasi"]),
+    otp_code: z.string().regex(/^\d{6}$/),
+    otp_expires_at: z.string().datetime(),
+}).strict();
+
+export function assertWargaProfilePayloadIsSchemaSafe(payload: Record<string, unknown>) {
+    const allowed = new Set<string>(wargaProfileInsertColumns);
+    const invalidColumns = Object.keys(payload).filter((key) => !allowed.has(key));
+    if (invalidColumns.length > 0) {
+        throw new Error(`Payload warga_profiles tidak sinkron dengan schema database. Kolom tidak tersedia: ${invalidColumns.join(", ")}.`);
+    }
+    return wargaProfileInsertSchema.parse(payload);
+}
+
 function client() {
     const supabase = createSupabaseBrowserClient();
     console.log("Supabase env check", {
@@ -67,7 +119,7 @@ function client() {
     return supabase;
 }
 
-function createOtp() {
+export function createOtp() {
     return String(Math.floor(100000 + Math.random() * 900000));
 }
 
@@ -87,7 +139,6 @@ export async function getCurrentWarga() {
 }
 
 export async function registerWarga(input: WargaRegisterInput) {
-    let createdUserId = "";
     try {
         console.log("[registerWarga] Step 1 - Validasi input dimulai");
         const payload = wargaRegisterSchema.parse(input);
@@ -98,74 +149,23 @@ export async function registerWarga(input: WargaRegisterInput) {
             nama_lengkap: payload.nama_lengkap,
         });
 
-        const otp = createOtp();
-        const signupEndpoint = `${process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""}/auth/v1/signup`;
-        console.log("[registerWarga] Step 2 - Memanggil supabase.auth.signUp()", {
-            endpoint: signupEndpoint,
+        console.log("[registerWarga] Step 2 - Memanggil API registrasi atomik", { email: payload.email, nik: payload.nik });
+        const response = await fetch("/api/warga/register", {
             method: "POST",
-            email: payload.email,
-            redirectTo: typeof window !== "undefined" ? `${window.location.origin}/verify` : undefined,
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(payload),
         });
-        const signUpResponse = await supabase.auth.signUp({
-            email: payload.email,
-            password: payload.password,
-            options: {
-                data: { nama_lengkap: payload.nama_lengkap, nik: payload.nik, role: "warga" },
-                emailRedirectTo: typeof window !== "undefined" ? `${window.location.origin}/verify` : undefined,
-            },
-        });
-        console.log("[registerWarga] Step 2 - signUp response", signUpResponse);
-        console.log("[registerWarga] Step 2 - signUp data", signUpResponse.data);
-        if (signUpResponse.error) {
-            console.error("[registerWarga] Step 2 - signUp gagal", signUpResponse.error);
-            throw new Error(signUpResponse.error.message || "Auth error saat membuat akun.");
+        const result = await response.json().catch(() => null) as { user?: User; profile?: WargaProfile; otpSent?: boolean; error?: string } | null;
+        if (!response.ok || !result?.user || !result.profile) {
+            throw new Error(result?.error || "Registrasi gagal. Akun Auth tidak dibuat atau sudah dibersihkan karena profil gagal dibuat.");
         }
-        const user = signUpResponse.data.user;
-        if (!user) throw new Error("Auth error: Supabase tidak mengembalikan user setelah pendaftaran.");
-        if (Array.isArray(user.identities) && user.identities.length === 0) throw new Error("Email sudah digunakan.");
-        createdUserId = user.id;
-        console.log("[registerWarga] Step 3 - user.id berhasil diambil", { user_id: createdUserId });
 
-        const profilePayload: Omit<WargaProfile, "id" | "created_at" | "updated_at"> = {
-            user_id: user.id,
-            nama_lengkap: payload.nama_lengkap,
-            nik: payload.nik,
-            nomor_kk: payload.nomor_kk,
-            email: payload.email,
-            nomor_whatsapp: payload.nomor_whatsapp,
-            tempat_lahir: payload.tempat_lahir,
-            tanggal_lahir: payload.tanggal_lahir,
-            jenis_kelamin: payload.jenis_kelamin,
-            alamat: payload.alamat,
-            rt: payload.rt,
-            rw: payload.rw,
-            kelurahan: payload.kelurahan,
-            kecamatan: payload.kecamatan,
-            role: "warga",
-            status_verifikasi: "Belum Terverifikasi",
-            otp_code: otp,
-            otp_expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-            foto_url: null,
-        };
-        console.log("[registerWarga] Step 4 - Insert public.warga_profiles dimulai", {
-            table: "public.warga_profiles",
-            payload_columns: Object.keys(profilePayload),
-            user_id: profilePayload.user_id,
-            email: profilePayload.email,
-            nik: profilePayload.nik,
-        });
-        const profileResponse = await supabase.from("warga_profiles").insert(profilePayload).select("*").single();
-        console.log("[registerWarga] Step 4 - profile insert response", profileResponse);
-        console.log("[registerWarga] Step 4 - profile insert data", profileResponse.data);
-        if (profileResponse.error) {
-            console.error("[registerWarga] Step 4 - Insert public.warga_profiles gagal", profileResponse.error);
-            await supabase.auth.signOut().catch((rollbackError: unknown) => console.error("Rollback signOut failed", rollbackError));
-            throw new Error(`${profileResponse.error.message || "Database error saat menyimpan profil warga."} Akun auth sudah dibuat dengan user_id ${createdUserId}, tetapi profil gagal dibuat. Hubungi admin untuk rollback/delete auth user.`);
+        console.log("[registerWarga] Step 3 - API registrasi sukses, membuat session browser", { user_id: result.user.id });
+        const signInResponse = await supabase.auth.signInWithPassword({ email: payload.email, password: payload.password });
+        if (signInResponse.error) {
+            throw new Error(`Akun dan profil berhasil dibuat, tetapi login otomatis gagal: ${signInResponse.error.message}. Silakan login manual.`);
         }
-        console.log("[registerWarga] Step 5 - Profil berhasil dibuat, mengirim OTP notification", { user_id: createdUserId });
-        await sendOtpNotification(profilePayload);
-        console.log("[registerWarga] Step 5 - Registrasi selesai, siap redirect ke /verify", { user_id: createdUserId });
-        return { user, profile: profileResponse.data as WargaProfile, otpSent: true };
+        return { user: signInResponse.data.user ?? result.user, profile: result.profile, otpSent: Boolean(result.otpSent) };
     } catch (error) {
         console.error("[registerWarga] Registrasi gagal", error);
         throw error;
