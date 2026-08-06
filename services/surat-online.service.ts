@@ -141,6 +141,7 @@ export async function createSubmission(formData: FormData) {
 
         const { data: pengajuan, error } = await client.from("pengajuan_surat").insert(pengajuanPayload).select("*").single();
         if (error) {
+            console.error("INSERT ERROR:", error);
             console.error(error);
             throw error;
         }
