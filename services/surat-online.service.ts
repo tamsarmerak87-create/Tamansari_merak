@@ -118,22 +118,58 @@ export async function getLayananList() {
 
 export async function createSubmission(formData: FormData) {
     if (typeof window !== "undefined") {
-        const response = await fetch("/api/surat-online/pengajuan", { method: "POST", body: formData });
-        const result = await response.json().catch(() => null);
-        const message = typeof result?.error === "string" ? result.error : result?.error?.message;
-        if (!response.ok || !result?.ok) throw new Error(message ?? "Gagal mengirim pengajuan.");
-        return result.data;
+        try {
+            const response = await fetch("/api/surat-online/pengajuan", { method: "POST", body: formData });
+            const result = await response.json().catch(() => null);
+            const message = typeof result?.error === "string" ? result.error : result?.error?.message;
+            if (!response.ok || !result?.ok) throw new Error(message ?? "Gagal mengirim pengajuan.");
+            return result.data;
+        } catch (error) {
+            console.error("SURAT ONLINE CLIENT SUBMIT ERROR");
+            console.dir(error, { depth: null });
+            throw error;
+        } finally {
+            // Semua cleanup UI ditangani komponen pemanggil.
+        }
     }
 
     const client = createSupabaseAdminClient();
     if (!client) throw new Error("Supabase service role belum dikonfigurasi.");
 
-    const payload = submissionSchema.parse(Object.fromEntries(formData.entries()));
-    const ktp = formData.get("ktp") as File | null;
-    const kk = formData.get("kk") as File | null;
-    const pendukung = formData.get("pendukung") as File | null;
-    if (!ktp || !kk) throw new Error("Upload KTP dan KK wajib diisi.");
-    [ktp, kk, pendukung].filter(Boolean).forEach((file) => validateUploadFile(file as File));
+    let payload: SubmissionInput;
+    let ktp: File | null = null;
+    let kk: File | null = null;
+    let pendukung: File | null = null;
+
+    try {
+        payload = submissionSchema.parse(Object.fromEntries(formData.entries()));
+        ktp = formData.get("ktp") as File | null;
+        kk = formData.get("kk") as File | null;
+        pendukung = formData.get("pendukung") as File | null;
+        if (!ktp || !kk) throw new Error("Upload KTP dan KK wajib diisi.");
+        [ktp, kk, pendukung].filter(Boolean).forEach((file) => validateUploadFile(file as File));
+    } catch (error) {
+        console.error("SURAT ONLINE VALIDATION ERROR");
+        console.dir(error, { depth: null });
+        throw error;
+    } finally {
+        // Tidak ada resource yang perlu dibersihkan pada tahap validasi.
+    }
+
+    const { data: layanan, error: layananError } = await client
+        .from("layanan")
+        .select("*")
+        .eq("id", payload.layanan_id)
+        .maybeSingle();
+    if (layananError) {
+        console.error("SUPABASE SELECT LAYANAN ERROR");
+        console.dir(layananError, { depth: null });
+        throw layananError;
+    }
+    if (!layanan) throw new Error("Jenis layanan tidak ditemukan atau tidak aktif.");
+
+    const layananRecord = layanan as Record<string, unknown>;
+    const jenisSuratFromDatabase = String(layananRecord.nama ?? layananRecord.nama_layanan ?? layananRecord.title ?? payload.jenis_surat);
 
     const today = new Date().toISOString().slice(0, 10);
     const { count } = await client.from("pengajuan_surat").select("id", { count: "exact", head: true }).gte("created_at", `${today}T00:00:00`).lte("created_at", `${today}T23:59:59`);
@@ -196,7 +232,7 @@ export async function createSubmission(formData: FormData) {
             kecamatan: payload.kecamatan,
             no_hp: payload.nomor_hp,
             email: payload.email,
-            jenis_surat: payload.jenis_surat,
+            jenis_surat: jenisSuratFromDatabase,
             keperluan: payload.keperluan,
             catatan: payload.catatan,
             nomor_pengajuan,
@@ -275,7 +311,7 @@ export async function createSubmission(formData: FormData) {
                 nomor_pengajuan,
                 nomor_tiket,
                 tanggal: pengajuan.created_at ?? new Date().toISOString(),
-                jenis_pelayanan: payload.jenis_surat,
+                jenis_pelayanan: jenisSuratFromDatabase,
                 tracking_url,
             });
             if ("ok" in emailResult && emailResult.ok === false) {
@@ -287,7 +323,7 @@ export async function createSubmission(formData: FormData) {
             console.dir(emailError, { depth: null });
         }
 
-        return { ...pengajuan, jenis_surat: payload.jenis_surat, nomor_tiket, tracking_url };
+        return { ...pengajuan, jenis_surat: jenisSuratFromDatabase, nomor_tiket, tracking_url };
     } catch (error) {
         console.error("===== CREATE SUBMISSION FULL ERROR =====");
         console.dir(error, { depth: null });
@@ -298,16 +334,25 @@ export async function createSubmission(formData: FormData) {
 
 export async function searchSubmission(query: string) {
     if (typeof window !== "undefined") {
-        const response = await fetch(`/api/surat-online/tracking?q=${encodeURIComponent(query)}`);
-        const result = await response.json().catch(() => null);
-        const message = typeof result?.error === "string" ? result.error : result?.error?.message;
-        if (!response.ok || !result?.ok) throw new Error(message ?? "Gagal mengambil status pengajuan.");
-        return result.data ?? [];
+        try {
+            const response = await fetch(`/api/surat-online/tracking?q=${encodeURIComponent(query)}`);
+            const result = await response.json().catch(() => null);
+            const message = typeof result?.error === "string" ? result.error : result?.error?.message;
+            if (!response.ok || !result?.ok) throw new Error(message ?? "Gagal mengambil status pengajuan.");
+            return result.data ?? [];
+        } catch (error) {
+            console.error("SURAT ONLINE CLIENT SEARCH ERROR");
+            console.dir(error, { depth: null });
+            throw error;
+        } finally {
+            // State loading ditangani komponen pemanggil.
+        }
     }
 
     const client = createSupabaseAdminClient();
     if (!client) throw new Error("Supabase service role belum dikonfigurasi.");
     const q = query.trim();
+    if (!q) return [];
     const { data, error } = await client.from("pengajuan_surat").select("*, layanan(*), tracking_pengajuan(*), dokumen_pengajuan(*)").or(`nomor_pengajuan.eq.${q},nik.eq.${q}`).order("created_at", { referencedTable: "tracking_pengajuan", ascending: true });
     if (error) {
         console.error("SUPABASE SEARCH SUBMISSION ERROR");

@@ -91,7 +91,7 @@ type SubmissionResult = Record<string, unknown> & {
     keperluan?: string;
     status?: string;
     petugas?: string | null;
-    layanan?: { nama_layanan?: string; title?: string; output?: string } | null;
+    layanan?: { nama?: string; nama_layanan?: string; title?: string; output?: string; estimasi?: string } | null;
 };
 type TrackingItem = { status?: string; progress?: number; petugas?: string | null; created_at?: string; catatan?: string | null; keterangan?: string | null };
 type DocumentItem = { jenis_dokumen?: string; file_url?: string; jenis?: string; url_file?: string; nama_file?: string; created_at?: string };
@@ -252,6 +252,11 @@ export default function SuratOnlineClient({ services }: { services: PublicServic
             setStatusLoading(true);
             setStatusError("");
             const query = statusQuery.trim();
+            if (!query) {
+                setStatusResults([]);
+                setStatusError("Masukkan Nomor Pengajuan atau NIK terlebih dahulu.");
+                return;
+            }
             const data = await searchSubmission(query) as StatusItem[];
             setStatusResults(data);
             setLastStatusQuery(query);
@@ -384,8 +389,8 @@ function Review({ form, service, error, update }: { form: FormState; service: st
 
 function Success({ ticket, service, estimate, data }: { ticket: string; service: string; estimate: string; data: SubmissionResult | null }) {
     const date = data?.created_at ? new Date(data.created_at) : new Date();
-    const serviceName = data?.layanan?.nama_layanan ?? data?.layanan?.title ?? data?.jenis_surat ?? service;
-    const serviceEstimate = data?.layanan?.output?.replace(/^Estimasi\s+/i, "") ?? estimate;
+    const serviceName = data?.layanan?.nama ?? data?.layanan?.nama_layanan ?? data?.layanan?.title ?? data?.jenis_surat ?? service;
+    const serviceEstimate = data?.layanan?.estimasi ?? data?.layanan?.output?.replace(/^Estimasi\s+/i, "") ?? estimate;
     const nomorTiket = data?.nomor_tiket ?? ticket.replace(/^TMS-/, "TIK-").replace(/-(\d{4})$/, "-00$1");
     const trackingUrl = data?.tracking_url ?? `${window.location.origin}/surat-online/tracking?nomor=${encodeURIComponent(ticket)}`;
     const [qrDataUrl, setQrDataUrl] = useState("");

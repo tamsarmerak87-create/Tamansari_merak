@@ -89,28 +89,23 @@ export async function getCurrentWarga() {
 export async function registerWarga(input: WargaRegisterInput) {
     let createdUserId = "";
     try {
+        console.log("[registerWarga] Step 1 - Validasi input dimulai");
         const payload = wargaRegisterSchema.parse(input);
         const supabase = client();
-
-        const nikResponse = await supabase.from("warga_profiles").select("id").eq("nik", payload.nik).maybeSingle();
-        console.log("NIK check response", nikResponse);
-        console.log("NIK check data", nikResponse.data);
-        if (nikResponse.error) {
-            console.error(nikResponse.error);
-            throw new Error(nikResponse.error.message || "Database error saat memeriksa NIK.");
-        }
-        if (nikResponse.data) throw new Error("NIK sudah terdaftar.");
-
-        const phoneResponse = await supabase.from("warga_profiles").select("id").eq("nomor_whatsapp", payload.nomor_whatsapp).maybeSingle();
-        console.log("Phone check response", phoneResponse);
-        console.log("Phone check data", phoneResponse.data);
-        if (phoneResponse.error) {
-            console.error(phoneResponse.error);
-            throw new Error(phoneResponse.error.message || "Database error saat memeriksa Nomor HP.");
-        }
-        if (phoneResponse.data) throw new Error("Nomor HP sudah terdaftar.");
+        console.log("[registerWarga] Step 1 - Validasi input berhasil", {
+            email: payload.email,
+            nik: payload.nik,
+            nama_lengkap: payload.nama_lengkap,
+        });
 
         const otp = createOtp();
+        const signupEndpoint = `${process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""}/auth/v1/signup`;
+        console.log("[registerWarga] Step 2 - Memanggil supabase.auth.signUp()", {
+            endpoint: signupEndpoint,
+            method: "POST",
+            email: payload.email,
+            redirectTo: typeof window !== "undefined" ? `${window.location.origin}/verify` : undefined,
+        });
         const signUpResponse = await supabase.auth.signUp({
             email: payload.email,
             password: payload.password,
@@ -119,16 +114,17 @@ export async function registerWarga(input: WargaRegisterInput) {
                 emailRedirectTo: typeof window !== "undefined" ? `${window.location.origin}/verify` : undefined,
             },
         });
-        console.log("signUp response", signUpResponse);
-        console.log("signUp data", signUpResponse.data);
+        console.log("[registerWarga] Step 2 - signUp response", signUpResponse);
+        console.log("[registerWarga] Step 2 - signUp data", signUpResponse.data);
         if (signUpResponse.error) {
-            console.error(signUpResponse.error);
+            console.error("[registerWarga] Step 2 - signUp gagal", signUpResponse.error);
             throw new Error(signUpResponse.error.message || "Auth error saat membuat akun.");
         }
         const user = signUpResponse.data.user;
         if (!user) throw new Error("Auth error: Supabase tidak mengembalikan user setelah pendaftaran.");
         if (Array.isArray(user.identities) && user.identities.length === 0) throw new Error("Email sudah digunakan.");
         createdUserId = user.id;
+        console.log("[registerWarga] Step 3 - user.id berhasil diambil", { user_id: createdUserId });
 
         const profilePayload: Omit<WargaProfile, "id" | "created_at" | "updated_at"> = {
             user_id: user.id,
@@ -151,18 +147,27 @@ export async function registerWarga(input: WargaRegisterInput) {
             otp_expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
             foto_url: null,
         };
+        console.log("[registerWarga] Step 4 - Insert public.warga_profiles dimulai", {
+            table: "public.warga_profiles",
+            payload_columns: Object.keys(profilePayload),
+            user_id: profilePayload.user_id,
+            email: profilePayload.email,
+            nik: profilePayload.nik,
+        });
         const profileResponse = await supabase.from("warga_profiles").insert(profilePayload).select("*").single();
-        console.log("profile insert response", profileResponse);
-        console.log("profile insert data", profileResponse.data);
+        console.log("[registerWarga] Step 4 - profile insert response", profileResponse);
+        console.log("[registerWarga] Step 4 - profile insert data", profileResponse.data);
         if (profileResponse.error) {
-            console.error(profileResponse.error);
+            console.error("[registerWarga] Step 4 - Insert public.warga_profiles gagal", profileResponse.error);
             await supabase.auth.signOut().catch((rollbackError: unknown) => console.error("Rollback signOut failed", rollbackError));
             throw new Error(`${profileResponse.error.message || "Database error saat menyimpan profil warga."} Akun auth sudah dibuat dengan user_id ${createdUserId}, tetapi profil gagal dibuat. Hubungi admin untuk rollback/delete auth user.`);
         }
+        console.log("[registerWarga] Step 5 - Profil berhasil dibuat, mengirim OTP notification", { user_id: createdUserId });
         await sendOtpNotification(profilePayload);
+        console.log("[registerWarga] Step 5 - Registrasi selesai, siap redirect ke /verify", { user_id: createdUserId });
         return { user, profile: profileResponse.data as WargaProfile, otpSent: true };
     } catch (error) {
-        console.error(error);
+        console.error("[registerWarga] Registrasi gagal", error);
         throw error;
     }
 }
