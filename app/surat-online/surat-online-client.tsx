@@ -201,7 +201,7 @@ export default function SuratOnlineClient({ services }: { services: PublicServic
     async function submit(e: FormEvent) {
         e.preventDefault();
         try {
-            if (user && profile?.status_verifikasi !== "Akun Terverifikasi") {
+            if (user && profile?.status_verifikasi !== "Akun Terverifikasi" && profile?.status_verifikasi !== "Terverifikasi") {
                 alert("Akun Anda belum diverifikasi. Silakan verifikasi akun sebelum mengajukan layanan.");
                 window.location.href = "/verify";
                 return;

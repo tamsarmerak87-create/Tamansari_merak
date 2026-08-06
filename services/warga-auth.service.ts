@@ -22,7 +22,7 @@ export type WargaProfile = {
     kecamatan: string;
     foto_url?: string | null;
     role: WargaRole;
-    status_verifikasi: "Belum Terverifikasi" | "Akun Terverifikasi";
+    status_verifikasi: "Belum Terverifikasi" | "Akun Terverifikasi" | "Terverifikasi";
     created_at?: string;
     updated_at?: string;
 };
@@ -97,7 +97,7 @@ export const wargaProfileInsertSchema = z.object({
     jenis_kelamin: z.string().min(1),
     foto_url: z.string().nullable().optional(),
     role: z.literal("warga"),
-    status_verifikasi: z.enum(["Belum Terverifikasi", "Akun Terverifikasi"]),
+    status_verifikasi: z.enum(["Belum Terverifikasi", "Akun Terverifikasi", "Terverifikasi"]),
 }).strict();
 
 export function assertWargaProfilePayloadIsSchemaSafe(payload: Record<string, unknown>) {
@@ -125,7 +125,7 @@ function client() {
 }
 
 export function isVerified(profile?: WargaProfile | null) {
-    return profile?.status_verifikasi === "Akun Terverifikasi";
+    return profile?.status_verifikasi === "Akun Terverifikasi" || profile?.status_verifikasi === "Terverifikasi";
 }
 
 export async function getCurrentWarga() {
@@ -156,7 +156,7 @@ export async function registerWarga(input: WargaRegisterInput) {
             headers: { "content-type": "application/json" },
             body: JSON.stringify(payload),
         });
-        const result = await response.json().catch(() => null) as { user?: User; profile?: WargaProfile; otpSent?: boolean; error?: string } | null;
+        const result = await response.json().catch(() => null) as { user?: User; profile?: WargaProfile; error?: string } | null;
         if (!response.ok || !result?.user || !result.profile) {
             throw new Error(result?.error || "Registrasi gagal. Akun Auth tidak dibuat atau sudah dibersihkan karena profil gagal dibuat.");
         }
@@ -166,7 +166,7 @@ export async function registerWarga(input: WargaRegisterInput) {
         if (signInResponse.error) {
             throw new Error(`Akun dan profil berhasil dibuat, tetapi login otomatis gagal: ${signInResponse.error.message}. Silakan login manual.`);
         }
-        return { user: signInResponse.data.user ?? result.user, profile: result.profile, otpSent: Boolean(result.otpSent) };
+        return { user: signInResponse.data.user ?? result.user, profile: result.profile };
     } catch (error) {
         console.error("[registerWarga] Registrasi gagal", error);
         throw error;
@@ -196,34 +196,9 @@ export async function signInWithGoogle() {
     return data;
 }
 
-export async function requestPhoneOtp(phone: string) {
-    const { data, error } = await client().auth.signInWithOtp({ phone });
-    if (error) throw error;
-    return data;
-}
-
 export async function logoutWarga() {
     const { error } = await client().auth.signOut();
     if (error) throw error;
-}
-
-export async function resendWargaOtp() {
-    const { user, profile } = await getCurrentWarga();
-    if (!user || !profile) throw new Error("Silakan login terlebih dahulu.");
-    const { error } = await client().auth.resend({ type: "signup", email: profile.email });
-    if (error) throw error;
-}
-
-export async function verifyWargaOtp(code: string) {
-    const { user, profile } = await getCurrentWarga();
-    if (!user || !profile) throw new Error("Silakan login terlebih dahulu.");
-    if (!/^\d{6}$/.test(code)) throw new Error("OTP harus 6 digit.");
-    if (profile.status_verifikasi === "Akun Terverifikasi") return profile;
-    const verify = await client().auth.verifyOtp({ email: profile.email, token: code, type: "signup" });
-    if (verify.error) throw verify.error;
-    const { data, error } = await client().from("warga_profiles").update({ status_verifikasi: "Akun Terverifikasi" }).eq("id", user.id).select("*").single();
-    if (error) throw error;
-    return data as WargaProfile;
 }
 
 export async function updateWargaProfile(profile: Partial<WargaProfile>) {
@@ -240,18 +215,6 @@ export async function getWargaSubmissions(profile?: WargaProfile | null) {
     const { data, error } = await client().from("pengajuan_surat").select("*, layanan(*), tracking_pengajuan(*), dokumen_pengajuan(*)").eq("nik", profile.nik).order("created_at", { ascending: false });
     if (error) throw error;
     return data ?? [];
-}
-
-export async function sendOtpNotification(profile: Pick<WargaProfile, "email" | "nomor_whatsapp" | "nama_lengkap">) {
-    try {
-        await fetch("/api/webhooks/n8n", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ event: "warga/otp", data: { ...profile, message: "Kode OTP/verifikasi akun dikirim melalui Supabase Auth." } }),
-        });
-    } catch (error) {
-        console.error("OTP notification skipped", error);
-    }
 }
 
 export type AuthContextValue = {

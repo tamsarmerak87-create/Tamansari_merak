@@ -74,7 +74,7 @@ export async function POST(request: Request) {
             throw new Error(`Profil warga gagal dibuat: ${profileResponse.error.message}.${cleanupNote}`);
         }
 
-        return NextResponse.json({ user, profile: profileResponse.data, otpSent: false });
+        return NextResponse.json({ user, profile: profileResponse.data });
     } catch (error) {
         if (createdUserId) {
             try {
