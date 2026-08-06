@@ -10,17 +10,13 @@ export async function POST(request: Request) {
     console.error("===== FULL ERROR =====");
     console.dir(error, { depth: null });
 
-    return Response.json(
+    return NextResponse.json(
       {
-        success: false,
+        ok: false,
         error:
           error instanceof Error
-            ? {
-              name: error.name,
-              message: error.message,
-              stack: error.stack,
-            }
-            : error,
+            ? error.message
+            : "Gagal mengirim pengajuan.",
       },
       { status: 500 },
     );

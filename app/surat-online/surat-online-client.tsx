@@ -3,6 +3,7 @@
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { motion } from "framer-motion";
 import { jsPDF } from "jspdf";
 import {
@@ -170,9 +171,10 @@ export default function SuratOnlineClient({ services }: { services: PublicServic
             keperluan: form.purpose,
             catatan: form.note,
         };
-        const parsed = submissionSchema.safeParse(payload);
-        if (!parsed.success) {
-            parsed.error.issues.forEach((issue) => {
+        try {
+            submissionSchema.parse(payload);
+        } catch (error) {
+            if (error instanceof Error && "issues" in error) (error as { issues: { path: (string | number)[]; message: string }[] }).issues.forEach((issue) => {
                 const key = String(issue.path[0] ?? "");
                 const map: Record<string, string> = { layanan_id: "serviceId", nama_lengkap: "name", nomor_kk: "kk", tempat_lahir: "birthplace", tanggal_lahir: "birthdate", jenis_kelamin: "gender", agama: "religion", status_perkawinan: "maritalStatus", pekerjaan: "job", alamat: "address", rt_rw: "rt", kelurahan: "village", kecamatan: "district", nomor_hp: "phone", keperluan: "purpose" };
                 next[map[key] ?? key] = issue.message;
@@ -258,22 +260,24 @@ export default function SuratOnlineClient({ services }: { services: PublicServic
     useEffect(() => {
         const nomor = new URLSearchParams(window.location.search).get("nomor");
         if (!nomor) return;
-        setStatusQuery(nomor);
-        setStatusChecked(true);
-        setStatusLoading(true);
-        searchSubmission(nomor)
-            .then((data) => {
+        void Promise.resolve().then(async () => {
+            try {
+                setStatusQuery(nomor);
+                setStatusChecked(true);
+                setStatusLoading(true);
+                const data = await searchSubmission(nomor);
                 const rows = data as StatusItem[];
                 setStatusResults(rows);
                 setLastStatusQuery(nomor);
                 setStatusError(rows.length === 0 ? "Nomor pengajuan atau NIK tidak ditemukan." : "");
                 document.getElementById("cek-status")?.scrollIntoView({ behavior: "smooth", block: "start" });
-            })
-            .catch((error: unknown) => {
+            } catch (error) {
                 setStatusResults([]);
                 setStatusError(error instanceof Error ? error.message : "Gagal mengambil status pengajuan.");
-            })
-            .finally(() => setStatusLoading(false));
+            } finally {
+                setStatusLoading(false);
+            }
+        });
     }, []);
 
     useEffect(() => {
@@ -350,17 +354,19 @@ function Review({ form, service, error, update }: { form: FormState; service: st
 
 function Success({ ticket, service, estimate, data }: { ticket: string; service: string; estimate: string; data: SubmissionResult | null }) {
     const date = data?.created_at ? new Date(data.created_at) : new Date();
+    const serviceName = data?.layanan?.nama_layanan ?? data?.layanan?.title ?? data?.jenis_surat ?? service;
+    const serviceEstimate = data?.layanan?.output?.replace(/^Estimasi\s+/i, "") ?? estimate;
     const nomorTiket = data?.nomor_tiket ?? ticket.replace(/^TMS-/, "TIK-").replace(/-(\d{4})$/, "-00$1");
     const trackingUrl = data?.tracking_url ?? `${window.location.origin}/surat-online/tracking?nomor=${encodeURIComponent(ticket)}`;
     const [qrDataUrl, setQrDataUrl] = useState("");
     useEffect(() => {
-        QRCode.toDataURL(trackingUrl, { margin: 1, width: 220 })
+        QRCode.toDataURL(ticket, { margin: 1, width: 220 })
             .then(setQrDataUrl)
             .catch(() => setQrDataUrl(""));
-    }, [trackingUrl]);
+    }, [ticket]);
     async function downloadProof() {
         try {
-            const qr = qrDataUrl || await QRCode.toDataURL(trackingUrl, { margin: 1, width: 260 });
+            const qr = qrDataUrl || await QRCode.toDataURL(ticket, { margin: 1, width: 260 });
             const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
             pdf.setFillColor(7, 26, 51);
             pdf.rect(0, 0, 210, 38, "F");
@@ -375,7 +381,7 @@ function Success({ ticket, service, estimate, data }: { ticket: string; service:
             pdf.text("Kelurahan Tamansari - Kecamatan Pulomerak - Kota Cilegon", 105, 29, { align: "center" });
             pdf.setTextColor(15, 23, 42);
             pdf.setFontSize(12);
-            const rows = [["Nomor Pengajuan", ticket], ["Nomor Tiket", nomorTiket], ["Tanggal", date.toLocaleDateString("id-ID")], ["Nama", data?.nama_lengkap ?? "-"], ["NIK", data?.nik ?? "-"], ["Jenis Pelayanan", service], ["Keperluan", data?.keperluan ?? "-"], ["Status", data?.status ?? "Menunggu Verifikasi"]];
+            const rows = [["Nomor Pengajuan", ticket], ["Nomor Tiket", nomorTiket], ["Tanggal", date.toLocaleDateString("id-ID")], ["Nama", data?.nama_lengkap ?? "-"], ["NIK", data?.nik ?? "-"], ["Jenis Pelayanan", serviceName], ["Keperluan", data?.keperluan ?? "-"], ["Status", data?.status ?? "Menunggu Verifikasi"]];
             rows.forEach(([label, value], index) => {
                 const y = 58 + index * 12;
                 pdf.setFont("helvetica", "bold");
@@ -385,8 +391,8 @@ function Success({ ticket, service, estimate, data }: { ticket: string; service:
             });
             pdf.addImage(qr, "PNG", 144, 54, 42, 42);
             pdf.setFontSize(9);
-            pdf.text("Scan QR Code untuk membuka halaman tracking pengajuan.", 20, 166);
-            pdf.text(trackingUrl, 20, 172);
+            pdf.text("Scan QR Code berisi Nomor Pengajuan untuk validasi bukti.", 20, 166);
+            pdf.text(`QR: ${ticket}`, 20, 172);
             pdf.setDrawColor(226, 232, 240);
             pdf.line(20, 252, 190, 252);
             pdf.setFont("helvetica", "bold");
@@ -399,7 +405,7 @@ function Success({ ticket, service, estimate, data }: { ticket: string; service:
             alert(error instanceof Error ? error.message : "Gagal membuat PDF bukti pengajuan.");
         }
     }
-    return <div className="mt-8 rounded-[24px] border border-emerald-200 bg-emerald-50 p-6"><CheckCircle2 className="text-emerald-600" size={40} /><h2 className="mt-4 text-3xl font-black text-gov-950">Permohonan berhasil dikirim</h2><div className="mt-5 grid gap-3 md:grid-cols-2"><p><b>Nomor Pengajuan:</b> {ticket}</p><p><b>Nomor Tiket:</b> {nomorTiket}</p><p><b>Tanggal:</b> {date.toLocaleDateString("id-ID")}</p><p><b>Jenis Pelayanan:</b> {service}</p><p><b>Estimasi selesai:</b> {estimate}</p><p><b>Link Tracking:</b> <a className="underline" href={trackingUrl}>{trackingUrl}</a></p></div><div className="mt-6 flex flex-wrap gap-3"><div className="grid size-28 place-items-center rounded-3xl bg-white text-gov-950">{qrDataUrl ? <img src={qrDataUrl} alt="QR Code Tracking" className="size-24" /> : <QrCode size={76} />}</div><Button type="button" variant="primary" onClick={downloadProof}><Download size={18} />Download Bukti Pengajuan</Button><Button type="button" variant="glass" onClick={() => window.print()}><Printer size={18} />Cetak Bukti</Button></div></div>;
+    return <div className="mt-8 rounded-[24px] border border-emerald-200 bg-emerald-50 p-6"><CheckCircle2 className="text-emerald-600" size={40} /><h2 className="mt-4 text-3xl font-black text-gov-950">Permohonan berhasil dikirim</h2><div className="mt-5 grid gap-3 md:grid-cols-2"><p><b>Nomor Pengajuan:</b> {ticket}</p><p><b>Nomor Tiket:</b> {nomorTiket}</p><p><b>Tanggal:</b> {date.toLocaleDateString("id-ID")}</p><p><b>Jenis Pelayanan:</b> {serviceName}</p><p><b>Estimasi selesai:</b> {serviceEstimate}</p><p><b>Link Tracking:</b> <a className="underline" href={trackingUrl}>{trackingUrl}</a></p></div><div className="mt-6 flex flex-wrap gap-3"><div className="grid size-28 place-items-center rounded-3xl bg-white text-gov-950">{qrDataUrl ? <Image src={qrDataUrl} alt="QR Code Nomor Pengajuan" width={96} height={96} unoptimized className="size-24" /> : <QrCode size={76} />}</div><Button type="button" variant="primary" onClick={downloadProof}><Download size={18} />Download Bukti Pengajuan</Button><Button type="button" variant="glass" onClick={() => window.print()}><Printer size={18} />Cetak Bukti</Button></div></div>;
 }
 
 function InfoSidebar() {

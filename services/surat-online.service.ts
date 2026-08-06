@@ -41,7 +41,7 @@ export function getProgressFromStatus(status?: string) {
     if (status === "Selesai") return 5;
     if (status === "Ditandatangani") return 4;
     if (status === "Diproses") return 3;
-    if (status === "Verifikasi" || status === "Menunggu Verifikasi") return 2;
+    if (status === "Verifikasi") return 2;
     return 1;
 }
 
@@ -119,8 +119,9 @@ export async function getLayananList() {
 export async function createSubmission(formData: FormData) {
     if (typeof window !== "undefined") {
         const response = await fetch("/api/surat-online/pengajuan", { method: "POST", body: formData });
-        const result = await response.json();
-        if (!response.ok || !result.ok) throw new Error(result.error ?? "Gagal mengirim pengajuan.");
+        const result = await response.json().catch(() => null);
+        const message = typeof result?.error === "string" ? result.error : result?.error?.message;
+        if (!response.ok || !result?.ok) throw new Error(message ?? "Gagal mengirim pengajuan.");
         return result.data;
     }
 
@@ -195,6 +196,7 @@ export async function createSubmission(formData: FormData) {
             kecamatan: payload.kecamatan,
             no_hp: payload.nomor_hp,
             email: payload.email,
+            jenis_surat: payload.jenis_surat,
             keperluan: payload.keperluan,
             catatan: payload.catatan,
             nomor_pengajuan,
@@ -204,7 +206,7 @@ export async function createSubmission(formData: FormData) {
             file_pendukung: pendukung_url,
         };
 
-        const { data: pengajuan, error } = await client.from("pengajuan_surat").insert(pengajuanPayload).select("*").single();
+        const { data: pengajuan, error } = await client.from("pengajuan_surat").insert(pengajuanPayload).select("*, layanan(*)").single();
         if (error) {
             console.error("INSERT ERROR:", error);
             console.error("SUPABASE INSERT PENGAJUAN_SURAT ERROR");
@@ -244,6 +246,8 @@ export async function createSubmission(formData: FormData) {
         const { error: trackingError } = await client.from("tracking_pengajuan").insert({
             pengajuan_id: pengajuan.id,
             status: "Menunggu Verifikasi",
+            progress: 1,
+            catatan: "Permohonan diterima dan menunggu verifikasi.",
             keterangan: "Permohonan diterima dan menunggu verifikasi.",
             petugas: null,
         });
@@ -283,7 +287,7 @@ export async function createSubmission(formData: FormData) {
             console.dir(emailError, { depth: null });
         }
 
-        return { ...pengajuan, nomor_tiket, tracking_url };
+        return { ...pengajuan, jenis_surat: payload.jenis_surat, nomor_tiket, tracking_url };
     } catch (error) {
         console.error("===== CREATE SUBMISSION FULL ERROR =====");
         console.dir(error, { depth: null });
@@ -295,15 +299,16 @@ export async function createSubmission(formData: FormData) {
 export async function searchSubmission(query: string) {
     if (typeof window !== "undefined") {
         const response = await fetch(`/api/surat-online/tracking?q=${encodeURIComponent(query)}`);
-        const result = await response.json();
-        if (!response.ok || !result.ok) throw new Error(result.error ?? "Gagal mengambil status pengajuan.");
+        const result = await response.json().catch(() => null);
+        const message = typeof result?.error === "string" ? result.error : result?.error?.message;
+        if (!response.ok || !result?.ok) throw new Error(message ?? "Gagal mengambil status pengajuan.");
         return result.data ?? [];
     }
 
     const client = createSupabaseAdminClient();
     if (!client) throw new Error("Supabase service role belum dikonfigurasi.");
     const q = query.trim();
-    const { data, error } = await client.from("pengajuan_surat").select("*, tracking_pengajuan(*), dokumen_pengajuan(*)").or(`nomor_pengajuan.eq.${q},nik.eq.${q}`).order("created_at", { referencedTable: "tracking_pengajuan", ascending: true });
+    const { data, error } = await client.from("pengajuan_surat").select("*, layanan(*), tracking_pengajuan(*), dokumen_pengajuan(*)").or(`nomor_pengajuan.eq.${q},nik.eq.${q}`).order("created_at", { referencedTable: "tracking_pengajuan", ascending: true });
     if (error) {
         console.error("SUPABASE SEARCH SUBMISSION ERROR");
         console.dir(error, { depth: null });
@@ -325,6 +330,8 @@ export async function updateSubmissionStatus(id: string, status: string, catatan
     const { error: trackingError } = await client.from("tracking_pengajuan").insert({
         pengajuan_id: id,
         status,
+        progress: getProgressFromStatus(status),
+        catatan,
         keterangan: catatan,
         petugas,
     });
