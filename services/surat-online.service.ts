@@ -91,7 +91,7 @@ export async function createSubmission(formData: FormData) {
         try {
             if (pengajuanId) {
                 await client.from("tracking_pengajuan").delete().eq("id_pengajuan", pengajuanId);
-                await client.from("dokumen_pengajuan").delete().eq("id_pengajuan", pengajuanId);
+                await client.from("dokumen_pengajuan").delete().eq("pengajuan_id", pengajuanId);
                 await client.from("pengajuan_surat").delete().eq("id", pengajuanId);
             }
             if (uploadedPaths.length > 0) await client.storage.from("surat").remove(uploadedPaths);
@@ -157,9 +157,26 @@ export async function createSubmission(formData: FormData) {
         pengajuanId = pengajuan.id;
 
         const { error: dokumenError } = await client.from("dokumen_pengajuan").insert([
-            { id_pengajuan: pengajuan.id, jenis_dokumen: "KTP", file_url: ktp_url },
-            { id_pengajuan: pengajuan.id, jenis_dokumen: "KK", file_url: kk_url },
-            ...(pendukung_url ? [{ id_pengajuan: pengajuan.id, jenis_dokumen: "Dokumen Pendukung", file_url: pendukung_url }] : []),
+            {
+                pengajuan_id: pengajuan.id,
+                nama_file: "KTP",
+                url_file: ktp_url,
+                jenis: "KTP",
+            },
+            {
+                pengajuan_id: pengajuan.id,
+                nama_file: "KK",
+                url_file: kk_url,
+                jenis: "KK",
+            },
+            ...(pendukung_url
+                ? [{
+                    pengajuan_id: pengajuan.id,
+                    nama_file: "Dokumen Pendukung",
+                    url_file: pendukung_url,
+                    jenis: "Pendukung",
+                }]
+                : []),
         ]);
         if (dokumenError) {
             console.error("SUPABASE INSERT DOKUMEN_PENGAJUAN ERROR");
