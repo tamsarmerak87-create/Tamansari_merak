@@ -36,6 +36,7 @@ import type { PublicService } from "@/types";
 import { cn } from "@/utils/cn";
 import QRCode from "qrcode";
 import { createSupabaseBrowserClient } from "@/services/supabase";
+import { useWargaAuth } from "@/components/auth/warga-auth-provider";
 
 type ServiceCatalogItem = PublicService & { estimate: string };
 
@@ -128,6 +129,7 @@ export default function SuratOnlineClient({ services }: { services: PublicServic
     const [statusError, setStatusError] = useState("");
     const [statusResults, setStatusResults] = useState<StatusItem[]>([]);
     const [lastStatusQuery, setLastStatusQuery] = useState("");
+    const { user, profile } = useWargaAuth();
 
     const selectedService = useMemo(() => serviceCatalog.find((item) => item.id === selectedId) ?? serviceCatalog[0], [serviceCatalog, selectedId]);
 
@@ -199,6 +201,11 @@ export default function SuratOnlineClient({ services }: { services: PublicServic
     async function submit(e: FormEvent) {
         e.preventDefault();
         try {
+            if (user && profile?.status_verifikasi !== "Akun Terverifikasi") {
+                alert("Akun Anda belum diverifikasi. Silakan verifikasi akun sebelum mengajukan layanan.");
+                window.location.href = "/verify";
+                return;
+            }
             if (!validate()) return;
             setIsSubmitting(true);
             const formData = new FormData();
@@ -256,6 +263,29 @@ export default function SuratOnlineClient({ services }: { services: PublicServic
             setStatusLoading(false);
         }
     }
+
+    useEffect(() => {
+        if (!profile) return;
+        const timeout = window.setTimeout(() => {
+            setForm((prev) => ({
+                ...prev,
+                nik: profile.nik || prev.nik,
+                kk: profile.nomor_kk || prev.kk,
+                name: profile.nama_lengkap || prev.name,
+                birthplace: profile.tempat_lahir || prev.birthplace,
+                birthdate: profile.tanggal_lahir || prev.birthdate,
+                gender: profile.jenis_kelamin || prev.gender,
+                address: profile.alamat || prev.address,
+                rt: profile.rt || prev.rt,
+                rw: profile.rw || prev.rw,
+                village: profile.kelurahan || prev.village,
+                district: profile.kecamatan || prev.district,
+                phone: profile.nomor_whatsapp || prev.phone,
+                email: profile.email || prev.email,
+            }));
+        }, 0);
+        return () => window.clearTimeout(timeout);
+    }, [profile]);
 
     useEffect(() => {
         const nomor = new URLSearchParams(window.location.search).get("nomor");

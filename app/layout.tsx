@@ -6,6 +6,7 @@ import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { FloatingActions } from "@/components/common/floating-actions";
 import { TamsarChatWidget } from "@/components/chat/tamsar-chat-widget";
+import { WargaAuthProvider } from "@/components/auth/warga-auth-provider";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 
@@ -24,11 +25,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <html lang="id" className={inter.variable} suppressHydrationWarning>
             <body className="font-sans antialiased">
                 <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-                <Navbar />
-                {children}
-                <Footer />
-                <FloatingActions />
-                <TamsarChatWidget />
+                <WargaAuthProvider>
+                    <Navbar />
+                    {children}
+                    <Footer />
+                    <FloatingActions />
+                    <TamsarChatWidget />
+                </WargaAuthProvider>
             </body>
         </html>
     );

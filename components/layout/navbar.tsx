@@ -4,9 +4,11 @@ import Link from "next/link";
 import Image from "next/image";
 import type { Route } from "next";
 import { useEffect, useState } from "react";
-import { ChevronRight, Headset, Menu, Search, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Headset, LogOut, Menu, Search, UserRound, X } from "lucide-react";
 import { site } from "@/constants/site";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { useWargaAuth } from "@/components/auth/warga-auth-provider";
+import { logoutWarga } from "@/services/warga-auth.service";
 
 const nav = [
     { label: "Beranda", href: "/" },
@@ -28,10 +30,23 @@ const mobileNav: { label: string; href: Route; }[] = [
 export function Navbar() {
     const [open, setOpen] = useState(false);
     const [scrolled, setScrolled] = useState(false);
+    const [accountOpen, setAccountOpen] = useState(false);
+    const { user, profile, refresh } = useWargaAuth();
 
     const openChat = () => {
         window.dispatchEvent(new CustomEvent("tamsar-chat:open"));
         setOpen(false);
+    };
+
+    const signOut = async () => {
+        try {
+            await logoutWarga();
+            await refresh();
+            setAccountOpen(false);
+            setOpen(false);
+        } catch (error) {
+            alert(error instanceof Error ? error.message : "Gagal keluar akun.");
+        }
     };
 
     useEffect(() => {
@@ -79,6 +94,21 @@ export function Navbar() {
                         <span className="hidden sm:inline">TAMSAR CS</span>
                         <span className="sm:hidden">CS</span>
                     </button>
+                    <div className="relative hidden xl:block">
+                        <button type="button" onClick={() => setAccountOpen((value) => !value)} className="inline-flex min-h-11 items-center gap-2 rounded-full border border-white/80 bg-white/75 px-4 py-2 text-sm font-black text-gov-950 shadow-soft transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-gov-100" aria-label="Menu Akun Warga">
+                            <UserRound size={17} /> Akun Warga <ChevronDown size={15} />
+                        </button>
+                        {accountOpen ? <div className="absolute right-0 mt-3 w-64 rounded-[24px] border border-white bg-white p-3 shadow-[0_24px_80px_rgba(15,39,72,.18)]">
+                            {user ? <>
+                                <p className="px-3 pb-2 text-xs font-black uppercase tracking-[.18em] text-accent-600">{profile?.nama_lengkap ?? "Warga"}</p>
+                                {[["Dashboard Saya", "/dashboard"], ["Pengajuan Saya", "/dashboard#pengajuan"], ["Profil", "/dashboard#profil"], ["Notifikasi", "/dashboard#notifikasi"]].map(([label, href]) => <Link key={href} href={href as Route} onClick={() => setAccountOpen(false)} className="block rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-gov-50">{label}</Link>)}
+                                <button type="button" onClick={signOut} className="mt-1 flex w-full items-center gap-2 rounded-2xl px-4 py-3 text-left text-sm font-bold text-red-600 transition hover:bg-red-50"><LogOut size={16} />Keluar</button>
+                            </> : <>
+                                <Link href="/login" onClick={() => setAccountOpen(false)} className="block rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-gov-50">Masuk</Link>
+                                <Link href="/register" onClick={() => setAccountOpen(false)} className="block rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-gov-50">Daftar</Link>
+                            </>}
+                        </div> : null}
+                    </div>
                     <div className="xl:hidden">
                         <Sheet open={open} onOpenChange={setOpen}>
                             <SheetTrigger
@@ -102,6 +132,16 @@ export function Navbar() {
                                 </div>
 
                                 <div className="mt-8 space-y-2">
+                                    <div className="rounded-2xl border border-slate-100 bg-gov-50 p-3">
+                                        <p className="px-2 pb-2 text-xs font-black uppercase tracking-[.18em] text-accent-600">👤 Akun Warga</p>
+                                        {user ? <>
+                                            {[["Dashboard Saya", "/dashboard"], ["Pengajuan Saya", "/dashboard#pengajuan"], ["Profil", "/dashboard#profil"], ["Notifikasi", "/dashboard#notifikasi"]].map(([label, href]) => <Link key={href} href={href as Route} onClick={() => setOpen(false)} className="flex items-center justify-between rounded-2xl px-4 py-3 text-base font-bold text-gov-950 transition hover:bg-white">{label}<ChevronRight size={18} className="text-slate-400" /></Link>)}
+                                            <button type="button" onClick={signOut} className="flex w-full items-center justify-between rounded-2xl px-4 py-3 text-base font-bold text-red-600 transition hover:bg-white">Keluar<LogOut size={18} /></button>
+                                        </> : <>
+                                            <Link href="/login" onClick={() => setOpen(false)} className="flex items-center justify-between rounded-2xl px-4 py-3 text-base font-bold text-gov-950 transition hover:bg-white">Masuk<ChevronRight size={18} className="text-slate-400" /></Link>
+                                            <Link href="/register" onClick={() => setOpen(false)} className="flex items-center justify-between rounded-2xl px-4 py-3 text-base font-bold text-gov-950 transition hover:bg-white">Daftar<ChevronRight size={18} className="text-slate-400" /></Link>
+                                        </>}
+                                    </div>
                                     {mobileNav.map((item) => item.href === "/#chat" ? (
                                         <button
                                             key={item.href}
