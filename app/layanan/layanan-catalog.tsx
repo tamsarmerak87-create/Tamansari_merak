@@ -12,6 +12,7 @@ import {
     FileText,
     HeartHandshake,
     Megaphone,
+    Search,
     ShieldCheck,
     X,
 } from "lucide-react";
@@ -32,6 +33,20 @@ const featureItems = [
     { icon: HeartHandshake, label: "Melayani Sepenuh Hati" },
     { icon: ShieldCheck, label: "Data Aman" },
 ] as const;
+
+const categoryChips = [
+    { key: "all", label: "⭐ Semua" },
+    { key: "kependudukan", label: "🏠 Kependudukan" },
+    { key: "surat", label: "📄 Surat Keterangan" },
+    { key: "posbankum", label: "⚖ POSBANKUM" },
+    { key: "umkm", label: "🏪 UMKM" },
+    { key: "bpjs", label: "🏥 BPJS" },
+    { key: "legalisasi", label: "📑 Legalisasi" },
+    { key: "sosial", label: "🕌 Sosial" },
+    { key: "administrasi", label: "📋 Administrasi" },
+] as const;
+
+type CategoryKey = (typeof categoryChips)[number]["key"];
 
 const iconRules = [
     "domisili",
@@ -77,16 +92,36 @@ function serviceIconKey(service: PublicService) {
     return iconRules.find((key) => text.includes(key)) ?? "surat";
 }
 
+function serviceGroup(service: PublicService): Exclude<CategoryKey, "all"> {
+    const text = `${service.title} ${service.description}`.toLowerCase();
+    if (/(posbankum|bantuan hukum|hukum)/.test(text)) return "posbankum";
+    if (/(umkm|usaha|mikro|dagang|jualan|toko)/.test(text)) return "umkm";
+    if (/(bpjs|kesehatan|kis|jaminan kesehatan)/.test(text)) return "bpjs";
+    if (/(legalisasi|legalisir|pengesahan)/.test(text)) return "legalisasi";
+    if (/(tidak mampu|mampu|sosial|bantuan|miskin|yatim|masjid|nikah|cerai)/.test(text)) return "sosial";
+    if (/(domisili|kelahiran|kematian|pindah|datang|kk|ktp|penduduk|kependudukan)/.test(text)) return "kependudukan";
+    if (/(surat|keterangan|skck|pengantar)/.test(text)) return "surat";
+    return "administrasi";
+}
+
+function serviceGroupLabel(service: PublicService) {
+    return categoryChips.find((item) => item.key === serviceGroup(service))?.label.replace(/^\S+\s/, "") ?? "Administrasi";
+}
+
 export function LayananCatalog({ services }: Props) {
     const adminServices = useMemo(() => services.filter((item) => item.category === "administrasi").slice(0, 33), [services]);
     const [query, setQuery] = useState("");
+    const [activeCategory, setActiveCategory] = useState<CategoryKey>("all");
     const [detail, setDetail] = useState<PublicService | null>(null);
 
     const filtered = useMemo(() => {
         const q = query.trim().toLowerCase();
-        if (!q) return adminServices;
-        return adminServices.filter((item) => `${item.title} ${item.description}`.toLowerCase().includes(q));
-    }, [adminServices, query]);
+        return adminServices.filter((item) => {
+            const matchesCategory = activeCategory === "all" || serviceGroup(item) === activeCategory;
+            const matchesQuery = !q || `${item.title} ${item.description}`.toLowerCase().includes(q);
+            return matchesCategory && matchesQuery;
+        });
+    }, [activeCategory, adminServices, query]);
 
     const autoplay = useMemo(() => Autoplay({ delay: AUTO_MS, stopOnInteraction: false, stopOnMouseEnter: true }), []);
     const [emblaRef, emblaApi] = useEmblaCarousel({ align: "start", loop: true, dragFree: false, duration: 42 }, [autoplay]);
@@ -130,6 +165,10 @@ export function LayananCatalog({ services }: Props) {
     }, [detail]);
 
     const changeQuery = useCallback((value: string) => setQuery(value), []);
+    const changeCategory = useCallback((value: CategoryKey) => {
+        setActiveCategory(value);
+        emblaApi?.scrollTo(0, true);
+    }, [emblaApi]);
 
     return (
         <>
@@ -140,9 +179,17 @@ export function LayananCatalog({ services }: Props) {
 
                 <div className="mx-auto max-w-7xl">
                     <Hero total={adminServices.length} />
-                    <div className="mt-6 rounded-[28px] border border-white/80 bg-white/80 p-3 shadow-[0_18px_50px_rgba(13,43,92,0.08)] backdrop-blur-2xl sm:p-4">
-                        <label className="sr-only" htmlFor="layanan-search">Cari layanan</label>
-                        <input id="layanan-search" value={query} onChange={(event) => changeQuery(event.target.value)} type="search" placeholder="Cari layanan administrasi..." className="min-h-12 w-full rounded-full border border-[#E8EDF5] bg-white px-5 text-[15px] font-medium text-[#0D2B5C] outline-none transition focus:border-[#F4C542] focus:ring-4 focus:ring-[#F4C542]/20" />
+                    <div className="mt-6 rounded-[30px] border border-white/80 bg-white/88 p-4 shadow-[0_18px_50px_rgba(13,43,92,0.08)] backdrop-blur-2xl sm:p-5">
+                        <div className="relative">
+                            <Search className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 text-[#0B2C6A]/45" size={20} />
+                            <label className="sr-only" htmlFor="layanan-search">Cari layanan</label>
+                            <input id="layanan-search" value={query} onChange={(event) => changeQuery(event.target.value)} type="search" placeholder="Cari layanan..." className="min-h-14 w-full rounded-full border border-[#E8EDF5] bg-white py-3 pl-14 pr-5 text-[15px] font-bold text-[#0B2C6A] outline-none transition placeholder:text-slate-400 focus:border-[#FFC533] focus:ring-4 focus:ring-[#FFC533]/20" />
+                        </div>
+                        <div className="mt-4 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] sm:flex-wrap sm:overflow-visible">
+                            {categoryChips.map((item) => (
+                                <button key={item.key} type="button" onClick={() => changeCategory(item.key)} aria-label={`Filter kategori ${item.label}`} aria-pressed={activeCategory === item.key} className={cn("shrink-0 rounded-full border px-4 py-2.5 text-sm font-extrabold transition duration-300 focus:outline-none focus:ring-4 focus:ring-[#FFC533]/25", activeCategory === item.key ? "border-[#FFC533] bg-[#0B2C6A] text-white shadow-[0_14px_34px_rgba(11,44,106,.22)]" : "border-[#E8EDF5] bg-white text-[#0B2C6A] hover:border-[#FFC533] hover:bg-[#FFF8DD]")}>{item.label}</button>
+                            ))}
+                        </div>
                     </div>
                     <FeatureGrid />
 
@@ -152,22 +199,25 @@ export function LayananCatalog({ services }: Props) {
                                 <p className="text-xs font-extrabold uppercase tracking-[0.28em] text-[#F4C542]">Daftar Pelayanan</p>
                                 <h2 className="mt-2 text-3xl font-extrabold tracking-[-0.04em] text-[#0D2B5C] sm:text-4xl">Pilih kebutuhan administrasi Anda</h2>
                             </div>
-                            <p className="max-w-xl text-sm font-medium leading-7 text-slate-600">Geser kartu, gunakan panah navigasi, atau cari layanan untuk menemukan informasi pengajuan yang Anda perlukan.</p>
+                            <p className="max-w-xl text-sm font-medium leading-7 text-slate-600">Gunakan kategori dan pencarian realtime untuk menemukan layanan yang paling sesuai. Desktop tampil grid, mobile bisa digeser.</p>
                         </div>
 
                         {filtered.length ? (
-                            <div className="relative" aria-roledescription="carousel" aria-label="Slider pelayanan administrasi">
+                            <div className="relative">
                                 <div className="pointer-events-none absolute -inset-4 rounded-[36px] bg-gradient-to-r from-[#F4C542]/20 via-white/50 to-[#0D2B5C]/10 blur-2xl" />
-                                <div className="relative overflow-hidden py-3" ref={emblaRef}>
+                                <motion.div key={`grid-${activeCategory}-${query}`} initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }} className="relative hidden grid-cols-2 gap-5 md:grid lg:grid-cols-4 2xl:grid-cols-5">
+                                    {filtered.map((service, index) => <ServiceCard key={service.id} service={service} number={index + 1} onDetail={() => setDetail(service)} />)}
+                                </motion.div>
+                                <div className="relative overflow-hidden py-3 md:hidden" ref={emblaRef} aria-roledescription="carousel" aria-label="Slider pelayanan administrasi mobile">
                                     <div className="flex touch-pan-y will-change-transform">
                                         {filtered.map((service, index) => (
-                                            <div key={service.id} className="min-w-0 flex-[0_0_100%] px-2 md:flex-[0_0_50%] lg:flex-[0_0_25%] 2xl:flex-[0_0_20%]">
+                                            <div key={service.id} className="min-w-0 flex-[0_0_100%] px-1">
                                                 <ServiceCard service={service} number={index + 1} onDetail={() => setDetail(service)} />
                                             </div>
                                         ))}
                                     </div>
                                 </div>
-                                <SliderFooter selected={selectedIndex} total={scrollSnaps.length} scrollPrev={scrollPrev} scrollNext={scrollNext} scrollTo={scrollTo} />
+                                <div className="md:hidden"><SliderFooter selected={selectedIndex} total={scrollSnaps.length} scrollPrev={scrollPrev} scrollNext={scrollNext} scrollTo={scrollTo} /></div>
                             </div>
                         ) : (
                             <div className="rounded-[28px] border border-[#E8EDF5] bg-white p-8 text-center text-base font-extrabold text-[#0D2B5C] shadow-[0_18px_55px_rgba(13,43,92,0.08)]">Layanan tidak ditemukan.</div>
@@ -208,7 +258,7 @@ function FeatureGrid() {
 
 const ServiceCard = memo(function ServiceCard({ service, number, onDetail }: { service: PublicService; number: number; onDetail: () => void }) {
     const iconKey = serviceIconKey(service);
-    return <motion.article initial={{ opacity: 0, y: 18, scale: 0.98 }} whileInView={{ opacity: 1, y: 0, scale: 1 }} viewport={{ once: true, margin: "-40px" }} whileHover={{ y: -6, scale: 1.02 }} transition={{ duration: 0.3 }} className="group flex h-full min-h-[370px] flex-col overflow-hidden rounded-[24px] border border-[#E8EDF5] bg-white p-6 shadow-[0_18px_50px_rgba(13,43,92,0.08)] transition duration-300 hover:border-[#F4C542]/60 hover:shadow-[0_28px_70px_rgba(13,43,92,0.14)]"><div className="flex items-start justify-between gap-3"><ServiceIcon iconKey={iconKey} /><span className="shrink-0 rounded-full bg-[#F4C542] px-3 py-1 text-xs font-extrabold text-[#0D2B5C] shadow-[0_10px_22px_rgba(244,197,66,.25)]">{String(number).padStart(2, "0")}</span></div><p className="mt-5 text-[11px] font-extrabold uppercase tracking-[0.22em] text-[#F4C542]">{service.category}</p><h3 className="mt-2 line-clamp-2 min-h-[3.8rem] overflow-hidden text-[22px] font-extrabold leading-[1.18] tracking-[-0.03em] text-[#0D2B5C]">{service.title}</h3><p className="mt-3 line-clamp-2 min-h-[3rem] overflow-hidden text-[15px] font-medium leading-6 text-slate-600">{service.description}</p><div className="mt-auto pt-6"><button type="button" onClick={onDetail} aria-label={`Informasi dan ajukan ${service.title}`} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-full border border-[#F4C542]/70 bg-white px-4 text-sm font-extrabold text-[#0D2B5C] transition hover:bg-[#F4C542] hover:text-[#0D2B5C] focus:outline-none focus:ring-4 focus:ring-[#F4C542]/25">Informasi & Ajukan <ArrowRight size={16} className="transition group-hover:translate-x-1.5" /></button></div></motion.article>;
+    return <motion.article initial={{ opacity: 0, y: 18, scale: 0.98 }} whileInView={{ opacity: 1, y: 0, scale: 1 }} viewport={{ once: true, margin: "-40px" }} whileHover={{ y: -6, scale: 1.02 }} transition={{ duration: 0.35 }} className="group flex h-full min-h-[420px] flex-col rounded-[28px] border border-[#E8EDF5] bg-white p-6 shadow-[0_18px_50px_rgba(13,43,92,0.08)] transition duration-300 hover:border-[#FFC533]/70 hover:shadow-[0_28px_70px_rgba(13,43,92,0.14)]"><div className="flex items-start justify-between gap-3"><ServiceIcon iconKey={iconKey} /><span className="shrink-0 rounded-full bg-[#FFC533] px-3 py-1 text-xs font-extrabold text-[#0B2C6A] shadow-[0_10px_22px_rgba(255,197,51,.25)]">{String(number).padStart(2, "0")}</span></div><p className="mt-5 text-[11px] font-extrabold uppercase tracking-[0.22em] text-[#FFC533]">{serviceGroupLabel(service)}</p><h3 className="mt-2 whitespace-normal text-[22px] font-bold leading-[1.4] tracking-[-0.025em] text-[#0B2C6A] [overflow-wrap:anywhere] [word-break:break-word]">{service.title}</h3><p className="mt-3 line-clamp-2 min-h-[3rem] overflow-hidden text-[15px] font-medium leading-6 text-slate-600">{service.description}</p><div className="mt-auto pt-6"><button type="button" onClick={onDetail} aria-label={`Informasi dan ajukan ${service.title}`} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-full border border-[#FFC533]/80 bg-white px-4 text-sm font-extrabold text-[#0B2C6A] transition duration-300 hover:bg-[#FFC533] hover:text-[#0B2C6A] focus:outline-none focus:ring-4 focus:ring-[#FFC533]/25">Informasi & Ajukan <ArrowRight size={16} className="transition duration-300 group-hover:translate-x-1.5" /></button></div></motion.article>;
 });
 
 function ServiceIcon({ iconKey }: { iconKey: string }) {
@@ -228,7 +278,7 @@ function BottomCta() {
 function DetailModal({ service, onClose }: { service: PublicService; onClose: () => void }) {
     const req = service.requirements?.length ? service.requirements : ["Tidak ada persyaratan."];
     const flow = service.flow?.length ? service.flow : ["Belum tersedia."];
-    return <motion.div className="fixed inset-0 z-[160] grid place-items-center px-4 py-8" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}><button type="button" aria-label="Tutup detail" className="absolute inset-0 bg-[#0D2B5C]/70 backdrop-blur-sm" onClick={onClose} /><motion.div role="dialog" aria-modal="true" className="relative max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-[32px] border border-white bg-white p-5 shadow-[0_30px_100px_rgba(13,43,92,.35)] sm:p-7" initial={{ opacity: 0, y: 24, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 18, scale: 0.96 }}><button type="button" aria-label="Tutup modal" className="absolute right-4 top-4 grid size-11 place-items-center rounded-full bg-[#F7F9FC] text-[#0D2B5C] transition hover:bg-[#0D2B5C] hover:text-white focus:outline-none focus:ring-4 focus:ring-[#F4C542]/25" onClick={onClose}><X size={18} /></button><span className="inline-flex rounded-full bg-[#FFF8DD] px-4 py-2 text-xs font-extrabold uppercase tracking-[0.18em] text-[#0D2B5C]">Administrasi</span><h2 className="mt-5 text-3xl font-extrabold tracking-[-0.04em] text-[#0D2B5C] sm:text-4xl">{service.title}</h2><p className="mt-4 font-medium leading-8 text-slate-600">{service.description}</p><div className="mt-7 grid gap-4 lg:grid-cols-2"><InfoBox title="📋 Persyaratan"><ul className="list-disc space-y-2 pl-5">{req.map((item) => <li key={item}>{item}</li>)}</ul></InfoBox><InfoBox title="🔄 Alur pelayanan"><ol className="list-decimal space-y-2 pl-5">{flow.map((item) => <li key={item}>{item}</li>)}</ol></InfoBox><InfoBox title="⏱ Estimasi"><p>{service.estimation || "Belum tersedia."}</p></InfoBox><InfoBox title="📄 Output"><p>{service.output || "Belum tersedia."}</p></InfoBox><InfoBox title="⚖ Dasar hukum" className="border-[#F4C542]/40 bg-[#FFF8DD]/80 lg:col-span-2"><p className="whitespace-pre-line text-[#0D2B5C]">{service.legalBasis || "Belum tersedia."}</p></InfoBox></div><div className="mt-7 flex flex-col gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={onClose} className="inline-flex min-h-11 items-center justify-center rounded-full bg-[#F7F9FC] px-6 font-extrabold text-[#0D2B5C]">Tutup</button><Link href="/surat-online" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-[#0D2B5C] px-6 font-extrabold text-white">Ajukan <ArrowRight size={17} /></Link></div></motion.div></motion.div>;
+    return <motion.div className="fixed inset-0 z-[160] grid place-items-center px-4 py-8" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}><button type="button" aria-label="Tutup detail" className="absolute inset-0 bg-[#0D2B5C]/70 backdrop-blur-sm focus:outline-none focus:ring-4 focus:ring-[#FFC533]/25" onClick={onClose} /><motion.div role="dialog" aria-modal="true" className="relative max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-[32px] border border-white bg-white p-5 shadow-[0_30px_100px_rgba(13,43,92,.35)] sm:p-7" initial={{ opacity: 0, y: 24, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 18, scale: 0.96 }}><button type="button" aria-label="Tutup modal" className="absolute right-4 top-4 grid size-11 place-items-center rounded-full bg-[#F7F9FC] text-[#0D2B5C] transition hover:bg-[#0D2B5C] hover:text-white focus:outline-none focus:ring-4 focus:ring-[#FFC533]/25" onClick={onClose}><X size={18} /></button><span className="inline-flex rounded-full bg-[#FFF8DD] px-4 py-2 text-xs font-extrabold uppercase tracking-[0.18em] text-[#0D2B5C]">{serviceGroupLabel(service)}</span><h2 className="mt-5 text-3xl font-extrabold tracking-[-0.04em] text-[#0D2B5C] sm:text-4xl">{service.title}</h2><p className="mt-4 font-medium leading-8 text-slate-600">{service.description}</p><div className="mt-7 grid gap-4 lg:grid-cols-2"><InfoBox title="📋 Persyaratan"><ul className="list-disc space-y-2 pl-5">{req.map((item) => <li key={item}>{item}</li>)}</ul></InfoBox><InfoBox title="🔄 Alur pelayanan"><ol className="list-decimal space-y-2 pl-5">{flow.map((item) => <li key={item}>{item}</li>)}</ol></InfoBox><InfoBox title="⏱ Estimasi"><p>{service.estimation || "Belum tersedia."}</p></InfoBox><InfoBox title="📄 Output"><p>{service.output || "Belum tersedia."}</p></InfoBox><InfoBox title="⚖ Dasar hukum" className="border-[#F4C542]/40 bg-[#FFF8DD]/80 lg:col-span-2"><p className="whitespace-pre-line text-[#0D2B5C]">{service.legalBasis || "Belum tersedia."}</p></InfoBox></div><div className="mt-7 flex flex-col gap-3 sm:flex-row sm:justify-end"><button type="button" aria-label="Tutup detail layanan" onClick={onClose} className="inline-flex min-h-11 items-center justify-center rounded-full bg-[#F7F9FC] px-6 font-extrabold text-[#0D2B5C] focus:outline-none focus:ring-4 focus:ring-[#FFC533]/25">Tutup</button><Link href="/surat-online" aria-label={`Ajukan ${service.title}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-[#0D2B5C] px-6 font-extrabold text-white focus:outline-none focus:ring-4 focus:ring-[#FFC533]/25">Ajukan <ArrowRight size={17} /></Link></div></motion.div></motion.div>;
 }
 
 function InfoBox({ title, className, children }: { title: string; className?: string; children: ReactNode }) {
