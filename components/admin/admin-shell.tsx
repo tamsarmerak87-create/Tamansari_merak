@@ -4,12 +4,19 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   BadgeCheck,
+  CalendarClock,
   CheckCircle2,
+  ClipboardList,
   Download,
+  ExternalLink,
   Eye,
+  FileArchive,
   FileClock,
+  FileDown,
   FileText,
+  History,
   LayoutDashboard,
   LineChart,
   LogOut,
@@ -21,6 +28,7 @@ import {
   Search,
   Settings,
   ShieldCheck,
+  UserRound,
   XCircle,
   UserCog,
   Users,
@@ -43,6 +51,7 @@ type PendingWarga = {
 };
 const statuses = [
   "Menunggu Verifikasi",
+  "Terverifikasi",
   "Diproses",
   "Selesai",
   "Ditolak",
@@ -66,7 +75,24 @@ function serviceName(row: Row) {
 }
 
 function petugasName(row: Row) {
-  return row.petugas?.full_name ?? row.petugas?.nama ?? row.petugas_nama ?? row.admin?.full_name ?? row.admin?.nama ?? "-";
+  return row.petugas?.full_name ?? row.petugas?.nama_lengkap ?? row.petugas?.nama ?? row.petugas_nama ?? row.admin?.full_name ?? row.admin?.nama ?? "-";
+}
+
+function fileUrl(row: Row) {
+  return row.url_file ?? row.file_url ?? row.url ?? row.public_url ?? row.path ?? "";
+}
+
+function statusBadgeClass(status?: string | null) {
+  const normalized = normalizeStatus(status);
+  if (normalized === "Selesai") return "bg-emerald-100 text-emerald-800 ring-emerald-200";
+  if (normalized === "Diproses") return "bg-blue-100 text-blue-800 ring-blue-200";
+  if (normalized === "Terverifikasi") return "bg-cyan-100 text-cyan-800 ring-cyan-200";
+  if (normalized === "Ditolak") return "bg-red-100 text-red-800 ring-red-200";
+  return "bg-amber-100 text-amber-800 ring-amber-200";
+}
+
+function StatusBadge({ status }: { status?: string | null }) {
+  return <span className={cn("inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-black ring-1", statusBadgeClass(status))}><span className="size-2 rounded-full bg-current" />{normalizeStatus(status)}</span>;
 }
 
 function csvCell(value: unknown) {
@@ -135,7 +161,7 @@ export function AdminShell({
   const [dateStart, setDateStart] = useState("");
   const [dateEnd, setDateEnd] = useState("");
   const [selectedSubmission, setSelectedSubmission] = useState<Row | null>(null);
-  const [now] = useState(() => Date.now());
+  const [rejectTarget, setRejectTarget] = useState<Row | null>(null);
   const [adminProfile, setAdminProfile] = useState<AdminPortalProfile | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const { submissions, services, pendingWarga, setPendingWarga, wargaProfiles, setWargaProfiles, loading, toast, setToast, load } =
@@ -202,7 +228,7 @@ export function AdminShell({
     ["Pengajuan Selesai", stat("Selesai")],
     ["Pengajuan Ditolak", stat("Ditolak")],
   ];
-  const updateStatus = async (row: Row, action: "verifikasi" | "setujui" | "tolak", extra?: { catatan_petugas?: string; alasan_penolakan?: string }) => {
+  const updateStatus = async (row: Row, action: "verifikasi" | "setujui" | "selesai" | "tolak", extra?: { catatan_petugas?: string; alasan_penolakan?: string }) => {
     try {
       setToast({ type: "loading", text: "Menyimpan perubahan..." });
       const res = await fetch("/api/admin/pengajuan", {
@@ -213,8 +239,9 @@ export function AdminShell({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Gagal memperbarui status");
-      setToast({ type: "success", text: action === "tolak" ? "Pengajuan berhasil ditolak." : action === "setujui" ? "Pengajuan berhasil disetujui dan masuk Diproses." : "Berkas berhasil diverifikasi." });
+      setToast({ type: "success", text: action === "tolak" ? "Pengajuan berhasil ditolak." : action === "selesai" ? "Pengajuan berhasil diselesaikan." : action === "setujui" ? "Pengajuan berhasil masuk Diproses." : "Berkas berhasil diverifikasi." });
       setSelectedSubmission(null);
+      setRejectTarget(null);
     } catch (error) {
       setToast({ type: "error", text: error instanceof Error ? error.message : "Gagal memperbarui status" });
     } finally {
@@ -222,9 +249,7 @@ export function AdminShell({
     }
   };
   const rejectSubmission = async (row: Row) => {
-    const reason = window.prompt(`Masukkan alasan penolakan untuk ${row.nomor_pengajuan ?? "pengajuan ini"}:`);
-    if (!reason?.trim()) return;
-    await updateStatus(row, "tolak", { alasan_penolakan: reason.trim(), catatan_petugas: reason.trim() });
+    setRejectTarget(row);
   };
   const verifyWarga = async (row: PendingWarga) => {
     try {
@@ -495,28 +520,18 @@ export function AdminShell({
             )}
           </Panel>
         ) : view === "detail" ? (
-          <Panel title="Detail Pengajuan">
-            {detail ? (
-              <div className="grid gap-4 md:grid-cols-2">
-                <Info row={detail} />
-                <div className="space-y-3">
-                  <h3 className="font-black">Aksi Admin</h3>
-                  {statuses.map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => s === "Ditolak" ? rejectSubmission(detail) : updateStatus(detail, s === "Diproses" ? "setujui" : "verifikasi", { catatan_petugas: `Status pengajuan ditinjau: ${s}.` })}
-                      className="mr-2 rounded-xl bg-gov-950 px-4 py-2 text-white"
-                    >
-                      {s}
-                    </button>
-                  ))}
-                  <Upload id={detail.id} setToast={setToast} />
-                </div>
-              </div>
-            ) : (
-              "Data tidak ditemukan"
-            )}
-          </Panel>
+          detail ? (
+            <SubmissionDetail
+              row={detail}
+              onVerify={(row) => updateStatus(row, "verifikasi", { catatan_petugas: "Berkas pengajuan telah diverifikasi petugas." })}
+              onProcess={(row) => updateStatus(row, "setujui", { catatan_petugas: "Pengajuan masuk tahap Diproses." })}
+              onComplete={(row) => updateStatus(row, "selesai", { catatan_petugas: "Pengajuan telah selesai dan dokumen dapat dicetak/diunduh." })}
+              onReject={rejectSubmission}
+              setToast={setToast}
+            />
+          ) : (
+            <Panel title="Detail Pengajuan">Data tidak ditemukan</Panel>
+          )
         ) : view === "layanan" ? (
           <Layanan
             services={services}
@@ -535,6 +550,13 @@ export function AdminShell({
           <Laporan submissions={submissions} wargaProfiles={wargaProfiles} />
         ) : (
           <Pengaturan />
+        )}
+        {rejectTarget && (
+          <RejectDialog
+            row={rejectTarget}
+            onClose={() => setRejectTarget(null)}
+            onSave={(reason) => updateStatus(rejectTarget, "tolak", { alasan_penolakan: reason, catatan_petugas: reason })}
+          />
         )}
       </section>
     </main>
@@ -602,9 +624,7 @@ function Table({
               <td>{serviceName(r)}</td>
               <td>{r.nomor_hp ?? r.no_hp}</td>
               <td>
-                <span className="rounded-full bg-accent-100 px-3 py-1 font-bold">
-                  {normalizeStatus(r.status)}
-                </span>
+                <StatusBadge status={r.status} />
               </td>
               <td>
                 <div className="flex flex-wrap gap-2">
@@ -706,6 +726,247 @@ function Upload({
         className="mt-3 block"
       />
     </label>
+  );
+}
+
+function DetailField({ label, value }: { label: string; value: unknown }) {
+  return (
+    <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+      <p className="text-[11px] font-black uppercase tracking-[.16em] text-slate-400">{label}</p>
+      <p className="mt-2 break-words text-sm font-black text-gov-950">{String(value ?? "-") || "-"}</p>
+    </div>
+  );
+}
+
+function DetailCard({ icon: Icon, title, children }: { icon: React.ElementType; title: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-[2rem] border border-white bg-white p-5 shadow-soft">
+      <div className="mb-4 flex items-center gap-3">
+        <span className="grid size-11 place-items-center rounded-2xl bg-gov-950 text-accent-300 shadow-lg shadow-gov-950/15">
+          <Icon size={20} />
+        </span>
+        <h2 className="text-lg font-black text-gov-950">{title}</h2>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function SubmissionTimeline({ row }: { row: Row }) {
+  const current = normalizeStatus(row.status);
+  const timeline = [
+    { status: "Menunggu Verifikasi", label: "Pengajuan Masuk", time: row.created_at, icon: FileClock },
+    { status: "Terverifikasi", label: "Verifikasi Berkas", time: current === "Terverifikasi" || current === "Diproses" || current === "Selesai" ? row.verified_at : null, icon: ShieldCheck },
+    { status: "Diproses", label: "Diproses Petugas", time: current === "Diproses" || current === "Selesai" ? row.verified_at : null, icon: ClipboardList },
+    { status: "Selesai", label: "Selesai", time: current === "Selesai" ? row.verified_at : null, icon: CheckCircle2 },
+  ];
+  const rejected = current === "Ditolak";
+  const activeStatuses = new Set<string>(["Menunggu Verifikasi"]);
+  if (["Terverifikasi", "Diproses", "Selesai"].includes(current)) activeStatuses.add("Terverifikasi");
+  if (["Diproses", "Selesai"].includes(current)) activeStatuses.add("Diproses");
+  if (current === "Selesai") activeStatuses.add("Selesai");
+
+  return (
+    <DetailCard icon={CalendarClock} title="Timeline Proses">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {timeline.map((item) => {
+          const Icon = item.icon;
+          const active = activeStatuses.has(item.status);
+          return (
+            <div key={item.status} className={cn("relative rounded-2xl border p-4", active ? "border-accent-200 bg-accent-50" : "border-slate-100 bg-slate-50")}>
+              <div className={cn("grid size-10 place-items-center rounded-xl", active ? "bg-accent-400 text-gov-950" : "bg-white text-slate-400")}> <Icon size={18} /> </div>
+              <p className="mt-3 text-sm font-black text-gov-950">{item.label}</p>
+              <p className="mt-1 text-xs font-bold text-slate-500">{item.time ? formatDate(item.time) : active ? "Tercatat" : "Menunggu"}</p>
+            </div>
+          );
+        })}
+      </div>
+      {rejected && (
+        <div className="mt-4 rounded-2xl border border-red-100 bg-red-50 p-4 text-red-800">
+          <p className="font-black"><AlertTriangle className="inline" size={18} /> Pengajuan Ditolak</p>
+          <p className="mt-1 text-sm font-bold">{row.alasan_penolakan ?? row.catatan_admin ?? "Alasan penolakan belum tersedia."}</p>
+        </div>
+      )}
+    </DetailCard>
+  );
+}
+
+function ActivityHistory({ rows }: { rows: Row[] }) {
+  return (
+    <DetailCard icon={History} title="Riwayat Aktivitas">
+      <div className="space-y-3">
+        {rows.map((item, index) => (
+          <div key={item.id ?? `${item.status}-${index}`} className="flex gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+            <span className="mt-1 size-3 rounded-full bg-accent-400 ring-4 ring-accent-100" />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge status={item.status} />
+                <span className="text-xs font-black text-slate-400">{item.created_at ? new Date(item.created_at).toLocaleString("id-ID") : "-"}</span>
+              </div>
+              <p className="mt-2 font-black text-gov-950">{item.keterangan ?? item.catatan ?? "Perubahan status pengajuan"}</p>
+              <p className="mt-1 text-sm font-bold text-slate-500">Petugas: {item.nama_petugas ?? item.petugas?.nama_lengkap ?? item.petugas_nama ?? "Petugas Kelurahan"}</p>
+            </div>
+          </div>
+        ))}
+        {rows.length === 0 && <p className="rounded-2xl bg-slate-50 p-4 font-bold text-slate-500">Belum ada riwayat aktivitas pada tabel tracking_pengajuan.</p>}
+      </div>
+    </DetailCard>
+  );
+}
+
+function DocumentsPanel({ row }: { row: Row }) {
+  const docs = Array.isArray(row.dokumen_pengajuan) ? row.dokumen_pengajuan : [];
+  return (
+    <DetailCard icon={FileArchive} title="Dokumen Pendukung">
+      <div className="space-y-3">
+        {docs.map((doc: Row, index: number) => {
+          const url = fileUrl(doc);
+          return (
+            <div key={doc.id ?? index} className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="truncate font-black text-gov-950">{doc.nama_file ?? doc.nama_dokumen ?? doc.jenis ?? `Dokumen ${index + 1}`}</p>
+                <p className="mt-1 text-xs font-bold uppercase tracking-[.14em] text-slate-400">{doc.jenis ?? doc.tipe ?? "Dokumen Pengajuan"}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <a href={url || "#"} target="_blank" rel="noreferrer" className={cn("rounded-xl px-4 py-2 text-sm font-black", url ? "bg-white text-gov-950 shadow-sm hover:bg-accent-100" : "pointer-events-none bg-slate-200 text-slate-400")}><Eye className="inline" size={15} /> Lihat</a>
+                <a href={url || "#"} download className={cn("rounded-xl px-4 py-2 text-sm font-black", url ? "bg-gov-950 text-white hover:bg-gov-800" : "pointer-events-none bg-slate-200 text-slate-400")}><Download className="inline" size={15} /> Download</a>
+              </div>
+            </div>
+          );
+        })}
+        {docs.length === 0 && <p className="rounded-2xl bg-slate-50 p-4 font-bold text-slate-500">Belum ada dokumen pada tabel dokumen_pengajuan.</p>}
+      </div>
+    </DetailCard>
+  );
+}
+
+function SubmissionDetail({
+  row,
+  onVerify,
+  onProcess,
+  onComplete,
+  onReject,
+  setToast,
+}: {
+  row: Row;
+  onVerify: (row: Row) => void;
+  onProcess: (row: Row) => void;
+  onComplete: (row: Row) => void;
+  onReject: (row: Row) => void;
+  setToast: (t: Toast) => void;
+}) {
+  const current = normalizeStatus(row.status);
+  const trackingRows = Array.isArray(row.tracking_pengajuan) ? row.tracking_pengajuan : [];
+  const outputDoc = (Array.isArray(row.dokumen_pengajuan) ? row.dokumen_pengajuan : []).find((doc: Row) => String(doc.jenis ?? "").toLowerCase().includes("hasil") || String(doc.nama_file ?? "").toLowerCase().includes("surat"));
+  const outputUrl = outputDoc ? fileUrl(outputDoc) : "";
+  return (
+    <div className="space-y-6">
+      <section className="overflow-hidden rounded-[2rem] bg-[linear-gradient(135deg,#071a33,#0B2C6A)] text-white shadow-[0_24px_80px_rgba(7,26,51,.25)]">
+        <div className="grid gap-6 p-6 lg:grid-cols-[1fr_auto] lg:p-8">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[.25em] text-accent-200">Detail Pengajuan Surat</p>
+            <h1 className="mt-3 text-3xl font-black md:text-4xl">{row.nomor_pengajuan ?? "Nomor Pengajuan"}</h1>
+            <p className="mt-2 max-w-2xl font-bold text-white/70">{serviceName(row)} • {row.nama_lengkap ?? "Pemohon"}</p>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <StatusBadge status={row.status} />
+              <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black ring-1 ring-white/15">Diajukan {formatDate(row.created_at)}</span>
+              <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black ring-1 ring-white/15">Petugas {petugasName(row)}</span>
+            </div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:w-80 lg:grid-cols-1">
+            <button onClick={() => onVerify(row)} className="rounded-2xl bg-white px-5 py-3 font-black text-gov-950 shadow-lg transition hover:-translate-y-0.5"><ShieldCheck className="inline" size={17} /> Verifikasi</button>
+            <button onClick={() => onProcess(row)} className="rounded-2xl bg-blue-500 px-5 py-3 font-black text-white shadow-lg transition hover:-translate-y-0.5"><ClipboardList className="inline" size={17} /> Diproses</button>
+            <button onClick={() => onComplete(row)} className="rounded-2xl bg-emerald-500 px-5 py-3 font-black text-white shadow-lg transition hover:-translate-y-0.5"><CheckCircle2 className="inline" size={17} /> Selesai</button>
+            <button onClick={() => onReject(row)} className="rounded-2xl bg-red-600 px-5 py-3 font-black text-white shadow-lg transition hover:-translate-y-0.5"><XCircle className="inline" size={17} /> Tolak</button>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid gap-6 xl:grid-cols-[1.35fr_.65fr]">
+        <div className="space-y-6">
+          <SubmissionTimeline row={row} />
+          <div className="grid gap-6 lg:grid-cols-2">
+            <DetailCard icon={UserRound} title="Identitas Pemohon">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <DetailField label="Nama Lengkap" value={row.nama_lengkap} />
+                <DetailField label="NIK" value={row.nik} />
+                <DetailField label="No HP" value={row.nomor_hp ?? row.no_hp} />
+                <DetailField label="Email" value={row.email} />
+                <DetailField label="Alamat" value={row.alamat} />
+                <DetailField label="RT/RW" value={[row.rt, row.rw].filter(Boolean).join("/") || row.rt_rw} />
+              </div>
+            </DetailCard>
+            <DetailCard icon={ClipboardList} title="Data Permohonan">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <DetailField label="Nomor Pengajuan" value={row.nomor_pengajuan} />
+                <DetailField label="Jenis Layanan" value={serviceName(row)} />
+                <DetailField label="Tanggal Pengajuan" value={formatDate(row.created_at)} />
+                <DetailField label="Status" value={current} />
+                <DetailField label="Keperluan" value={row.keperluan ?? row.keterangan} />
+                <DetailField label="Catatan Admin" value={row.catatan_admin} />
+              </div>
+              {row.alasan_penolakan && <p className="mt-3 rounded-2xl bg-red-50 p-4 text-sm font-bold text-red-700"><AlertTriangle className="inline" size={16} /> {row.alasan_penolakan}</p>}
+            </DetailCard>
+          </div>
+          <DocumentsPanel row={row} />
+        </div>
+        <aside className="space-y-6">
+          <DetailCard icon={FileDown} title="Output Surat">
+            {current === "Selesai" ? (
+              <div className="space-y-3">
+                <p className="rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-800">Status sudah Selesai. Surat dapat dicetak atau diunduh dalam format PDF jika file hasil tersedia.</p>
+                <a href={outputUrl || "#"} target="_blank" rel="noreferrer" className={cn("flex items-center justify-center gap-2 rounded-2xl px-5 py-3 font-black", outputUrl ? "bg-gov-950 text-white hover:bg-gov-800" : "pointer-events-none bg-slate-200 text-slate-400")}><Printer size={17} /> Cetak Surat</a>
+                <a href={outputUrl || "#"} download className={cn("flex items-center justify-center gap-2 rounded-2xl px-5 py-3 font-black", outputUrl ? "bg-accent-400 text-gov-950 hover:bg-accent-300" : "pointer-events-none bg-slate-200 text-slate-400")}><FileDown size={17} /> Download PDF</a>
+                {!outputUrl && <p className="text-xs font-bold text-slate-500">Upload dokumen hasil surat terlebih dahulu melalui panel Dokumen Pendukung.</p>}
+              </div>
+            ) : (
+              <p className="rounded-2xl bg-slate-50 p-4 font-bold text-slate-500">Tombol Cetak Surat dan Download PDF akan aktif setelah status pengajuan menjadi Selesai.</p>
+            )}
+            <Upload id={row.id} setToast={setToast} />
+          </DetailCard>
+          <ActivityHistory rows={trackingRows} />
+          <DetailCard icon={ExternalLink} title="Akses Cepat">
+            <Link href="/admin/pengajuan" className="block rounded-2xl bg-slate-50 p-4 text-sm font-black text-gov-950 hover:bg-accent-50">← Kembali ke daftar pengajuan</Link>
+          </DetailCard>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function RejectDialog({ row, onClose, onSave }: { row: Row; onClose: () => void; onSave: (reason: string) => void }) {
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState("");
+  const submit = () => {
+    const trimmed = reason.trim();
+    if (!trimmed) {
+      setError("Alasan penolakan wajib diisi sebelum status dapat disimpan.");
+      return;
+    }
+    onSave(trimmed);
+  };
+  return (
+    <div className="fixed inset-0 z-[95] grid place-items-center bg-slate-950/60 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-xl rounded-[2rem] border border-white/40 bg-white p-6 shadow-[0_30px_100px_rgba(15,23,42,.35)]">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[.2em] text-red-600">Tolak Pengajuan</p>
+            <h3 className="mt-2 text-2xl font-black text-gov-950">{row.nomor_pengajuan ?? "Pengajuan"}</h3>
+            <p className="mt-1 text-sm font-bold text-slate-500">Alasan akan disimpan ke kolom alasan_penolakan dan dicatat pada tracking_pengajuan.</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-full bg-slate-100 p-2 text-slate-600 hover:bg-slate-200" aria-label="Tutup modal"><X size={18} /></button>
+        </div>
+        <label className="mt-5 block text-sm font-black text-gov-950">
+          Alasan Penolakan <span className="text-red-600">*</span>
+          <textarea value={reason} onChange={(event) => { setReason(event.target.value); setError(""); }} className="mt-2 min-h-36 w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 font-semibold outline-none focus:border-red-400 focus:bg-white" placeholder="Contoh: Dokumen KTP tidak terbaca / persyaratan belum lengkap..." />
+        </label>
+        {error && <p className="mt-3 rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-700"><AlertTriangle className="inline" size={16} /> {error}</p>}
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onClose} className="rounded-2xl bg-slate-100 px-5 py-3 font-black text-slate-700 hover:bg-slate-200">Batal</button>
+          <button type="button" onClick={submit} className="rounded-2xl bg-red-600 px-5 py-3 font-black text-white hover:bg-red-700"><XCircle className="inline" size={16} /> Simpan Penolakan</button>
+        </div>
+      </div>
+    </div>
   );
 }
 function Layanan({

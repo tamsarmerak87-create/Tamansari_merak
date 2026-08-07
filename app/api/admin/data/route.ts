@@ -55,13 +55,20 @@ export async function GET(request: NextRequest) {
     const submissionIds = (submissions ?? []).map((item) => item.id).filter(Boolean);
     const petugasIds = Array.from(new Set((submissions ?? []).map((item) => item.verified_by).filter(Boolean)));
 
-    const [{ data: documents, error: documentsError }, { data: petugas, error: petugasError }] = await Promise.all([
+    const [{ data: documents, error: documentsError }, { data: tracking, error: trackingError }, { data: petugas, error: petugasError }] = await Promise.all([
         submissionIds.length
             ? supabase
                 .from("dokumen_pengajuan")
                 .select("*")
                 .in("pengajuan_id", submissionIds)
                 .order("created_at", { ascending: false })
+            : Promise.resolve({ data: [], error: null }),
+        submissionIds.length
+            ? supabase
+                .from("tracking_pengajuan")
+                .select("*")
+                .in("pengajuan_id", submissionIds)
+                .order("created_at", { ascending: true })
             : Promise.resolve({ data: [], error: null }),
         petugasIds.length
             ? supabase
@@ -72,6 +79,7 @@ export async function GET(request: NextRequest) {
     ]);
 
     if (documentsError) return jsonError(documentsError.message, 500);
+    if (trackingError) return jsonError(trackingError.message, 500);
     if (petugasError) return jsonError(petugasError.message, 500);
 
     const documentsBySubmission = new Map<string, unknown[]>();
@@ -81,10 +89,18 @@ export async function GET(request: NextRequest) {
         documentsBySubmission.get(pengajuanId)?.push(doc);
     }
 
+    const trackingBySubmission = new Map<string, unknown[]>();
+    for (const item of tracking ?? []) {
+        const pengajuanId = String(item.pengajuan_id ?? "");
+        if (!trackingBySubmission.has(pengajuanId)) trackingBySubmission.set(pengajuanId, []);
+        trackingBySubmission.get(pengajuanId)?.push(item);
+    }
+
     const petugasById = new Map((petugas ?? []).map((item) => [item.id, item]));
     const enrichedSubmissions = (submissions ?? []).map((item) => ({
         ...item,
         dokumen_pengajuan: documentsBySubmission.get(String(item.id)) ?? [],
+        tracking_pengajuan: trackingBySubmission.get(String(item.id)) ?? [],
         petugas: item.verified_by ? petugasById.get(item.verified_by) ?? null : null,
     }));
 
