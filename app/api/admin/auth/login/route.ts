@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { NextResponse, type NextRequest } from "next/server";
+import { isPetugasRole } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
 
 type PetugasRow = {
@@ -17,6 +18,8 @@ export async function POST(request: NextRequest) {
         const body = (await request.json()) as { username?: string; password?: string };
         const inputUsername = body.username?.trim();
         const password = body.password ?? "";
+
+        console.log("[admin-login] username diterima:", inputUsername ?? "(kosong)");
 
         if (!inputUsername || !password) return failedResponse();
 
@@ -36,13 +39,19 @@ export async function POST(request: NextRequest) {
         }
 
         const row = petugas as PetugasRow | null;
-        console.log("[admin-login] user ditemukan:", Boolean(row), row ? { id: row.id, username: row.username, role: row.role, is_active: row.is_active } : null);
+        console.log("[admin-login] hasil query petugas:", row ? { id: row.id, username: row.username, role: row.role, is_active: row.is_active } : null);
+        console.log("[admin-login] role:", row?.role ?? null);
+        console.log("[admin-login] is_active:", row?.is_active ?? null);
         if (!row?.password_hash) return failedResponse();
+        if (!isPetugasRole(row.role) || row.is_active !== true) return failedResponse();
 
         const normalizedHash = row.password_hash.trim().replace(/^\$2y\$/, "$2b$");
         const passwordValid = await bcrypt.compare(password, normalizedHash);
         console.log("[admin-login] bcrypt.compare():", passwordValid);
-        if (!passwordValid) return failedResponse();
+        if (!passwordValid) {
+            console.log("Password hash tidak cocok.");
+            return failedResponse();
+        }
 
         const { password_hash: _passwordHash, ...safeProfile } = row;
         const response = NextResponse.json({

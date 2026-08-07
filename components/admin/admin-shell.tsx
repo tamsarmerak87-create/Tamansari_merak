@@ -17,6 +17,7 @@ import {
   Search,
   Settings,
   ShieldCheck,
+  UserCog,
   Users,
   X,
 } from "lucide-react";
@@ -50,6 +51,7 @@ const nav = [
   ["POSBANKUM", "/admin/posbankum", Scale],
   ["Berita", "/admin/berita", Newspaper],
   ["Master Layanan", "/admin/layanan", Settings],
+  ["Petugas", "/admin/petugas", UserCog],
   ["Pengguna", "/admin/pengguna", Users],
   ["Laporan", "/admin/laporan", LineChart],
   ["Pengaturan", "/admin/pengaturan", Settings],

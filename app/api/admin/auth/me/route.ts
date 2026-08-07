@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { isPetugasRole } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
 
 export async function GET(request: NextRequest) {
@@ -20,6 +21,10 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ ok: false }, { status: 401 });
     }
     if (!petugas) return NextResponse.json({ ok: false }, { status: 401 });
+
+    if (!isPetugasRole((petugas as { role?: string | null }).role)) {
+        return NextResponse.json({ ok: false }, { status: 403 });
+    }
 
     const { password_hash: _passwordHash, ...safeProfile } = petugas as { password_hash?: string; id: string; username: string };
     return NextResponse.json({
