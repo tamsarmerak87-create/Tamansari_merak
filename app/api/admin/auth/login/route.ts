@@ -1,4 +1,4 @@
-import { compare } from "bcryptjs";
+import bcrypt from "bcryptjs";
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseAdminClient } from "@/services/supabase";
 
@@ -36,9 +36,12 @@ export async function POST(request: NextRequest) {
         }
 
         const row = petugas as PetugasRow | null;
+        console.log("[admin-login] user ditemukan:", Boolean(row), row ? { id: row.id, username: row.username, role: row.role, is_active: row.is_active } : null);
         if (!row?.password_hash) return failedResponse();
 
-        const passwordValid = await compare(password, row.password_hash);
+        const normalizedHash = row.password_hash.trim().replace(/^\$2y\$/, "$2b$");
+        const passwordValid = await bcrypt.compare(password, normalizedHash);
+        console.log("[admin-login] bcrypt.compare():", passwordValid);
         if (!passwordValid) return failedResponse();
 
         const { password_hash: _passwordHash, ...safeProfile } = row;
