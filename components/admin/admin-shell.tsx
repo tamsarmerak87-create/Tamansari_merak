@@ -5,6 +5,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BadgeCheck,
+  CheckCircle2,
+  Download,
+  Eye,
   FileClock,
   FileText,
   LayoutDashboard,
@@ -12,16 +15,19 @@ import {
   LogOut,
   Menu,
   Newspaper,
+  Printer,
   Scale,
   RefreshCw,
   Search,
   Settings,
   ShieldCheck,
+  XCircle,
   UserCog,
   Users,
   X,
 } from "lucide-react";
 import { getCurrentAdminPortalUser, logoutAdminPortal, type AdminPortalProfile } from "@/services/admin-auth.service";
+import { subscribeToTable } from "@/services/supabase";
 import { cn } from "@/utils/cn";
 
 type Row = Record<string, any>;
@@ -37,11 +43,36 @@ type PendingWarga = {
 };
 const statuses = [
   "Menunggu Verifikasi",
-  "Sedang Diproses",
+  "Diproses",
   "Selesai",
   "Ditolak",
-  "Dibatalkan",
 ];
+
+function normalizeStatus(value?: string | null) {
+  if (!value) return "Menunggu Verifikasi";
+  if (value === "Sedang Diproses") return "Diproses";
+  return value;
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
+  return date.toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+function serviceName(row: Row) {
+  return row.layanan?.nama ?? row.jenis_surat ?? row.layanan_nama ?? "-";
+}
+
+function petugasName(row: Row) {
+  return row.petugas?.full_name ?? row.petugas?.nama ?? row.petugas_nama ?? row.admin?.full_name ?? row.admin?.nama ?? "-";
+}
+
+function csvCell(value: unknown) {
+  const text = String(value ?? "-").replace(/"/g, '""');
+  return /[",\n\r]/.test(text) ? `"${text}"` : text;
+}
 const nav = [
   ["Dashboard", "/admin/dashboard", LayoutDashboard],
   ["Verifikasi Warga", "/admin/verifikasi", BadgeCheck],
@@ -101,6 +132,9 @@ export function AdminShell({
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [service, setService] = useState("");
+  const [dateStart, setDateStart] = useState("");
+  const [dateEnd, setDateEnd] = useState("");
+  const [selectedSubmission, setSelectedSubmission] = useState<Row | null>(null);
   const [now] = useState(() => Date.now());
   const [adminProfile, setAdminProfile] = useState<AdminPortalProfile | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -134,15 +168,27 @@ export function AdminShell({
       return () => clearTimeout(t);
     }
   }, [toast, setToast]);
-  const filtered = submissions
+  useEffect(() => {
+    if (!adminProfile) return;
+    const channel = subscribeToTable("pengajuan_surat", () => {
+      void load();
+      setToast({ type: "success", text: "Data pengajuan diperbarui realtime." });
+    });
+    return () => {
+      void channel.unsubscribe();
+    };
+  }, [adminProfile, load, setToast]);
+  const filtered = useMemo(() => submissions
     .filter((r) =>
-      [r.nomor_pengajuan, r.nama_lengkap, r.nik, r.nomor_hp]
+      [r.nomor_pengajuan, r.nama_lengkap, r.nik, r.nomor_hp, r.no_hp]
         .join(" ")
         .toLowerCase()
         .includes(query.toLowerCase()),
     )
-    .filter((r) => !status || r.status === status)
-    .filter((r) => !service || r.layanan_id === service);
+    .filter((r) => !status || normalizeStatus(r.status) === status)
+    .filter((r) => !service || r.layanan_id === service)
+    .filter((r) => !dateStart || String(r.created_at).slice(0, 10) >= dateStart)
+    .filter((r) => !dateEnd || String(r.created_at).slice(0, 10) <= dateEnd), [submissions, query, status, service, dateStart, dateEnd]);
   const stat = (s: string) => submissions.filter((r) => r.status === s).length;
   const today = new Date().toISOString().slice(0, 10);
   const cards = [
@@ -156,24 +202,29 @@ export function AdminShell({
     ["Pengajuan Selesai", stat("Selesai")],
     ["Pengajuan Ditolak", stat("Ditolak")],
   ];
-  const updateStatus = async (row: Row, next: string) => {
+  const updateStatus = async (row: Row, action: "verifikasi" | "setujui" | "tolak", extra?: { catatan_petugas?: string; alasan_penolakan?: string }) => {
     try {
       setToast({ type: "loading", text: "Menyimpan perubahan..." });
-      const normalized = next === "Sedang Diproses" ? "Diproses" : next;
-      const note = normalized === "Diproses" ? "Pengajuan sedang diproses petugas." : `Status pengajuan diubah menjadi ${normalized}.`;
-      const res = await fetch("/api/surat-online/admin", {
+      const res = await fetch("/api/admin/pengajuan", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: row.id, status: normalized, catatan: note, petugas: "Admin Kelurahan" }),
+        credentials: "include",
+        body: JSON.stringify({ id: row.id, action, ...extra }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Gagal memperbarui status");
-      setToast({ type: "success", text: "Status berhasil diperbarui" });
+      setToast({ type: "success", text: action === "tolak" ? "Pengajuan berhasil ditolak." : action === "setujui" ? "Pengajuan berhasil disetujui dan masuk Diproses." : "Berkas berhasil diverifikasi." });
+      setSelectedSubmission(null);
     } catch (error) {
       setToast({ type: "error", text: error instanceof Error ? error.message : "Gagal memperbarui status" });
     } finally {
       await load();
     }
+  };
+  const rejectSubmission = async (row: Row) => {
+    const reason = window.prompt(`Masukkan alasan penolakan untuk ${row.nomor_pengajuan ?? "pengajuan ini"}:`);
+    if (!reason?.trim()) return;
+    await updateStatus(row, "tolak", { alasan_penolakan: reason.trim(), catatan_petugas: reason.trim() });
   };
   const verifyWarga = async (row: PendingWarga) => {
     try {
@@ -217,17 +268,18 @@ export function AdminShell({
   };
   const exportCsv = () => {
     const csv = [
-      "Nomor,Tanggal,Nama,NIK,Layanan,No HP,Status",
+      "Nomor Pengajuan,Tanggal,Nama Pemohon,NIK,Jenis Layanan,Nomor HP,Status,Petugas",
       ...filtered.map((r) =>
         [
           r.nomor_pengajuan,
-          r.created_at,
+          formatDate(r.created_at),
           r.nama_lengkap,
           r.nik,
-          r.layanan?.nama ?? r.jenis_surat,
+          serviceName(r),
           r.nomor_hp ?? r.no_hp,
-          r.status,
-        ].join(","),
+          normalizeStatus(r.status),
+          petugasName(r),
+        ].map(csvCell).join(","),
       ),
     ].join("\n");
     const a = document.createElement("a");
@@ -386,14 +438,14 @@ export function AdminShell({
           </Panel>
         ) : view === "pengajuan" ? (
           <Panel title="Data Pengajuan">
-            <div className="mb-4 grid gap-3 md:grid-cols-5">
-              <div className="md:col-span-2 rounded-2xl bg-slate-50 px-3 py-2">
+            <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-7">
+              <div className="rounded-2xl bg-slate-50 px-3 py-2 xl:col-span-2">
                 <Search size={16} className="inline" />{" "}
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search"
-                  className="bg-transparent outline-none"
+                  placeholder="Cari nama / NIK / nomor"
+                  className="w-[calc(100%-28px)] bg-transparent outline-none"
                 />
               </div>
               <select
@@ -418,14 +470,29 @@ export function AdminShell({
                   </option>
                 ))}
               </select>
+              <input type="date" value={dateStart} onChange={(e) => setDateStart(e.target.value)} className="rounded-2xl bg-slate-50 p-3" aria-label="Tanggal mulai" />
+              <input type="date" value={dateEnd} onChange={(e) => setDateEnd(e.target.value)} className="rounded-2xl bg-slate-50 p-3" aria-label="Tanggal akhir" />
               <button
                 onClick={exportCsv}
-                className="rounded-2xl bg-accent-400 p-3 font-black"
+                className="rounded-2xl bg-accent-400 p-3 font-black text-gov-950"
               >
-                Export CSV
+                <Download className="inline" size={16} /> Export CSV
               </button>
             </div>
-            <Table rows={filtered} onStatus={updateStatus} />
+            <Table
+              rows={filtered}
+              onDetail={(row) => router.push(`/admin/pengajuan/${row.id}`)}
+              onVerify={setSelectedSubmission}
+              onApprove={(row) => updateStatus(row, "setujui")}
+              onReject={rejectSubmission}
+            />
+            {selectedSubmission && (
+              <VerificationDialog
+                row={selectedSubmission}
+                onClose={() => setSelectedSubmission(null)}
+                onSave={(catatan) => updateStatus(selectedSubmission, "verifikasi", { catatan_petugas: catatan })}
+              />
+            )}
           </Panel>
         ) : view === "detail" ? (
           <Panel title="Detail Pengajuan">
@@ -437,7 +504,7 @@ export function AdminShell({
                   {statuses.map((s) => (
                     <button
                       key={s}
-                      onClick={() => updateStatus(detail, s)}
+                      onClick={() => s === "Ditolak" ? rejectSubmission(detail) : updateStatus(detail, s === "Diproses" ? "setujui" : "verifikasi", { catatan_petugas: `Status pengajuan ditinjau: ${s}.` })}
                       className="mr-2 rounded-xl bg-gov-950 px-4 py-2 text-white"
                     >
                       {s}
@@ -492,10 +559,16 @@ function RowLine({ a, b }: { a: string; b: string }) {
 }
 function Table({
   rows,
-  onStatus,
+  onDetail,
+  onVerify,
+  onApprove,
+  onReject,
 }: {
   rows: Row[];
-  onStatus: (r: Row, s: string) => void;
+  onDetail: (r: Row) => void;
+  onVerify: (r: Row) => void;
+  onApprove: (r: Row) => void;
+  onReject: (r: Row) => void;
 }) {
   return (
     <div className="overflow-x-auto">
@@ -523,34 +596,68 @@ function Table({
                   {r.nomor_pengajuan}
                 </Link>
               </td>
-              <td>{String(r.created_at).slice(0, 10)}</td>
+              <td>{formatDate(r.created_at)}</td>
               <td>{r.nama_lengkap}</td>
               <td>{r.nik}</td>
-              <td>{r.layanan?.nama ?? r.jenis_surat}</td>
+              <td>{serviceName(r)}</td>
               <td>{r.nomor_hp ?? r.no_hp}</td>
               <td>
                 <span className="rounded-full bg-accent-100 px-3 py-1 font-bold">
-                  {r.status}
+                  {normalizeStatus(r.status)}
                 </span>
               </td>
               <td>
-                <select
-                  onChange={(e) => onStatus(r, e.target.value)}
-                  defaultValue=""
-                >
-                  <option value="" disabled>
-                    Ubah
-                  </option>
-                  {statuses.map((s) => (
-                    <option key={s} value={s === "Sedang Diproses" ? "Diproses" : s}>{s}</option>
-                  ))}
-                </select>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => onDetail(r)} className="rounded-xl bg-slate-100 px-3 py-2 font-black text-slate-700 hover:bg-slate-200"><Eye className="inline" size={14} /> Detail</button>
+                  <button type="button" onClick={() => onVerify(r)} className="rounded-xl bg-gov-950 px-3 py-2 font-black text-white hover:bg-gov-800"><ShieldCheck className="inline" size={14} /> Verifikasi</button>
+                  <button type="button" onClick={() => onApprove(r)} className="rounded-xl bg-emerald-600 px-3 py-2 font-black text-white hover:bg-emerald-700"><CheckCircle2 className="inline" size={14} /> Setujui</button>
+                  <button type="button" onClick={() => onReject(r)} className="rounded-xl bg-red-600 px-3 py-2 font-black text-white hover:bg-red-700"><XCircle className="inline" size={14} /> Tolak</button>
+                </div>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
       {rows.length === 0 && <p className="py-8 text-center">Belum ada data.</p>}
+    </div>
+  );
+}
+
+function VerificationDialog({
+  row,
+  onClose,
+  onSave,
+}: {
+  row: Row;
+  onClose: () => void;
+  onSave: (catatan: string) => void;
+}) {
+  const [catatan, setCatatan] = useState(`Berkas pengajuan ${row.nomor_pengajuan ?? ""} telah diverifikasi petugas.`.trim());
+  return (
+    <div className="fixed inset-0 z-[90] grid place-items-center bg-slate-950/55 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-xl rounded-[2rem] border border-white/40 bg-white p-6 shadow-[0_30px_100px_rgba(15,23,42,.35)]">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[.2em] text-accent-700">Verifikasi Berkas</p>
+            <h3 className="mt-2 text-2xl font-black text-gov-950">{row.nomor_pengajuan ?? "Pengajuan"}</h3>
+            <p className="mt-1 text-sm font-bold text-slate-500">{row.nama_lengkap ?? "Pemohon"} • {serviceName(row)}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-full bg-slate-100 p-2 text-slate-600 hover:bg-slate-200" aria-label="Tutup dialog"><X size={18} /></button>
+        </div>
+        <label className="mt-5 block text-sm font-black text-gov-950">
+          Catatan petugas
+          <textarea
+            value={catatan}
+            onChange={(event) => setCatatan(event.target.value)}
+            className="mt-2 min-h-32 w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 font-semibold outline-none focus:border-accent-400 focus:bg-white"
+            placeholder="Tambahkan catatan verifikasi..."
+          />
+        </label>
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onClose} className="rounded-2xl bg-slate-100 px-5 py-3 font-black text-slate-700 hover:bg-slate-200">Batal</button>
+          <button type="button" onClick={() => onSave(catatan.trim() || "Berkas telah diverifikasi petugas.")} className="rounded-2xl bg-accent-400 px-5 py-3 font-black text-gov-950 hover:bg-accent-300"><ShieldCheck className="inline" size={16} /> Simpan Verifikasi</button>
+        </div>
+      </div>
     </div>
   );
 }

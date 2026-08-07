@@ -52,10 +52,46 @@ export async function GET(request: NextRequest) {
         return jsonError(firstError.message, 500);
     }
 
+    const submissionIds = (submissions ?? []).map((item) => item.id).filter(Boolean);
+    const petugasIds = Array.from(new Set((submissions ?? []).map((item) => item.verified_by).filter(Boolean)));
+
+    const [{ data: documents, error: documentsError }, { data: petugas, error: petugasError }] = await Promise.all([
+        submissionIds.length
+            ? supabase
+                .from("dokumen_pengajuan")
+                .select("*")
+                .in("pengajuan_id", submissionIds)
+                .order("created_at", { ascending: false })
+            : Promise.resolve({ data: [], error: null }),
+        petugasIds.length
+            ? supabase
+                .from("petugas")
+                .select("id,username,nama_lengkap,nip,jabatan,role")
+                .in("id", petugasIds)
+            : Promise.resolve({ data: [], error: null }),
+    ]);
+
+    if (documentsError) return jsonError(documentsError.message, 500);
+    if (petugasError) return jsonError(petugasError.message, 500);
+
+    const documentsBySubmission = new Map<string, unknown[]>();
+    for (const doc of documents ?? []) {
+        const pengajuanId = String(doc.pengajuan_id ?? "");
+        if (!documentsBySubmission.has(pengajuanId)) documentsBySubmission.set(pengajuanId, []);
+        documentsBySubmission.get(pengajuanId)?.push(doc);
+    }
+
+    const petugasById = new Map((petugas ?? []).map((item) => [item.id, item]));
+    const enrichedSubmissions = (submissions ?? []).map((item) => ({
+        ...item,
+        dokumen_pengajuan: documentsBySubmission.get(String(item.id)) ?? [],
+        petugas: item.verified_by ? petugasById.get(item.verified_by) ?? null : null,
+    }));
+
     return NextResponse.json({
         ok: true,
         data: {
-            submissions: submissions ?? [],
+            submissions: enrichedSubmissions,
             services: services ?? [],
             pendingWarga: pendingWarga ?? [],
             wargaProfiles: wargaProfiles ?? [],
