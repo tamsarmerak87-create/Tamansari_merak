@@ -144,7 +144,7 @@ function useAdminData() {
       void client.removeChannel(ch);
     };
   }, [client, load]);
-  return { client, submissions, services, pendingWarga, wargaProfiles, loading, toast, setToast, load };
+  return { client, submissions, services, pendingWarga, setPendingWarga, wargaProfiles, setWargaProfiles, loading, toast, setToast, load };
 }
 
 export function AdminShell({
@@ -163,7 +163,7 @@ export function AdminShell({
   const [now] = useState(() => Date.now());
   const [adminProfile, setAdminProfile] = useState<AdminPortalProfile | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const { client, submissions, services, pendingWarga, wargaProfiles, loading, toast, setToast, load } =
+  const { client, submissions, services, pendingWarga, setPendingWarga, wargaProfiles, setWargaProfiles, loading, toast, setToast, load } =
     useAdminData();
   useEffect(() => {
     let active = true;
@@ -236,13 +236,17 @@ export function AdminShell({
   };
   const verifyWarga = async (row: PendingWarga) => {
     try {
-      if (!client) throw new Error("Supabase belum dikonfigurasi.");
       setToast({ type: "loading", text: `Memverifikasi ${row.nama_lengkap ?? "warga"}...` });
-      const { error } = await client
-        .from("warga_profiles")
-        .update({ status_verifikasi: "Terverifikasi", alasan_penolakan: null })
-        .eq("id", row.id);
-      if (error) throw error;
+      const res = await fetch("/api/admin/verifikasi", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ wargaId: row.id, status_verifikasi: "Terverifikasi" }),
+      });
+      const json = await res.json().catch(() => null) as { ok?: boolean; error?: string; data?: PendingWarga[] } | null;
+      if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Gagal memverifikasi warga");
+      if (!json.data?.length) throw new Error("Tidak ada data warga yang diperbarui. Toast sukses dibatalkan.");
+      setPendingWarga((prev) => prev.filter((item) => item.id !== row.id));
+      setWargaProfiles((prev) => prev.map((item) => item.id === row.id ? { ...item, status_verifikasi: "Terverifikasi", alasan_penolakan: null } : item));
       setToast({ type: "success", text: "Warga berhasil diverifikasi. Akses dashboard warga sudah aktif." });
       await load();
     } catch (error) {
@@ -253,13 +257,17 @@ export function AdminShell({
     const reason = window.prompt(`Masukkan alasan penolakan untuk ${row.nama_lengkap ?? "warga"}:`);
     if (!reason?.trim()) return;
     try {
-      if (!client) throw new Error("Supabase belum dikonfigurasi.");
       setToast({ type: "loading", text: "Menyimpan penolakan..." });
-      const { error } = await client
-        .from("warga_profiles")
-        .update({ status_verifikasi: "Ditolak", alasan_penolakan: reason.trim() })
-        .eq("id", row.id);
-      if (error) throw error;
+      const res = await fetch("/api/admin/verifikasi", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ wargaId: row.id, status_verifikasi: "Ditolak", alasan_penolakan: reason.trim() }),
+      });
+      const json = await res.json().catch(() => null) as { ok?: boolean; error?: string; data?: PendingWarga[] } | null;
+      if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Gagal menolak verifikasi warga");
+      if (!json.data?.length) throw new Error("Tidak ada data warga yang diperbarui. Toast sukses dibatalkan.");
+      setPendingWarga((prev) => prev.filter((item) => item.id !== row.id));
+      setWargaProfiles((prev) => prev.map((item) => item.id === row.id ? { ...item, status_verifikasi: "Ditolak", alasan_penolakan: reason.trim() } : item));
       setToast({ type: "success", text: "Status warga berhasil ditolak dengan alasan." });
       await load();
     } catch (error) {
