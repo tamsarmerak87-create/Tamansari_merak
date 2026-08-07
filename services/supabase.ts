@@ -7,23 +7,43 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+export function logSupabaseEnvStatus() {
+    console.log("Supabase URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
+    console.log("Anon Key:", !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+    console.log("Service Key:", !!process.env.SUPABASE_SERVICE_ROLE_KEY);
+}
+
+function requireSupabaseUrl() {
+    if (!supabaseUrl) throw new Error("NEXT_PUBLIC_SUPABASE_URL belum dikonfigurasi. Isi environment variable Supabase URL sebelum membuat client.");
+    return supabaseUrl;
+}
+
+function requireSupabaseAnonKey() {
+    if (!supabaseAnonKey) throw new Error("NEXT_PUBLIC_SUPABASE_ANON_KEY belum dikonfigurasi. Browser/Server anon client membutuhkan Supabase anon key untuk header apikey.");
+    return supabaseAnonKey;
+}
+
+function requireSupabaseServiceKey() {
+    if (!supabaseServiceKey) throw new Error("SUPABASE_SERVICE_ROLE_KEY belum dikonfigurasi. Admin/server privileged client membutuhkan service role key untuk header apikey dan Authorization.");
+    return supabaseServiceKey;
+}
+
 export function createSupabaseBrowserClient() {
-    if (!supabaseUrl || !supabaseAnonKey) return null;
-    return createClient(supabaseUrl, supabaseAnonKey);
+    logSupabaseEnvStatus();
+    return createClient(requireSupabaseUrl(), requireSupabaseAnonKey());
 }
 
 export function createSupabaseServerClient() {
-    if (!supabaseUrl || !supabaseAnonKey) return null;
-    return createClient(supabaseUrl, supabaseAnonKey, { auth: { persistSession: false } });
+    logSupabaseEnvStatus();
+    return createClient(requireSupabaseUrl(), requireSupabaseServiceKey(), { auth: { persistSession: false } });
 }
 
 export function createSupabaseAdminClient() {
-    if (!supabaseUrl || !supabaseServiceKey) return null;
-    return createClient(supabaseUrl, supabaseServiceKey, { auth: { persistSession: false } });
+    logSupabaseEnvStatus();
+    return createClient(requireSupabaseUrl(), requireSupabaseServiceKey(), { auth: { persistSession: false } });
 }
 
-function requireClient(client: SupabaseClient | null) {
-    if (!client) throw new Error("Supabase env belum dikonfigurasi.");
+function requireClient(client: SupabaseClient) {
     return client;
 }
 

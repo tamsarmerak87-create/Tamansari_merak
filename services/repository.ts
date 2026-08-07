@@ -37,42 +37,37 @@ function mapLayananRow(row: LayananRow): PublicService {
 }
 
 function getClient() {
-    return createSupabaseServerClient() ?? createSupabaseBrowserClient();
+    return typeof window === "undefined" ? createSupabaseServerClient() : createSupabaseBrowserClient();
 }
 
 export function createRepository<T extends { id: string }>(table: TableName) {
     return {
         async list(fallback: T[] = []) {
             const client = getClient();
-            if (!client) return fallback;
             const { data, error } = await client.from(table).select("*").order("created_at", { ascending: false });
             if (error) return fallback;
             return (data ?? fallback) as T[];
         },
         async getById(id: string) {
             const client = getClient();
-            if (!client) return null;
             const { data, error } = await client.from(table).select("*").eq("id", id).maybeSingle();
             if (error) return null;
             return data as T | null;
         },
         async create(payload: Omit<T, "id">) {
             const client = getClient();
-            if (!client) throw new Error("Supabase env belum dikonfigurasi.");
             const { data, error } = await client.from(table).insert(payload as RepositoryPayload).select("*").single();
             if (error) throw error;
             return data as T;
         },
         async update(id: string, payload: Partial<T>) {
             const client = getClient();
-            if (!client) throw new Error("Supabase env belum dikonfigurasi.");
             const { data, error } = await client.from(table).update(payload as RepositoryPayload).eq("id", id).select("*").single();
             if (error) throw error;
             return data as T;
         },
         async remove(id: string) {
             const client = getClient();
-            if (!client) throw new Error("Supabase env belum dikonfigurasi.");
             const { error } = await client.from(table).delete().eq("id", id);
             if (error) throw error;
             return true;
@@ -87,7 +82,6 @@ export const publicRepository = {
     getStatistics: async () => createRepository<Statistic & { id: string }>("statistics").list(statistics.map((item) => ({ id: item.label, ...item }))),
     getServices: async () => {
         const client = getClient();
-        if (!client) return [] as PublicService[];
 
         const { data, error } = await client
             .from("layanan")
