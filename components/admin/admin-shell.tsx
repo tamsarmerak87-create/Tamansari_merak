@@ -4,22 +4,35 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  BadgeCheck,
   FileClock,
   FileText,
   LayoutDashboard,
   LogOut,
   Menu,
+  Newspaper,
   RefreshCw,
+  Scale,
   Search,
   Settings,
-  SlidersHorizontal,
+  ShieldCheck,
   X,
 } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/services/supabase";
+import { getCurrentAdminPortalUser, type AdminPortalProfile } from "@/services/admin-auth.service";
 import { cn } from "@/utils/cn";
 
 type Row = Record<string, any>;
 type Toast = { type: "success" | "error" | "loading"; text: string } | null;
+type PendingWarga = {
+  id: string;
+  nama_lengkap?: string | null;
+  nik?: string | null;
+  email?: string | null;
+  created_at?: string | null;
+  status_verifikasi?: string | null;
+  alasan_penolakan?: string | null;
+};
 const statuses = [
   "Menunggu Verifikasi",
   "Sedang Diproses",
@@ -29,15 +42,18 @@ const statuses = [
 ];
 const nav = [
   ["Dashboard", "/admin/dashboard", LayoutDashboard],
-  ["Pengajuan", "/admin/pengajuan", FileText],
-  ["Layanan", "/admin/layanan", SlidersHorizontal],
-  ["Riwayat", "/admin/pengajuan", FileClock],
+  ["Verifikasi Warga", "/admin/verifikasi-warga", BadgeCheck],
+  ["Pengajuan Surat", "/admin/pengajuan", FileText],
+  ["Tracking", "/admin/tracking", FileClock],
+  ["POSBANKUM", "/admin/posbankum", Scale],
+  ["Berita", "/admin/berita", Newspaper],
   ["Pengaturan", "/admin/pengaturan", Settings],
 ] as const;
 
 function useAdminData() {
   const [submissions, setSubmissions] = useState<Row[]>([]);
   const [services, setServices] = useState<Row[]>([]);
+  const [pendingWarga, setPendingWarga] = useState<PendingWarga[]>([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<Toast>(null);
   const client = useMemo(() => createSupabaseBrowserClient(), []);
@@ -45,7 +61,7 @@ function useAdminData() {
     setLoading(true);
     try {
       if (!client) throw new Error("Supabase belum dikonfigurasi.");
-      const [{ data: p, error: pe }, { data: l, error: le }] =
+      const [{ data: p, error: pe }, { data: l, error: le }, { data: w, error: we }] =
         await Promise.all([
           client
             .from("pengajuan_surat")
@@ -55,11 +71,18 @@ function useAdminData() {
             .from("layanan")
             .select("*")
             .order("nama_layanan", { ascending: true }),
+          client
+            .from("warga_profiles")
+            .select("id,nama_lengkap,nik,email,created_at,status_verifikasi,alasan_penolakan")
+            .eq("status_verifikasi", "Belum Terverifikasi")
+            .order("created_at", { ascending: true }),
         ]);
       if (pe) throw pe;
       if (le) throw le;
+      if (we) throw we;
       setSubmissions(p ?? []);
       setServices(l ?? []);
+      setPendingWarga((w ?? []) as PendingWarga[]);
     } catch (e) {
       setToast({
         type: "error",
@@ -86,19 +109,24 @@ function useAdminData() {
         { event: "*", schema: "public", table: "layanan" },
         () => void load(),
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "warga_profiles" },
+        () => void load(),
+      )
       .subscribe();
     return () => {
       void client.removeChannel(ch);
     };
   }, [client, load]);
-  return { client, submissions, services, loading, toast, setToast, load };
+  return { client, submissions, services, pendingWarga, loading, toast, setToast, load };
 }
 
 export function AdminShell({
   view,
   id,
 }: {
-  view: "dashboard" | "pengajuan" | "detail" | "layanan" | "pengaturan";
+  view: "dashboard" | "verifikasi-warga" | "pengajuan" | "detail" | "layanan" | "tracking" | "posbankum" | "berita" | "pengaturan";
   id?: string;
 }) {
   const pathname = usePathname();
@@ -108,8 +136,32 @@ export function AdminShell({
   const [status, setStatus] = useState("");
   const [service, setService] = useState("");
   const [now] = useState(() => Date.now());
-  const { client, submissions, services, loading, toast, setToast, load } =
+  const [adminProfile, setAdminProfile] = useState<AdminPortalProfile | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const { client, submissions, services, pendingWarga, loading, toast, setToast, load } =
     useAdminData();
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        const current = await getCurrentAdminPortalUser();
+        if (!active) return;
+        if (!current.user || !current.profile) {
+          router.replace("/admin/login");
+          return;
+        }
+        setAdminProfile(current.profile);
+      } catch (error) {
+        console.error(error);
+        router.replace("/admin/login");
+      } finally {
+        if (active) setAuthLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [router]);
   useEffect(() => {
     if (toast?.type !== "loading") {
       const t = setTimeout(() => setToast(null), 3200);
@@ -169,6 +221,38 @@ export function AdminShell({
       await load();
     }
   };
+  const verifyWarga = async (row: PendingWarga) => {
+    try {
+      if (!client) throw new Error("Supabase belum dikonfigurasi.");
+      setToast({ type: "loading", text: `Memverifikasi ${row.nama_lengkap ?? "warga"}...` });
+      const { error } = await client
+        .from("warga_profiles")
+        .update({ status_verifikasi: "Terverifikasi", alasan_penolakan: null })
+        .eq("id", row.id);
+      if (error) throw error;
+      setToast({ type: "success", text: "Warga berhasil diverifikasi. Akses dashboard warga sudah aktif." });
+      await load();
+    } catch (error) {
+      setToast({ type: "error", text: error instanceof Error ? error.message : "Gagal memverifikasi warga" });
+    }
+  };
+  const rejectWarga = async (row: PendingWarga) => {
+    const reason = window.prompt(`Masukkan alasan penolakan untuk ${row.nama_lengkap ?? "warga"}:`);
+    if (!reason?.trim()) return;
+    try {
+      if (!client) throw new Error("Supabase belum dikonfigurasi.");
+      setToast({ type: "loading", text: "Menyimpan penolakan..." });
+      const { error } = await client
+        .from("warga_profiles")
+        .update({ status_verifikasi: "Ditolak", alasan_penolakan: reason.trim() })
+        .eq("id", row.id);
+      if (error) throw error;
+      setToast({ type: "success", text: "Status warga berhasil ditolak dengan alasan." });
+      await load();
+    } catch (error) {
+      setToast({ type: "error", text: error instanceof Error ? error.message : "Gagal menolak verifikasi warga" });
+    }
+  };
   const exportCsv = () => {
     const csv = [
       "Nomor,Tanggal,Nama,NIK,Layanan,No HP,Status",
@@ -190,16 +274,29 @@ export function AdminShell({
     a.click();
   };
   const detail = submissions.find((r) => r.id === id);
+  if (authLoading || !adminProfile) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[linear-gradient(135deg,#071a33,#0B2C6A)] p-6 text-white">
+        <div className="rounded-[2rem] border border-white/15 bg-white/10 p-8 text-center shadow-2xl backdrop-blur-xl">
+          <RefreshCw className="mx-auto size-8 animate-spin text-accent-300" />
+          <p className="mt-4 font-black">Memverifikasi akses admin/petugas...</p>
+        </div>
+      </main>
+    );
+  }
   return (
-    <main className="min-h-screen bg-[#edf4f1] text-slate-900">
+    <main className="min-h-screen bg-[linear-gradient(135deg,#f8fafc,#eef5ff_48%,#fff8e1)] text-slate-900">
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-[60] w-72 bg-gov-950 p-5 text-white transition lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-[60] w-72 overflow-y-auto bg-[linear-gradient(180deg,#071a33,#0B2C6A)] p-5 text-white shadow-[18px_0_60px_rgba(7,26,51,.22)] transition lg:translate-x-0",
           open ? "translate-x-0" : "-translate-x-full",
         )}
       >
         <div className="flex items-center justify-between">
-          <b className="text-xl">Admin Tamansari</b>
+          <div>
+            <b className="text-xl">Admin Tamansari</b>
+            <p className="mt-1 text-xs font-bold uppercase tracking-[.18em] text-accent-200">{adminProfile.role}</p>
+          </div>
           <button onClick={() => setOpen(false)} className="lg:hidden">
             <X />
           </button>
@@ -211,7 +308,7 @@ export function AdminShell({
               href={href}
               className={cn(
                 "flex items-center gap-3 rounded-2xl px-4 py-3 font-bold",
-                pathname === href
+                pathname === href || pathname.startsWith(`${href}/`)
                   ? "bg-accent-400 text-gov-950"
                   : "hover:bg-white/10",
               )}
@@ -239,11 +336,12 @@ export function AdminShell({
           </button>
           <div>
             <p className="text-xs font-black uppercase tracking-[.25em] text-accent-700">
-              Sistem Layanan Online
+              Portal Admin Terpisah
             </p>
             <h1 className="text-2xl font-black text-gov-950">
               Dashboard Admin Kelurahan Tamansari
             </h1>
+            <p className="mt-1 text-sm font-bold text-slate-500">Masuk sebagai {adminProfile.full_name ?? adminProfile.email ?? "Petugas"}</p>
           </div>
           <button
             onClick={load}
@@ -307,8 +405,23 @@ export function AdminShell({
                   />
                 ))}
               </Panel>
+              <Panel title="Verifikasi Warga Menunggu">
+                {pendingWarga.slice(0, 6).map((w) => (
+                  <RowLine key={w.id} a={w.nama_lengkap ?? "Warga"} b={w.status_verifikasi ?? "Belum Terverifikasi"} />
+                ))}
+                {pendingWarga.length === 0 && <p className="font-bold text-slate-500">Tidak ada warga yang menunggu verifikasi.</p>}
+              </Panel>
             </div>
           </>
+        ) : view === "verifikasi-warga" ? (
+          <Panel title="Verifikasi Warga">
+            <div className="mb-5 rounded-[1.5rem] bg-[linear-gradient(135deg,#071a33,#0B2C6A)] p-5 text-white">
+              <ShieldCheck className="size-8 text-accent-300" />
+              <h2 className="mt-3 text-2xl font-black">Antrean Verifikasi Akun Warga</h2>
+              <p className="mt-2 text-sm font-bold text-white/70">Data diambil dari public.warga_profiles dengan status_verifikasi &quot;Belum Terverifikasi&quot;. Aksi verifikasi akan mengubah status menjadi Terverifikasi dan memicu realtime di halaman warga.</p>
+            </div>
+            <WargaVerificationTable rows={pendingWarga} onVerify={verifyWarga} onReject={rejectWarga} />
+          </Panel>
         ) : view === "pengajuan" ? (
           <Panel title="Data Pengajuan">
             <div className="mb-4 grid gap-3 md:grid-cols-5">
@@ -382,6 +495,12 @@ export function AdminShell({
             reload={load}
             setToast={setToast}
           />
+        ) : view === "tracking" ? (
+          <Placeholder title="Tracking" text="Panel monitoring perjalanan status pengajuan surat warga secara realtime." />
+        ) : view === "posbankum" ? (
+          <Placeholder title="POSBANKUM" text="Ruang administrasi bantuan hukum Kelurahan Tamansari." />
+        ) : view === "berita" ? (
+          <Placeholder title="Berita" text="Manajemen publikasi berita dan informasi resmi kelurahan." />
         ) : (
           <Pengaturan />
         )}
@@ -568,6 +687,75 @@ function Layanan({
           b={s.is_active === false ? "Nonaktif" : "Aktif"}
         />
       ))}
+    </Panel>
+  );
+}
+function WargaVerificationTable({
+  rows,
+  onVerify,
+  onReject,
+}: {
+  rows: PendingWarga[];
+  onVerify: (row: PendingWarga) => void;
+  onReject: (row: PendingWarga) => void;
+}) {
+  return (
+    <div className="overflow-x-auto rounded-[1.5rem] border border-slate-100">
+      <table className="min-w-full text-sm">
+        <thead className="bg-slate-50 text-left text-xs font-black uppercase tracking-[.14em] text-slate-500">
+          <tr>
+            <th className="px-4 py-4">Nama</th>
+            <th className="px-4 py-4">NIK</th>
+            <th className="px-4 py-4">Email</th>
+            <th className="px-4 py-4">Tanggal Daftar</th>
+            <th className="px-4 py-4">Status</th>
+            <th className="px-4 py-4">Aksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.id} className="border-t border-slate-100 align-top">
+              <td className="px-4 py-4 font-black text-gov-950">{row.nama_lengkap ?? "-"}</td>
+              <td className="px-4 py-4 font-bold text-slate-700">{row.nik ?? "-"}</td>
+              <td className="px-4 py-4 font-bold text-slate-700">{row.email ?? "-"}</td>
+              <td className="px-4 py-4 font-bold text-slate-700">{row.created_at ? new Date(row.created_at).toLocaleDateString("id-ID") : "-"}</td>
+              <td className="px-4 py-4">
+                <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-800">
+                  {row.status_verifikasi ?? "Belum Terverifikasi"}
+                </span>
+              </td>
+              <td className="px-4 py-4">
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => onVerify(row)} className="rounded-xl bg-emerald-600 px-4 py-2 font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-emerald-700">
+                    Verifikasi
+                  </button>
+                  <button onClick={() => onReject(row)} className="rounded-xl bg-red-600 px-4 py-2 font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-red-700">
+                    Tolak
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {rows.length === 0 && (
+        <div className="p-10 text-center">
+          <ShieldCheck className="mx-auto size-10 text-emerald-500" />
+          <p className="mt-3 text-lg font-black text-gov-950">Tidak ada antrean verifikasi.</p>
+          <p className="mt-1 font-bold text-slate-500">Semua warga yang masuk antrean sudah diproses.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+function Placeholder({ title, text }: { title: string; text: string }) {
+  return (
+    <Panel title={title}>
+      <div className="rounded-[1.5rem] bg-[linear-gradient(135deg,#071a33,#0B2C6A)] p-8 text-white">
+        <p className="text-xs font-black uppercase tracking-[.18em] text-accent-200">Modul Admin</p>
+        <h2 className="mt-3 text-3xl font-black">{title}</h2>
+        <p className="mt-3 max-w-2xl font-bold leading-7 text-white/70">{text}</p>
+      </div>
     </Panel>
   );
 }

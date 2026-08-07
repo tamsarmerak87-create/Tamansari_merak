@@ -29,7 +29,7 @@ export type Statistic = { label: string; value: number; suffix?: string };
 
 export type ApiResponse<T> = { ok: true; data: T } | { ok: false; error: string };
 
-export type UserRole = "super_admin" | "admin" | "editor" | "viewer";
+export type UserRole = "super_admin" | "admin" | "petugas" | "editor" | "viewer";
 
 export type DatabaseRecord = {
     id: string;
