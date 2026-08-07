@@ -2,12 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { site } from "@/constants/site";
-import { Navbar } from "@/components/layout/navbar";
-import { Footer } from "@/components/layout/footer";
-import { FloatingActions } from "@/components/common/floating-actions";
-import { TamsarChatWidget } from "@/components/chat/tamsar-chat-widget";
-import { WargaAuthProvider } from "@/components/auth/warga-auth-provider";
-import { VerificationGuard } from "@/components/auth/verification-guard";
+import { PortalChrome } from "@/components/layout/portal-chrome";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 
@@ -26,13 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <html lang="id" className={inter.variable} suppressHydrationWarning>
             <body className="font-sans antialiased">
                 <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-                <WargaAuthProvider>
-                    <Navbar />
-                    <VerificationGuard>{children}</VerificationGuard>
-                    <Footer />
-                    <FloatingActions />
-                    <TamsarChatWidget />
-                </WargaAuthProvider>
+                <PortalChrome>{children}</PortalChrome>
             </body>
         </html>
     );

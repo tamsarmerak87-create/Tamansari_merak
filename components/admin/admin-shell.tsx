@@ -8,14 +8,16 @@ import {
   FileClock,
   FileText,
   LayoutDashboard,
+  LineChart,
   LogOut,
   Menu,
   Newspaper,
-  RefreshCw,
   Scale,
+  RefreshCw,
   Search,
   Settings,
   ShieldCheck,
+  Users,
   X,
 } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/services/supabase";
@@ -42,11 +44,14 @@ const statuses = [
 ];
 const nav = [
   ["Dashboard", "/admin/dashboard", LayoutDashboard],
-  ["Verifikasi Warga", "/admin/verifikasi-warga", BadgeCheck],
+  ["Verifikasi Warga", "/admin/verifikasi", BadgeCheck],
   ["Pengajuan Surat", "/admin/pengajuan", FileText],
   ["Tracking", "/admin/tracking", FileClock],
   ["POSBANKUM", "/admin/posbankum", Scale],
   ["Berita", "/admin/berita", Newspaper],
+  ["Master Layanan", "/admin/layanan", Settings],
+  ["Pengguna", "/admin/pengguna", Users],
+  ["Laporan", "/admin/laporan", LineChart],
   ["Pengaturan", "/admin/pengaturan", Settings],
 ] as const;
 
@@ -54,6 +59,7 @@ function useAdminData() {
   const [submissions, setSubmissions] = useState<Row[]>([]);
   const [services, setServices] = useState<Row[]>([]);
   const [pendingWarga, setPendingWarga] = useState<PendingWarga[]>([]);
+  const [wargaProfiles, setWargaProfiles] = useState<PendingWarga[]>([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<Toast>(null);
   const client = useMemo(() => createSupabaseBrowserClient(), []);
@@ -61,7 +67,7 @@ function useAdminData() {
     setLoading(true);
     try {
       if (!client) throw new Error("Supabase belum dikonfigurasi.");
-      const [{ data: p, error: pe }, { data: l, error: le }, { data: w, error: we }] =
+      const [{ data: p, error: pe }, { data: l, error: le }, { data: w, error: we }, { data: allWarga, error: awe }] =
         await Promise.all([
           client
             .from("pengajuan_surat")
@@ -76,13 +82,19 @@ function useAdminData() {
             .select("id,nama_lengkap,nik,email,created_at,status_verifikasi,alasan_penolakan")
             .eq("status_verifikasi", "Belum Terverifikasi")
             .order("created_at", { ascending: true }),
+          client
+            .from("warga_profiles")
+            .select("id,nama_lengkap,nik,email,created_at,status_verifikasi,alasan_penolakan")
+            .order("created_at", { ascending: false }),
         ]);
       if (pe) throw pe;
       if (le) throw le;
       if (we) throw we;
+      if (awe) throw awe;
       setSubmissions(p ?? []);
       setServices(l ?? []);
       setPendingWarga((w ?? []) as PendingWarga[]);
+      setWargaProfiles((allWarga ?? []) as PendingWarga[]);
     } catch (e) {
       setToast({
         type: "error",
@@ -119,14 +131,14 @@ function useAdminData() {
       void client.removeChannel(ch);
     };
   }, [client, load]);
-  return { client, submissions, services, pendingWarga, loading, toast, setToast, load };
+  return { client, submissions, services, pendingWarga, wargaProfiles, loading, toast, setToast, load };
 }
 
 export function AdminShell({
   view,
   id,
 }: {
-  view: "dashboard" | "verifikasi-warga" | "pengajuan" | "detail" | "layanan" | "tracking" | "posbankum" | "berita" | "pengaturan";
+  view: "dashboard" | "verifikasi" | "verifikasi-warga" | "pengajuan" | "detail" | "layanan" | "tracking" | "posbankum" | "berita" | "laporan" | "pengguna" | "pengaturan";
   id?: string;
 }) {
   const pathname = usePathname();
@@ -138,7 +150,7 @@ export function AdminShell({
   const [now] = useState(() => Date.now());
   const [adminProfile, setAdminProfile] = useState<AdminPortalProfile | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const { client, submissions, services, pendingWarga, loading, toast, setToast, load } =
+  const { client, submissions, services, pendingWarga, wargaProfiles, loading, toast, setToast, load } =
     useAdminData();
   useEffect(() => {
     let active = true;
@@ -180,27 +192,15 @@ export function AdminShell({
   const stat = (s: string) => submissions.filter((r) => r.status === s).length;
   const today = new Date().toISOString().slice(0, 10);
   const cards = [
-    ["Total Pengajuan", submissions.length],
-    ["Menunggu Verifikasi", stat("Menunggu Verifikasi")],
-    ["Sedang Diproses", stat("Sedang Diproses") + stat("Diproses")],
-    ["Selesai", stat("Selesai")],
-    ["Ditolak", stat("Ditolak")],
+    ["Total Warga", wargaProfiles.length],
+    ["Belum Terverifikasi", wargaProfiles.filter((w) => w.status_verifikasi === "Belum Terverifikasi").length],
+    ["Sudah Terverifikasi", wargaProfiles.filter((w) => w.status_verifikasi === "Terverifikasi").length],
     [
-      "Hari Ini",
+      "Pengajuan Hari Ini",
       submissions.filter((r) => String(r.created_at).startsWith(today)).length,
     ],
-    [
-      "Minggu Ini",
-      submissions.filter(
-        (r) => now - new Date(r.created_at).getTime() < 604800000,
-      ).length,
-    ],
-    [
-      "Bulan Ini",
-      submissions.filter(
-        (r) => new Date(r.created_at).getMonth() === new Date().getMonth(),
-      ).length,
-    ],
+    ["Pengajuan Selesai", stat("Selesai")],
+    ["Pengajuan Ditolak", stat("Ditolak")],
   ];
   const updateStatus = async (row: Row, next: string) => {
     try {
@@ -413,7 +413,7 @@ export function AdminShell({
               </Panel>
             </div>
           </>
-        ) : view === "verifikasi-warga" ? (
+        ) : view === "verifikasi" || view === "verifikasi-warga" ? (
           <Panel title="Verifikasi Warga">
             <div className="mb-5 rounded-[1.5rem] bg-[linear-gradient(135deg,#071a33,#0B2C6A)] p-5 text-white">
               <ShieldCheck className="size-8 text-accent-300" />
@@ -501,6 +501,10 @@ export function AdminShell({
           <Placeholder title="POSBANKUM" text="Ruang administrasi bantuan hukum Kelurahan Tamansari." />
         ) : view === "berita" ? (
           <Placeholder title="Berita" text="Manajemen publikasi berita dan informasi resmi kelurahan." />
+        ) : view === "pengguna" ? (
+          <Pengguna rows={wargaProfiles} />
+        ) : view === "laporan" ? (
+          <Laporan submissions={submissions} wargaProfiles={wargaProfiles} />
         ) : (
           <Pengaturan />
         )}
@@ -688,6 +692,47 @@ function Layanan({
         />
       ))}
     </Panel>
+  );
+}
+function Pengguna({ rows }: { rows: PendingWarga[] }) {
+  return (
+    <Panel title="Manajemen Pengguna">
+      <div className="grid gap-3 md:grid-cols-3">
+        {rows.slice(0, 12).map((row) => (
+          <div key={row.id} className="rounded-[1.5rem] border border-slate-100 bg-slate-50 p-4">
+            <p className="font-black text-gov-950">{row.nama_lengkap ?? "Warga"}</p>
+            <p className="mt-1 text-sm font-bold text-slate-500">{row.email ?? row.nik ?? "-"}</p>
+            <span className="mt-3 inline-flex rounded-full bg-white px-3 py-1 text-xs font-black text-slate-600 shadow-sm">
+              {row.status_verifikasi ?? "Belum Terverifikasi"}
+            </span>
+          </div>
+        ))}
+      </div>
+      {rows.length === 0 && <p className="font-bold text-slate-500">Belum ada data pengguna.</p>}
+    </Panel>
+  );
+}
+function Laporan({ submissions, wargaProfiles }: { submissions: Row[]; wargaProfiles: PendingWarga[] }) {
+  return (
+    <Panel title="Laporan Pelayanan Digital">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <ReportCard label="Total Warga" value={wargaProfiles.length} />
+        <ReportCard label="Total Pengajuan" value={submissions.length} />
+        <ReportCard label="Selesai" value={submissions.filter((r) => r.status === "Selesai").length} />
+        <ReportCard label="Ditolak" value={submissions.filter((r) => r.status === "Ditolak").length} />
+      </div>
+      <p className="mt-5 rounded-[1.5rem] bg-slate-50 p-5 font-bold leading-7 text-slate-600">
+        Modul laporan siap dikembangkan menjadi export PDF/CSV rekap warga, pengajuan surat, POSBANKUM, dan performa pelayanan petugas.
+      </p>
+    </Panel>
+  );
+}
+function ReportCard({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-[1.5rem] bg-[linear-gradient(135deg,#071a33,#0B2C6A)] p-5 text-white shadow-soft">
+      <p className="text-xs font-black uppercase tracking-[.18em] text-accent-200">{label}</p>
+      <b className="mt-3 block text-4xl">{value}</b>
+    </div>
   );
 }
 function WargaVerificationTable({

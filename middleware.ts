@@ -1,13 +1,30 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 const protectedPrefixes = ["/dashboard", "/profile", "/profil", "/layanan", "/pengajuan", "/surat-online", "/tracking", "/posbankum"];
+const adminProtectedPrefixes = ["/admin/dashboard", "/admin/verifikasi", "/admin/verifikasi-warga", "/admin/pengajuan", "/admin/tracking", "/admin/posbankum", "/admin/berita", "/admin/layanan", "/admin/laporan", "/admin/pengguna", "/admin/pengaturan"];
 
 function isProtectedPath(pathname: string) {
     return protectedPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
+function isAdminProtectedPath(pathname: string) {
+    return adminProtectedPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
 export function middleware(request: NextRequest) {
     const { pathname } = request.nextUrl;
+    if (isAdminProtectedPath(pathname)) {
+        const supabaseAuthToken = request.cookies.getAll().some((cookie) => cookie.name.startsWith("sb-") && cookie.name.includes("auth-token"));
+        const response = NextResponse.next();
+        response.headers.set("x-tamsar-admin-role-required", "admin,petugas");
+        if (!supabaseAuthToken) {
+            const url = request.nextUrl.clone();
+            url.pathname = "/admin/login";
+            url.searchParams.set("next", pathname);
+            return NextResponse.redirect(url);
+        }
+        return response;
+    }
     if (!isProtectedPath(pathname)) return NextResponse.next();
 
     const response = NextResponse.next();
@@ -16,5 +33,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-    matcher: ["/dashboard/:path*", "/profile/:path*", "/profil/:path*", "/layanan/:path*", "/pengajuan/:path*", "/surat-online/:path*", "/tracking/:path*", "/posbankum/:path*"],
+    matcher: ["/dashboard/:path*", "/profile/:path*", "/profil/:path*", "/layanan/:path*", "/pengajuan/:path*", "/surat-online/:path*", "/tracking/:path*", "/posbankum/:path*", "/admin/:path*"],
 };
