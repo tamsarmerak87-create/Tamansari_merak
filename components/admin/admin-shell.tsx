@@ -21,8 +21,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { createSupabaseBrowserClient } from "@/services/supabase";
-import { getCurrentAdminPortalUser, type AdminPortalProfile } from "@/services/admin-auth.service";
+import { getCurrentAdminPortalUser, logoutAdminPortal, type AdminPortalProfile } from "@/services/admin-auth.service";
 import { cn } from "@/utils/cn";
 
 type Row = Record<string, any>;
@@ -64,50 +63,16 @@ function useAdminData() {
   const [wargaProfiles, setWargaProfiles] = useState<PendingWarga[]>([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<Toast>(null);
-  const client = useMemo(() => createSupabaseBrowserClient(), []);
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      if (!client) throw new Error("Supabase belum dikonfigurasi.");
-      const [{ data: p, error: pe }, { data: l, error: le }, { data: w, error: we }, { data: allWarga, error: awe }] =
-        await Promise.all([
-          client
-            .from("pengajuan_surat")
-            .select("*, layanan(*)")
-            .order("created_at", { ascending: false }),
-          client
-            .from("layanan")
-            .select(`
-              id,
-              nama,
-              deskripsi,
-              aktif,
-              persyaratan,
-              alur,
-              dasar_hukum,
-              output,
-              kanal,
-              created_at
-            `)
-            .order("nama", { ascending: true }),
-          client
-            .from("warga_profiles")
-            .select("id,nama_lengkap,nik,email,created_at,status_verifikasi,alasan_penolakan")
-            .eq("status_verifikasi", "Belum Terverifikasi")
-            .order("created_at", { ascending: true }),
-          client
-            .from("warga_profiles")
-            .select("id,nama_lengkap,nik,email,created_at,status_verifikasi,alasan_penolakan")
-            .order("created_at", { ascending: false }),
-        ]);
-      if (pe) throw pe;
-      if (le) throw le;
-      if (we) throw we;
-      if (awe) throw awe;
-      setSubmissions(p ?? []);
-      setServices(l ?? []);
-      setPendingWarga((w ?? []) as PendingWarga[]);
-      setWargaProfiles((allWarga ?? []) as PendingWarga[]);
+      const response = await fetch("/api/admin/data", { credentials: "include", cache: "no-store" });
+      const result = await response.json().catch(() => null) as { ok?: boolean; error?: string; data?: { submissions?: Row[]; services?: Row[]; pendingWarga?: PendingWarga[]; wargaProfiles?: PendingWarga[] } } | null;
+      if (!response.ok || !result?.ok) throw new Error(result?.error ?? "Gagal memuat data admin.");
+      setSubmissions(result.data?.submissions ?? []);
+      setServices(result.data?.services ?? []);
+      setPendingWarga(result.data?.pendingWarga ?? []);
+      setWargaProfiles(result.data?.wargaProfiles ?? []);
     } catch (e) {
       setToast({
         type: "error",
@@ -116,35 +81,11 @@ function useAdminData() {
     } finally {
       setLoading(false);
     }
-  }, [client]);
+  }, []);
   useEffect(() => {
     void Promise.resolve().then(load);
   }, [load]);
-  useEffect(() => {
-    if (!client) return;
-    const ch = client
-      .channel("admin-realtime")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "pengajuan_surat" },
-        () => void load(),
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "layanan" },
-        () => void load(),
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "warga_profiles" },
-        () => void load(),
-      )
-      .subscribe();
-    return () => {
-      void client.removeChannel(ch);
-    };
-  }, [client, load]);
-  return { client, submissions, services, pendingWarga, setPendingWarga, wargaProfiles, setWargaProfiles, loading, toast, setToast, load };
+  return { submissions, services, pendingWarga, setPendingWarga, wargaProfiles, setWargaProfiles, loading, toast, setToast, load };
 }
 
 export function AdminShell({
@@ -163,7 +104,7 @@ export function AdminShell({
   const [now] = useState(() => Date.now());
   const [adminProfile, setAdminProfile] = useState<AdminPortalProfile | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const { client, submissions, services, pendingWarga, setPendingWarga, wargaProfiles, setWargaProfiles, loading, toast, setToast, load } =
+  const { submissions, services, pendingWarga, setPendingWarga, wargaProfiles, setWargaProfiles, loading, toast, setToast, load } =
     useAdminData();
   useEffect(() => {
     let active = true;
@@ -340,7 +281,7 @@ export function AdminShell({
           ))}
           <button
             onClick={async () => {
-              await client?.auth.signOut();
+              await logoutAdminPortal();
               router.push("/admin/login");
             }}
             className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 font-bold hover:bg-white/10"
@@ -502,7 +443,7 @@ export function AdminShell({
                       {s}
                     </button>
                   ))}
-                  <Upload client={client} id={detail.id} setToast={setToast} />
+                  <Upload id={detail.id} setToast={setToast} />
                 </div>
               </div>
             ) : (
@@ -512,7 +453,6 @@ export function AdminShell({
         ) : view === "layanan" ? (
           <Layanan
             services={services}
-            client={client}
             reload={load}
             setToast={setToast}
           />
@@ -628,26 +568,22 @@ function Info({ row }: { row: Row }) {
   );
 }
 function Upload({
-  client,
   id,
   setToast,
 }: {
-  client: any;
   id: string;
   setToast: (t: Toast) => void;
 }) {
   const up = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
       const f = e.target.files?.[0];
-      if (!f || !client) return;
-      const path = `pendukung/${id}-${Date.now()}-${f.name}`;
-      const { error } = await client.storage.from("surat").upload(path, f, { upsert: true });
-      if (error) throw error;
-      const url = client.storage.from("surat").getPublicUrl(path).data.publicUrl;
-      const { error: insertError } = await client
-        .from("dokumen_pengajuan")
-        .insert({ pengajuan_id: id, nama_file: f.name, jenis: "Hasil Surat", url_file: url });
-      if (insertError) throw insertError;
+      if (!f) return;
+      const formData = new FormData();
+      formData.set("pengajuan_id", id);
+      formData.set("file", f);
+      const response = await fetch("/api/admin/dokumen", { method: "POST", credentials: "include", body: formData });
+      const result = await response.json().catch(() => null) as { ok?: boolean; error?: string } | null;
+      if (!response.ok || !result?.ok) throw new Error(result?.error ?? "Dokumen gagal diupload");
       setToast({ type: "success", text: "Dokumen berhasil diupload" });
     } catch (error) {
       setToast({ type: "error", text: error instanceof Error ? error.message : "Dokumen gagal diupload" });
@@ -667,27 +603,30 @@ function Upload({
 }
 function Layanan({
   services,
-  client,
   reload,
   setToast,
 }: {
   services: Row[];
-  client: any;
   reload: () => void;
   setToast: (t: Toast) => void;
 }) {
   const [name, setName] = useState("");
   const save = async () => {
-    const { error } = await client
-      .from("layanan")
-      .insert({ nama: name, aktif: true });
-    setToast(
-      error
-        ? { type: "error", text: error.message }
-        : { type: "success", text: "Layanan tersimpan" },
-    );
-    setName("");
-    reload();
+    try {
+      const response = await fetch("/api/admin/layanan", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ nama: name, aktif: true }),
+      });
+      const result = await response.json().catch(() => null) as { ok?: boolean; error?: string } | null;
+      if (!response.ok || !result?.ok) throw new Error(result?.error ?? "Layanan gagal tersimpan");
+      setToast({ type: "success", text: "Layanan tersimpan" });
+      setName("");
+      reload();
+    } catch (error) {
+      setToast({ type: "error", text: error instanceof Error ? error.message : "Layanan gagal tersimpan" });
+    }
   };
   return (
     <Panel title="CRUD Layanan">

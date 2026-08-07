@@ -6,6 +6,7 @@ type AuthCredentials = { email: string; password: string };
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+let browserClient: SupabaseClient | null = null;
 
 export function logSupabaseEnvStatus() {
     console.log("Supabase URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
@@ -29,8 +30,10 @@ function requireSupabaseServiceKey() {
 }
 
 export function createSupabaseBrowserClient() {
+    if (browserClient) return browserClient;
     logSupabaseEnvStatus();
-    return createClient(requireSupabaseUrl(), requireSupabaseAnonKey());
+    browserClient = createClient(requireSupabaseUrl(), requireSupabaseAnonKey());
+    return browserClient;
 }
 
 export function createSupabaseServerClient() {
