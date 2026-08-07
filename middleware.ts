@@ -15,9 +15,10 @@ export function middleware(request: NextRequest) {
     const { pathname } = request.nextUrl;
     if (isAdminProtectedPath(pathname)) {
         const supabaseAuthToken = request.cookies.getAll().some((cookie) => cookie.name.startsWith("sb-") && cookie.name.includes("auth-token"));
+        const adminSessionToken = request.cookies.has("tamsar_admin_session");
         const response = NextResponse.next();
         response.headers.set("x-tamsar-admin-role-required", "admin,petugas");
-        if (!supabaseAuthToken) {
+        if (!supabaseAuthToken && !adminSessionToken) {
             const url = request.nextUrl.clone();
             url.pathname = "/admin/login";
             url.searchParams.set("next", pathname);

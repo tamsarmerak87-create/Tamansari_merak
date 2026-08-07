@@ -2,13 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Building2, Loader2, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
+import { Building2, Loader2, LockKeyhole, ShieldCheck, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { loginAdminPortal } from "@/services/admin-auth.service";
 
 export default function AdminLoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -18,10 +18,10 @@ export default function AdminLoginPage() {
     try {
       setError("");
       setLoading(true);
-      await loginAdminPortal(email, password);
+      await loginAdminPortal(username, password);
       router.replace("/admin/dashboard");
     } catch (authError) {
-      setError(authError instanceof Error ? authError.message : "Gagal masuk Portal Admin.");
+      setError(authError instanceof Error ? authError.message : "Username atau password salah.");
     } finally {
       setLoading(false);
     }
@@ -47,10 +47,19 @@ export default function AdminLoginPage() {
         <form onSubmit={login} className="p-8 sm:p-10">
           <p className="text-xs font-black uppercase tracking-[.25em] text-accent-700">Admin Login</p>
           <h2 className="mt-2 text-3xl font-black text-gov-950">Masuk Dashboard</h2>
-          <label className="mt-8 block text-sm font-black text-gov-950">Email Admin/Petugas</label>
+          <label className="mt-8 block text-sm font-black text-gov-950">Username Petugas</label>
           <div className="mt-2 flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3 ring-1 ring-slate-100 focus-within:ring-accent-300">
-            <Mail className="size-5 text-slate-400" />
-            <input className="w-full bg-transparent font-bold outline-none" placeholder="admin@tamansari.id" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
+            <UserRound className="size-5 text-slate-400" />
+            <input
+              className="w-full bg-transparent font-bold outline-none"
+              type="text"
+              name="username"
+              autoComplete="username"
+              placeholder="Masukkan Username Petugas"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              required
+            />
           </div>
           <label className="mt-5 block text-sm font-black text-gov-950">Password</label>
           <div className="mt-2 flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3 ring-1 ring-slate-100 focus-within:ring-accent-300">
