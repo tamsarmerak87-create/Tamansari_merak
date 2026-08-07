@@ -4,11 +4,25 @@ import { createSupabaseBrowserClient } from "@/services/supabase";
 export type AdminPortalRole = "admin" | "petugas";
 
 export type AdminPortalProfile = {
+    id: string;
     user_id: string;
     full_name?: string | null;
     email?: string | null;
     role: AdminPortalRole;
     is_active?: boolean | null;
+};
+
+type PetugasRow = {
+    id: string;
+    nama?: string | null;
+    nama_lengkap?: string | null;
+    full_name?: string | null;
+    email?: string | null;
+    role?: string | null;
+    jabatan?: string | null;
+    is_active?: boolean | null;
+    aktif?: boolean | null;
+    status?: string | null;
 };
 
 function client() {
@@ -21,6 +35,18 @@ export function isAdminPortalRole(role?: string | null): role is AdminPortalRole
     return role === "admin" || role === "petugas";
 }
 
+function mapPetugasToAdminProfile(row: PetugasRow, user: User): AdminPortalProfile {
+    const normalizedRole: AdminPortalRole = row.role === "admin" ? "admin" : "petugas";
+    return {
+        id: row.id,
+        user_id: row.id,
+        full_name: row.full_name ?? row.nama_lengkap ?? row.nama ?? row.jabatan ?? "Petugas Kelurahan",
+        email: row.email ?? user.email,
+        role: normalizedRole,
+        is_active: row.is_active ?? row.aktif ?? row.status !== "nonaktif",
+    };
+}
+
 export async function getCurrentAdminPortalUser(): Promise<{ user: User | null; profile: AdminPortalProfile | null }> {
     const supabase = client();
     const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -28,36 +54,16 @@ export async function getCurrentAdminPortalUser(): Promise<{ user: User | null; 
     const user = userData.user;
     if (!user) return { user: null, profile: null };
 
-    const { data: adminProfile, error: adminError } = await supabase
-        .from("admin_profiles")
-        .select("user_id,full_name,role,is_active")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-    if (adminError) throw adminError;
-    if (adminProfile && isAdminPortalRole(adminProfile.role) && adminProfile.is_active !== false) {
-        return { user, profile: { ...(adminProfile as AdminPortalProfile), email: user.email } };
-    }
-
-    // Fallback untuk instalasi yang menyimpan role admin/petugas pada warga_profiles.
-    const { data: wargaProfile, error: wargaError } = await supabase
-        .from("warga_profiles")
-        .select("id,nama_lengkap,email,role")
+    const { data: petugas, error: petugasError } = await supabase
+        .from("petugas")
+        .select("*")
         .eq("id", user.id)
         .maybeSingle();
 
-    if (wargaError) throw wargaError;
-    if (wargaProfile && isAdminPortalRole(wargaProfile.role)) {
-        return {
-            user,
-            profile: {
-                user_id: wargaProfile.id,
-                full_name: wargaProfile.nama_lengkap,
-                email: wargaProfile.email,
-                role: wargaProfile.role,
-                is_active: true,
-            },
-        };
+    if (petugasError) throw petugasError;
+    if (petugas) {
+        const profile = mapPetugasToAdminProfile(petugas as PetugasRow, user);
+        if (profile.is_active !== false) return { user, profile };
     }
 
     return { user, profile: null };
@@ -71,7 +77,7 @@ export async function loginAdminPortal(email: string, password: string) {
     const current = await getCurrentAdminPortalUser();
     if (!current.profile) {
         await supabase.auth.signOut();
-        throw new Error("Akses ditolak. Hanya akun role admin atau petugas yang dapat masuk Portal Admin.");
+        throw new Error("Akun ini bukan petugas/admin.");
     }
 
     return current;

@@ -47,7 +47,7 @@ export const roleService = {
         const client = requireClient(createSupabaseBrowserClient());
         const { data: user } = await client.auth.getUser();
         if (!user.user) return null;
-        const { data } = await client.from("admin_profiles").select("role").eq("user_id", user.user.id).maybeSingle();
+        const { data } = await client.from("petugas").select("role").eq("id", user.user.id).maybeSingle();
         return data?.role as UserRole | null;
     },
 };

@@ -37,7 +37,7 @@ export default function AdminLoginPage() {
           </div>
           <p className="mt-8 text-xs font-black uppercase tracking-[.25em] text-accent-200">Portal Admin Kelurahan Tamansari</p>
           <h1 className="mt-4 text-4xl font-black leading-tight">Ruang kerja petugas untuk pelayanan digital warga.</h1>
-          <p className="mt-5 leading-8 text-white/75">Akses terpisah dari Portal Warga. Hanya akun Supabase dengan role <b>admin</b> atau <b>petugas</b> yang dapat mengelola verifikasi warga dan layanan administrasi.</p>
+          <p className="mt-5 leading-8 text-white/75">Akses terpisah dari Portal Warga. Hanya akun Supabase yang terdaftar pada tabel <b>public.petugas</b> yang dapat mengelola verifikasi warga dan layanan administrasi.</p>
           <div className="mt-8 rounded-[2rem] border border-white/15 bg-white/10 p-5">
             <ShieldCheck className="size-7 text-accent-300" />
             <p className="mt-3 font-black">Pemerintah Digital Indonesia</p>
@@ -60,7 +60,7 @@ export default function AdminLoginPage() {
           {error && <p className="mt-4 rounded-2xl bg-red-50 p-4 text-sm font-black text-red-700">{error}</p>}
           <Button type="submit" variant="gold" disabled={loading} className="mt-6 w-full sm:w-full">
             {loading ? <Loader2 className="size-5 animate-spin" /> : <ShieldCheck className="size-5" />}
-            {loading ? "Memverifikasi role..." : "Masuk Portal Admin"}
+            {loading ? "Memverifikasi akun petugas..." : "Masuk Portal Admin"}
           </Button>
         </form>
       </section>

@@ -1,14 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 const protectedPrefixes = ["/dashboard", "/profile", "/profil", "/layanan", "/pengajuan", "/surat-online", "/tracking", "/posbankum"];
-const adminProtectedPrefixes = ["/admin/dashboard", "/admin/verifikasi", "/admin/verifikasi-warga", "/admin/pengajuan", "/admin/tracking", "/admin/posbankum", "/admin/berita", "/admin/layanan", "/admin/laporan", "/admin/pengguna", "/admin/pengaturan"];
+const adminPublicPaths = ["/admin/login"];
 
 function isProtectedPath(pathname: string) {
     return protectedPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
 function isAdminProtectedPath(pathname: string) {
-    return adminProtectedPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+    return pathname === "/admin" || (pathname.startsWith("/admin/") && !adminPublicPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`)));
 }
 
 export function middleware(request: NextRequest) {
