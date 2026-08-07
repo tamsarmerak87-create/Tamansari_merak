@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createSupabaseBrowserClient } from "@/services/supabase";
 
 export type WargaRole = "admin" | "petugas" | "warga";
+export type WargaVerificationStatus = "Belum Terverifikasi" | "Akun Terverifikasi" | "Terverifikasi" | "Ditolak";
 
 export type WargaProfile = {
     id: string;
@@ -22,7 +23,8 @@ export type WargaProfile = {
     kecamatan: string;
     foto_url?: string | null;
     role: WargaRole;
-    status_verifikasi: "Belum Terverifikasi" | "Akun Terverifikasi" | "Terverifikasi";
+    status_verifikasi: WargaVerificationStatus;
+    alasan_penolakan?: string | null;
     created_at?: string;
     updated_at?: string;
 };
@@ -128,6 +130,25 @@ export function isVerified(profile?: WargaProfile | null) {
     return profile?.status_verifikasi === "Akun Terverifikasi" || profile?.status_verifikasi === "Terverifikasi";
 }
 
+export function getVerificationRedirectPath(profile?: WargaProfile | null) {
+    if (!profile) return "/verify";
+    if (profile.status_verifikasi === "Ditolak") return "/verification-rejected";
+    if (isVerified(profile)) return "/dashboard";
+    return "/verify";
+}
+
+export async function getCurrentWargaVerificationStatus() {
+    const supabase = client();
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError) throw userError;
+    const user = userData.user;
+    if (!user) return { user: null, profile: null };
+
+    const { data: profile, error } = await supabase.from("warga_profiles").select("id,nama_lengkap,email,nik,status_verifikasi,alasan_penolakan").eq("id", user.id).maybeSingle();
+    if (error) throw error;
+    return { user, profile: profile as WargaProfile | null };
+}
+
 export async function getCurrentWarga() {
     const supabase = client();
     const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -190,7 +211,7 @@ export async function loginWarga(input: WargaLoginInput) {
 }
 
 export async function signInWithGoogle() {
-    const redirectTo = typeof window !== "undefined" ? `${window.location.origin}/dashboard` : undefined;
+    const redirectTo = typeof window !== "undefined" ? `${window.location.origin}/verify` : undefined;
     const { data, error } = await client().auth.signInWithOAuth({ provider: "google", options: { redirectTo } });
     if (error) throw error;
     return data;

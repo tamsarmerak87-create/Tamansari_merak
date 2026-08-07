@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowRight, Check, Clock3, Home, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
+import { ArrowRight, Check, Clock3, Headphones, Loader2, LogOut, RefreshCw, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useWargaAuth } from "@/components/auth/warga-auth-provider";
-import { isVerified } from "@/services/warga-auth.service";
+import { isVerified, logoutWarga } from "@/services/warga-auth.service";
+import { createSupabaseBrowserClient } from "@/services/supabase";
+import { site } from "@/constants/site";
 import { cn } from "@/utils/cn";
 
 const timeline = [
@@ -32,12 +34,29 @@ export default function VerifyPage() {
     }, [router, verified]);
 
     useEffect(() => {
+        if (!loading && profile?.status_verifikasi === "Ditolak") router.replace("/verification-rejected");
+    }, [loading, profile?.status_verifikasi, router]);
+
+    useEffect(() => {
         if (!user || verified) return;
-        const interval = window.setInterval(() => {
-            void refresh();
-        }, 10000);
-        return () => window.clearInterval(interval);
-    }, [refresh, user, verified]);
+        const supabase = createSupabaseBrowserClient();
+        if (!supabase) return;
+        const channel = supabase
+            .channel(`warga-verification:${user.id}`)
+            .on("postgres_changes", { event: "UPDATE", schema: "public", table: "warga_profiles", filter: `id=eq.${user.id}` }, (payload) => {
+                const next = payload.new as { status_verifikasi?: string };
+                if (next.status_verifikasi === "Terverifikasi" || next.status_verifikasi === "Akun Terverifikasi") router.replace("/dashboard");
+                if (next.status_verifikasi === "Ditolak") router.replace("/verification-rejected");
+                void refresh();
+            })
+            .subscribe();
+        return () => { void supabase.removeChannel(channel); };
+    }, [refresh, router, user, verified]);
+
+    async function logout() {
+        await logoutWarga();
+        router.replace("/login");
+    }
 
     const checkStatus = useCallback(async () => {
         try {
@@ -110,9 +129,10 @@ export default function VerifyPage() {
                 <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
                     <Button type="button" variant="gold" onClick={checkStatus} disabled={checking} className="sm:min-w-56">
                         {checking ? <Loader2 className="size-5 animate-spin" /> : <RefreshCw className="size-5" />}
-                        {checking ? "Mengecek..." : "Cek Status Verifikasi"}
+                        {checking ? "Mengecek..." : "Refresh Status"}
                     </Button>
-                    <Button type="button" variant="glass" href="/" className="sm:min-w-52"><Home className="size-5" />Kembali ke Beranda</Button>
+                    <Button type="button" variant="glass" href={site.wa} target="_blank" rel="noreferrer" className="sm:min-w-52"><Headphones className="size-5" />Hubungi TAMSAR CS</Button>
+                    <Button type="button" variant="glass" onClick={logout} className="sm:min-w-40"><LogOut className="size-5" />Logout</Button>
                 </div>
 
                 <p className="mt-6 text-center text-sm font-bold text-slate-500">Jika status berubah menjadi Terverifikasi, Anda akan otomatis diarahkan ke Dashboard Warga. <ArrowRight className="inline size-4" /></p>

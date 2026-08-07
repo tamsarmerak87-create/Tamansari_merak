@@ -7,6 +7,7 @@ import { Footer } from "@/components/layout/footer";
 import { FloatingActions } from "@/components/common/floating-actions";
 import { TamsarChatWidget } from "@/components/chat/tamsar-chat-widget";
 import { WargaAuthProvider } from "@/components/auth/warga-auth-provider";
+import { VerificationGuard } from "@/components/auth/verification-guard";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 
@@ -27,7 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
                 <WargaAuthProvider>
                     <Navbar />
-                    {children}
+                    <VerificationGuard>{children}</VerificationGuard>
                     <Footer />
                     <FloatingActions />
                     <TamsarChatWidget />

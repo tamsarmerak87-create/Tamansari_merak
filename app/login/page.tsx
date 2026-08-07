@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Mail, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AuthField, AuthShell, authInputClass } from "@/components/auth/auth-ui";
-import { loginWarga, signInWithGoogle } from "@/services/warga-auth.service";
+import { getCurrentWargaVerificationStatus, getVerificationRedirectPath, loginWarga, signInWithGoogle } from "@/services/warga-auth.service";
 import { useWargaAuth } from "@/components/auth/warga-auth-provider";
 
 export default function LoginPage() {
@@ -23,7 +23,8 @@ export default function LoginPage() {
             setLoading(true);
             await loginWarga({ identifier, password, remember });
             await refresh();
-            router.push("/dashboard");
+            const { profile } = await getCurrentWargaVerificationStatus();
+            router.replace(getVerificationRedirectPath(profile));
         } catch (error) {
             alert(error instanceof Error ? error.message : "Gagal masuk.");
         } finally {
