@@ -6,7 +6,19 @@ export async function GET() {
 
     const { data, error } = await supabase
         .from("layanan")
-        .select("*");
+        .select(`
+            id,
+            nama,
+            deskripsi,
+            aktif,
+            persyaratan,
+            alur,
+            dasar_hukum,
+            output,
+            kanal,
+            created_at
+        `)
+        .order("nama", { ascending: true });
 
     return NextResponse.json({
         env: {

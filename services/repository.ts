@@ -9,29 +9,27 @@ type LayananRow = {
     id: string;
     nama: string;
     deskripsi: string | null;
-    kategori: ServiceCategory | null;
     aktif: boolean;
-
     persyaratan: string[] | null;
     alur: string[] | null;
     dasar_hukum: string | null;
     output: string | null;
     kanal: string | null;
-    estimasi: string | null;
+    created_at: string;
 };
 
 function mapLayananRow(row: LayananRow): PublicService {
     return {
         id: row.id,
         title: row.nama,
-        category: row.kategori ?? "administrasi",
+        category: "administrasi",
         description: row.deskripsi ?? "",
         requirements: row.persyaratan ?? [],
         flow: row.alur ?? [],
         legalBasis: row.dasar_hukum ?? "",
         output: row.output ?? "",
         channel: row.kanal ?? "",
-        estimation: row.estimasi ?? "",
+        estimation: row.output?.replace(/^Estimasi\s+/i, "") ?? "",
         online: row.aktif,
     };
 }
@@ -85,7 +83,18 @@ export const publicRepository = {
 
         const { data, error } = await client
             .from("layanan")
-            .select("*")
+            .select(`
+                id,
+                nama,
+                deskripsi,
+                aktif,
+                persyaratan,
+                alur,
+                dasar_hukum,
+                output,
+                kanal,
+                created_at
+            `)
             .eq("aktif", true)
             .order("nama", { ascending: true });
 

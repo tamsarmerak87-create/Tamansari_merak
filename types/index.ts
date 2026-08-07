@@ -14,6 +14,19 @@ export type PublicService = {
     estimation?: string;
 };
 
+export type Layanan = {
+    id: string;
+    nama: string;
+    deskripsi: string;
+    aktif: boolean;
+    persyaratan: string[];
+    alur: string[];
+    dasar_hukum: string | null;
+    output: string | null;
+    kanal: string | null;
+    created_at: string;
+};
+
 export type NewsItem = {
     id: string;
     title: string;

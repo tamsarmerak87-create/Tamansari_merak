@@ -10,9 +10,19 @@ export async function GET() {
 
         const { data, error } = await client
             .from("layanan")
-            .select("id, nama, deskripsi, kategori, persyaratan, estimasi, aktif, urutan")
+            .select(`
+                id,
+                nama,
+                deskripsi,
+                aktif,
+                persyaratan,
+                alur,
+                dasar_hukum,
+                output,
+                kanal,
+                created_at
+            `)
             .eq("aktif", true)
-            .order("urutan", { ascending: true, nullsFirst: false })
             .order("nama", { ascending: true });
 
         if (error) {

@@ -77,8 +77,19 @@ function useAdminData() {
             .order("created_at", { ascending: false }),
           client
             .from("layanan")
-            .select("*")
-            .order("nama_layanan", { ascending: true }),
+            .select(`
+              id,
+              nama,
+              deskripsi,
+              aktif,
+              persyaratan,
+              alur,
+              dasar_hukum,
+              output,
+              kanal,
+              created_at
+            `)
+            .order("nama", { ascending: true }),
           client
             .from("warga_profiles")
             .select("id,nama_lengkap,nik,email,created_at,status_verifikasi,alasan_penolakan")
@@ -264,7 +275,7 @@ export function AdminShell({
           r.created_at,
           r.nama_lengkap,
           r.nik,
-          r.layanan?.nama_layanan ?? r.jenis_surat,
+          r.layanan?.nama ?? r.jenis_surat,
           r.nomor_hp ?? r.no_hp,
           r.status,
         ].join(","),
@@ -454,7 +465,7 @@ export function AdminShell({
                 <option value="">Semua Layanan</option>
                 {services.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.nama_layanan}
+                    {s.nama}
                   </option>
                 ))}
               </select>
@@ -567,7 +578,7 @@ function Table({
               <td>{String(r.created_at).slice(0, 10)}</td>
               <td>{r.nama_lengkap}</td>
               <td>{r.nik}</td>
-              <td>{r.layanan?.nama_layanan ?? r.jenis_surat}</td>
+              <td>{r.layanan?.nama ?? r.jenis_surat}</td>
               <td>{r.nomor_hp ?? r.no_hp}</td>
               <td>
                 <span className="rounded-full bg-accent-100 px-3 py-1 font-bold">
@@ -661,7 +672,7 @@ function Layanan({
   const save = async () => {
     const { error } = await client
       .from("layanan")
-      .insert({ nama_layanan: name, is_active: true });
+      .insert({ nama: name, aktif: true });
     setToast(
       error
         ? { type: "error", text: error.message }
@@ -689,8 +700,8 @@ function Layanan({
       {services.map((s) => (
         <RowLine
           key={s.id}
-          a={s.nama_layanan}
-          b={s.is_active === false ? "Nonaktif" : "Aktif"}
+          a={s.nama}
+          b={s.aktif === false ? "Nonaktif" : "Aktif"}
         />
       ))}
     </Panel>

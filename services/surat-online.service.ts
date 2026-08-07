@@ -107,7 +107,21 @@ async function sendPengajuanEmail(payload: {
 export async function getLayananList() {
     const client = createSupabaseBrowserClient();
     if (!client) return [];
-    const { data, error } = await client.from("layanan").select("*").order("nama_layanan", { ascending: true });
+    const { data, error } = await client
+        .from("layanan")
+        .select(`
+            id,
+            nama,
+            deskripsi,
+            aktif,
+            persyaratan,
+            alur,
+            dasar_hukum,
+            output,
+            kanal,
+            created_at
+        `)
+        .order("nama", { ascending: true });
     if (error) {
         console.error("SUPABASE LAYANAN LIST ERROR");
         console.dir(error, { depth: null });
@@ -213,7 +227,18 @@ export async function createSubmission(formData: FormData) {
     try {
         const { data: layanan, error: layananError } = await client
             .from("layanan")
-            .select("*")
+            .select(`
+                id,
+                nama,
+                deskripsi,
+                aktif,
+                persyaratan,
+                alur,
+                dasar_hukum,
+                output,
+                kanal,
+                created_at
+            `)
             .eq("id", payload.layanan_id)
             .maybeSingle();
         if (layananError) {
@@ -224,7 +249,7 @@ export async function createSubmission(formData: FormData) {
         if (!layanan) throw new Error("Jenis layanan tidak ditemukan atau tidak aktif.");
 
         const layananRecord = layanan as Record<string, unknown>;
-        const jenisSuratFromDatabase = String(layananRecord.nama ?? layananRecord.nama_layanan ?? layananRecord.title ?? payload.jenis_surat);
+        const jenisSuratFromDatabase = String(layananRecord.nama ?? payload.jenis_surat);
 
         const today = new Date().toISOString().slice(0, 10);
         const { count, error: countError } = await client.from("pengajuan_surat").select("id", { count: "exact", head: true }).gte("created_at", `${today}T00:00:00`).lte("created_at", `${today}T23:59:59`);
