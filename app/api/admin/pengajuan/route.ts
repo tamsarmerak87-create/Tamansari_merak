@@ -94,6 +94,7 @@ export async function PATCH(request: NextRequest) {
     const { error: trackingError } = await supabase.from("tracking_pengajuan").insert(trackingPayload);
     if (trackingError) {
         console.error("ADMIN TRACKING INSERT ERROR");
+        console.error(trackingError);
         console.dir(trackingError, { depth: null });
         return jsonError(`Status tersimpan, tetapi riwayat aktivitas gagal dicatat: ${trackingError.message}`, 500);
     }

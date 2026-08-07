@@ -343,6 +343,7 @@ export async function createSubmission(formData: FormData) {
         });
         if (trackingError) {
             console.error("SUPABASE INSERT TRACKING_PENGAJUAN ERROR");
+            console.error(trackingError);
             console.dir(trackingError, { depth: null });
             throw trackingError;
         }
@@ -438,6 +439,7 @@ export async function updateSubmissionStatus(id: string, status: string, catatan
     });
     if (trackingError) {
         console.error("SUPABASE INSERT STATUS TRACKING_PENGAJUAN ERROR");
+        console.error(trackingError);
         console.dir(trackingError, { depth: null });
         throw trackingError;
     }
