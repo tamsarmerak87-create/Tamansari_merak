@@ -39,7 +39,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const { id } = await context.params;
     const body = (await request.json()) as PetugasUpdatePayload;
     const role = body.role?.trim();
-    if (role && !isPetugasRole(role)) return jsonError("Role tidak valid.");
+    if (!isPetugasRole(role)) return jsonError(`Role tidak valid: ${role}`);
 
     const supabase = createSupabaseAdminClient();
     if (!supabase) return jsonError("Supabase service role belum dikonfigurasi.", 500);
@@ -52,6 +52,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         role,
         is_active: body.is_active,
     };
+    console.log("[PETUGAS PAYLOAD]", payload);
 
     const { data, error } = await supabase
         .from("petugas")

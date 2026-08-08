@@ -44,22 +44,29 @@ export async function POST(request: NextRequest) {
     const namaLengkap = body.nama_lengkap?.trim();
     const role = body.role?.trim();
 
-    if (!username || !password || !namaLengkap || !isPetugasRole(role)) {
+    if (!username || !password || !namaLengkap) {
         return jsonError("Nama lengkap, username, password, dan role wajib diisi.");
     }
 
+    if (!isPetugasRole(role)) {
+        return jsonError(`Role tidak valid: ${role}`);
+    }
+
     const passwordHash = await bcrypt.hash(password, 10);
+    const payload = {
+        username,
+        password_hash: passwordHash,
+        nama_lengkap: namaLengkap,
+        nip: body.nip?.trim() || null,
+        jabatan: body.jabatan?.trim() || null,
+        role,
+        is_active: body.is_active ?? true,
+    };
+    console.log("[PETUGAS PAYLOAD]", payload);
+
     const { data, error } = await supabase
         .from("petugas")
-        .insert({
-            username,
-            password_hash: passwordHash,
-            nama_lengkap: namaLengkap,
-            nip: body.nip?.trim() || null,
-            jabatan: body.jabatan?.trim() || null,
-            role,
-            is_active: body.is_active ?? true,
-        })
+        .insert(payload)
         .select("id,username,nama_lengkap,nip,jabatan,role,is_active")
         .single();
 

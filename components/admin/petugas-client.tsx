@@ -5,14 +5,34 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, KeyRound, Loader2, Pencil, Plus, Power, ShieldCheck, Trash2, UserCog } from "lucide-react";
 
-type Role = "admin" | "petugas";
+type PetugasRole =
+    | "admin"
+    | "staff_pelayanan"
+    | "petugas_lapangan"
+    | "kepala_seksi"
+    | "seklur"
+    | "lurah";
+
+const roleOptions: { label: string; value: PetugasRole }[] = [
+    { label: "Administrator", value: "admin" },
+    { label: "Staff Pelayanan", value: "staff_pelayanan" },
+    { label: "Petugas Lapangan", value: "petugas_lapangan" },
+    { label: "Kepala Seksi", value: "kepala_seksi" },
+    { label: "Seklur", value: "seklur" },
+    { label: "Lurah", value: "lurah" },
+];
+
+function roleLabel(role: PetugasRole) {
+    return roleOptions.find((option) => option.value === role)?.label ?? role;
+}
+
 type Petugas = {
     id: string;
     username: string;
     nama_lengkap: string | null;
     nip: string | null;
     jabatan: string | null;
-    role: Role;
+    role: PetugasRole;
     is_active: boolean;
 };
 
@@ -22,7 +42,7 @@ type FormState = {
     password: string;
     nip: string;
     jabatan: string;
-    role: Role;
+    role: PetugasRole;
     is_active: boolean;
 };
 
@@ -32,7 +52,7 @@ const initialForm: FormState = {
     password: "",
     nip: "",
     jabatan: "",
-    role: "petugas",
+    role: "staff_pelayanan",
     is_active: true,
 };
 
@@ -119,7 +139,7 @@ export function PetugasListPage() {
                             <td className="p-4 font-bold">{row.username}</td>
                             <td className="p-4">{row.nip ?? "-"}</td>
                             <td className="p-4">{row.jabatan ?? "-"}</td>
-                            <td className="p-4"><span className="rounded-full bg-accent-100 px-3 py-1 font-black text-gov-950">{row.role}</span></td>
+                            <td className="p-4"><span className="rounded-full bg-accent-100 px-3 py-1 font-black text-gov-950">{roleLabel(row.role)}</span></td>
                             <td className="p-4"><span className={row.is_active ? "rounded-full bg-emerald-100 px-3 py-1 font-black text-emerald-700" : "rounded-full bg-red-100 px-3 py-1 font-black text-red-700"}>{row.is_active ? "Aktif" : "Nonaktif"}</span></td>
                             <td className="p-4"><div className="flex flex-wrap gap-2">
                                 <button onClick={() => router.push(`/admin/petugas/edit/${row.id}`)} className="rounded-xl bg-gov-950 px-3 py-2 font-black text-white"><Pencil size={15} className="inline" /> Edit</button>
@@ -195,8 +215,8 @@ export function PetugasFormPage({ id }: { id?: string }) {
                 <Field label="NIP" value={form.nip} onChange={(v) => setForm({ ...form, nip: v })} />
                 <Field label="Jabatan" value={form.jabatan} onChange={(v) => setForm({ ...form, jabatan: v })} />
                 <label className="grid gap-2 font-black text-gov-950">Role
-                    <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role })} className="rounded-2xl bg-slate-50 p-4 font-bold outline-none ring-1 ring-slate-100">
-                        <option value="admin">admin</option><option value="petugas">petugas</option>
+                    <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as PetugasRole })} className="rounded-2xl bg-slate-50 p-4 font-bold outline-none ring-1 ring-slate-100">
+                        {roleOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </select>
                 </label>
                 <label className="flex items-center gap-3 rounded-2xl bg-slate-50 p-4 font-black text-gov-950">
