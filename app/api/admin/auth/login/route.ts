@@ -19,8 +19,6 @@ export async function POST(request: NextRequest) {
         const inputUsername = body.username?.trim();
         const password = body.password ?? "";
 
-        console.log("[admin-login] username diterima:", inputUsername ?? "(kosong)");
-
         if (!inputUsername || !password) return failedResponse();
 
         const supabase = createSupabaseAdminClient();
@@ -28,7 +26,7 @@ export async function POST(request: NextRequest) {
 
         const { data: petugas, error } = await supabase
             .from("petugas")
-            .select("*")
+            .select("id,username,password_hash,nama_lengkap,nip,jabatan,role,is_active")
             .eq("username", inputUsername)
             .eq("is_active", true)
             .maybeSingle();
@@ -39,9 +37,6 @@ export async function POST(request: NextRequest) {
         }
 
         const row = petugas as PetugasRow | null;
-        console.log("[admin-login] hasil query petugas:", row ? { id: row.id, username: row.username, role: row.role, is_active: row.is_active } : null);
-        console.log("[admin-login] role:", row?.role ?? null);
-        console.log("[admin-login] is_active:", row?.is_active ?? null);
         if (!row?.password_hash) return failedResponse();
         if (!isPetugasRole(row.role) || row.is_active !== true) return failedResponse();
 

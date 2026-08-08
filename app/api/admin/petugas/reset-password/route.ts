@@ -10,6 +10,7 @@ function jsonError(message: string, status = 400) {
 export async function POST(request: NextRequest) {
     const session = await getAdminSession(request);
     if (session.error) return jsonError("Session admin tidak valid.", 401);
+    if (session.profile?.role !== "admin") return jsonError("Hanya Administrator yang dapat reset password petugas.", 403);
     const body = (await request.json()) as { id?: string; passwordBaru?: string; password?: string };
     const id = body.id;
     const passwordBaru = body.passwordBaru ?? body.password ?? "";

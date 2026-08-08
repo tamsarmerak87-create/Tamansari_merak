@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
 
     const { data: petugas, error } = await supabase
         .from("petugas")
-        .select("*")
+        .select("id,username,nama_lengkap,nip,jabatan,role,is_active")
         .eq("id", petugasId)
         .eq("is_active", true)
         .maybeSingle();
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ ok: false }, { status: 403 });
     }
 
-    const { password_hash: _passwordHash, ...safeProfile } = petugas as { password_hash?: string; id: string; username: string };
+    const safeProfile = petugas as { id: string; username: string };
     return NextResponse.json({
         ok: true,
         user: { id: safeProfile.id, username: safeProfile.username },

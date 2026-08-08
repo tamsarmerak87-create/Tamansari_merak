@@ -18,6 +18,7 @@ function jsonError(message: string, status = 400) {
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
     const session = await getAdminSession(request);
     if (session.error) return jsonError("Session admin tidak valid.", 401);
+    if (session.profile?.role !== "admin") return jsonError("Hanya Administrator yang dapat melihat detail petugas.", 403);
     const { id } = await context.params;
     const supabase = createSupabaseAdminClient();
     if (!supabase) return jsonError("Supabase service role belum dikonfigurasi.", 500);
@@ -36,6 +37,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
     const session = await getAdminSession(request);
     if (session.error) return jsonError("Session admin tidak valid.", 401);
+    if (session.profile?.role !== "admin") return jsonError("Hanya Administrator yang dapat mengubah petugas.", 403);
     const { id } = await context.params;
     const body = (await request.json()) as PetugasUpdatePayload;
     const role = body.role?.trim();
@@ -67,6 +69,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 export async function DELETE(request: NextRequest, context: { params: Promise<{ id: string }> }) {
     const session = await getAdminSession(request);
     if (session.error) return jsonError("Session admin tidak valid.", 401);
+    if (session.profile?.role !== "admin") return jsonError("Hanya Administrator yang dapat menghapus petugas.", 403);
     const { id } = await context.params;
     const supabase = createSupabaseAdminClient();
     if (!supabase) return jsonError("Supabase service role belum dikonfigurasi.", 500);

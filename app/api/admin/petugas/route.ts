@@ -20,6 +20,7 @@ function jsonError(message: string, status = 400) {
 export async function GET(request: NextRequest) {
     const session = await getAdminSession(request);
     if (session.error) return jsonError("Session admin tidak valid.", 401);
+    if (session.profile?.role !== "admin") return jsonError("Hanya Administrator yang dapat mengelola petugas.", 403);
     const supabase = createSupabaseAdminClient();
     if (!supabase) return jsonError("Supabase service role belum dikonfigurasi.", 500);
 
@@ -35,6 +36,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
     const session = await getAdminSession(request);
     if (session.error) return jsonError("Session admin tidak valid.", 401);
+    if (session.profile?.role !== "admin") return jsonError("Hanya Administrator yang dapat menambah petugas.", 403);
     const supabase = createSupabaseAdminClient();
     if (!supabase) return jsonError("Supabase service role belum dikonfigurasi.", 500);
 
@@ -44,7 +46,7 @@ export async function POST(request: NextRequest) {
     const namaLengkap = body.nama_lengkap?.trim();
     const role = body.role?.trim();
 
-    if (!username || !password || !namaLengkap) {
+    if (!username || !password || !namaLengkap || !role) {
         return jsonError("Nama lengkap, username, password, dan role wajib diisi.");
     }
 
