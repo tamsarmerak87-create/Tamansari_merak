@@ -389,7 +389,20 @@ export async function createSubmission(formData: FormData) {
             console.dir(emailError, { depth: null });
         }
 
-        return { ...pengajuan, jenis_surat: jenisSuratFromDatabase, nomor_tiket, tracking_url };
+        return {
+            ...pengajuanPayload,
+            ...pengajuan,
+            jenis_surat: jenisSuratFromDatabase,
+            nomor_tiket,
+            tracking_url,
+            layanan: { nama: jenisSuratFromDatabase },
+            tracking_pengajuan: [{
+                status: "Menunggu Verifikasi",
+                keterangan: "Permohonan diterima dan masuk tahap Verifikasi Staff Pelayanan.",
+                petugas: null,
+                created_at: pengajuan.created_at,
+            }],
+        };
     } catch (error) {
         console.error("===== CREATE SUBMISSION FULL ERROR =====");
         console.dir(error, { depth: null });

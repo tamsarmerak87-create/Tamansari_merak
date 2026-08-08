@@ -8,11 +8,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       message: "Pengajuan berhasil dikirim.",
-      data: {
-        id: data.id,
-        nomor_pengajuan: data.nomor_pengajuan,
-        status: data.status,
-      },
+      data,
     });
   } catch (error) {
     console.error("[PENGAJUAN ERROR]", error);
