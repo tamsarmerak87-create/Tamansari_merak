@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, KeyRound, Loader2, Pencil, Plus, Power, ShieldCheck, Trash2, UserCog } from "lucide-react";
+import { ArrowLeft, KeyRound, Loader2, Pencil, Plus, Power, Search, ShieldCheck, Trash2, UserCog } from "lucide-react";
 
 type PetugasRole =
     | "admin"
@@ -24,6 +24,18 @@ const roleOptions: { label: string; value: PetugasRole }[] = [
 
 function roleLabel(role: PetugasRole) {
     return roleOptions.find((option) => option.value === role)?.label ?? role;
+}
+
+function roleBadgeClass(role: PetugasRole) {
+    const classes: Record<PetugasRole, string> = {
+        admin: "bg-blue-100 text-blue-800 ring-blue-200",
+        staff_pelayanan: "bg-emerald-100 text-emerald-800 ring-emerald-200",
+        petugas_lapangan: "bg-orange-100 text-orange-800 ring-orange-200",
+        kepala_seksi: "bg-cyan-100 text-cyan-800 ring-cyan-200",
+        seklur: "bg-violet-100 text-violet-800 ring-violet-200",
+        lurah: "bg-rose-100 text-rose-800 ring-rose-200",
+    };
+    return classes[role];
 }
 
 type Petugas = {
@@ -67,6 +79,9 @@ export function PetugasListPage() {
     const [rows, setRows] = useState<Petugas[]>([]);
     const [loading, setLoading] = useState(true);
     const [message, setMessage] = useState<string | null>(null);
+    const [query, setQuery] = useState("");
+    const [roleFilter, setRoleFilter] = useState<"" | PetugasRole>("");
+    const [statusFilter, setStatusFilter] = useState<"" | "active" | "inactive">("");
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -93,6 +108,8 @@ export function PetugasListPage() {
     };
 
     const toggleActive = async (row: Petugas) => {
+        const actionLabel = row.is_active ? "nonaktifkan" : "aktifkan";
+        if (!confirm(`Yakin ingin ${actionLabel} petugas ${row.nama_lengkap ?? row.username}?`)) return;
         await readJson(await fetch(`/api/admin/petugas/${row.id}`, {
             method: "PATCH",
             headers: { "content-type": "application/json" },
@@ -104,6 +121,7 @@ export function PetugasListPage() {
     };
 
     const resetPassword = async (row: Petugas) => {
+        if (!confirm(`Reset password untuk ${row.nama_lengkap ?? row.username}? Password lama tidak dapat digunakan lagi.`)) return;
         const passwordBaru = prompt(`Password baru untuk ${row.nama_lengkap ?? row.username} (minimal 6 karakter):`);
         if (!passwordBaru) return;
         await readJson(await fetch("/api/admin/petugas/reset-password", {
@@ -114,6 +132,14 @@ export function PetugasListPage() {
         }));
         setMessage("Password petugas berhasil direset dengan bcrypt hash.");
     };
+
+    const filteredRows = rows.filter((row) => {
+        const haystack = [row.nama_lengkap, row.username, row.nip].join(" ").toLowerCase();
+        const matchesQuery = haystack.includes(query.trim().toLowerCase());
+        const matchesRole = !roleFilter || row.role === roleFilter;
+        const matchesStatus = !statusFilter || (statusFilter === "active" ? row.is_active : !row.is_active);
+        return matchesQuery && matchesRole && matchesStatus;
+    });
 
     return <PetugasFrame>
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -128,30 +154,66 @@ export function PetugasListPage() {
         </div>
         {message && <div className="mb-4 rounded-2xl bg-gov-950 px-5 py-3 font-bold text-white">{message}</div>}
         <section className="rounded-[2rem] bg-white p-5 shadow-soft">
-            {loading ? <div className="flex items-center gap-2 font-black text-gov-950"><Loader2 className="animate-spin" /> Memuat data petugas...</div> : <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                    <thead className="bg-slate-50 text-left text-xs font-black uppercase tracking-[.14em] text-slate-500">
-                        <tr><th className="p-4">Nama</th><th className="p-4">Username</th><th className="p-4">NIP</th><th className="p-4">Jabatan</th><th className="p-4">Role</th><th className="p-4">Status</th><th className="p-4">Aksi</th></tr>
-                    </thead>
-                    <tbody>
-                        {rows.map((row) => <tr key={row.id} className="border-t align-top">
-                            <td className="p-4 font-black text-gov-950">{row.nama_lengkap ?? "-"}</td>
-                            <td className="p-4 font-bold">{row.username}</td>
-                            <td className="p-4">{row.nip ?? "-"}</td>
-                            <td className="p-4">{row.jabatan ?? "-"}</td>
-                            <td className="p-4"><span className="rounded-full bg-accent-100 px-3 py-1 font-black text-gov-950">{roleLabel(row.role)}</span></td>
-                            <td className="p-4"><span className={row.is_active ? "rounded-full bg-emerald-100 px-3 py-1 font-black text-emerald-700" : "rounded-full bg-red-100 px-3 py-1 font-black text-red-700"}>{row.is_active ? "Aktif" : "Nonaktif"}</span></td>
-                            <td className="p-4"><div className="flex flex-wrap gap-2">
-                                <button onClick={() => router.push(`/admin/petugas/edit/${row.id}`)} className="rounded-xl bg-gov-950 px-3 py-2 font-black text-white"><Pencil size={15} className="inline" /> Edit</button>
-                                <button onClick={() => resetPassword(row)} className="rounded-xl bg-amber-500 px-3 py-2 font-black text-gov-950"><KeyRound size={15} className="inline" /> Reset Password</button>
-                                <button onClick={() => toggleActive(row)} className="rounded-xl bg-slate-700 px-3 py-2 font-black text-white"><Power size={15} className="inline" /> {row.is_active ? "Nonaktifkan" : "Aktifkan"}</button>
-                                <button onClick={() => remove(row)} className="rounded-xl bg-red-600 px-3 py-2 font-black text-white"><Trash2 size={15} className="inline" /> Hapus</button>
-                            </div></td>
-                        </tr>)}
-                    </tbody>
-                </table>
-                {rows.length === 0 && <p className="py-10 text-center font-bold text-slate-500">Belum ada data petugas.</p>}
-            </div>}
+            <div className="mb-5 grid gap-3 lg:grid-cols-[1fr_220px_180px]">
+                <label className="relative block">
+                    <Search className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-slate-400" />
+                    <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Cari nama / username / NIP" className="w-full rounded-2xl bg-slate-50 py-4 pl-12 pr-4 font-bold outline-none ring-1 ring-slate-100" />
+                </label>
+                <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value as "" | PetugasRole)} className="rounded-2xl bg-slate-50 p-4 font-bold outline-none ring-1 ring-slate-100">
+                    <option value="">Semua Role</option>
+                    {roleOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as "" | "active" | "inactive")} className="rounded-2xl bg-slate-50 p-4 font-bold outline-none ring-1 ring-slate-100">
+                    <option value="">Semua Status</option>
+                    <option value="active">Aktif</option>
+                    <option value="inactive">Nonaktif</option>
+                </select>
+            </div>
+            {loading ? <div className="flex items-center gap-2 font-black text-gov-950"><Loader2 className="animate-spin" /> Memuat data petugas...</div> : <>
+                <div className="hidden overflow-x-auto lg:block">
+                    <table className="min-w-full text-sm">
+                        <thead className="bg-slate-50 text-left text-xs font-black uppercase tracking-[.14em] text-slate-500">
+                            <tr><th className="p-4">Nama</th><th className="p-4">Username</th><th className="p-4">NIP</th><th className="p-4">Jabatan</th><th className="p-4">Role</th><th className="p-4">Status</th><th className="p-4">Aksi</th></tr>
+                        </thead>
+                        <tbody>
+                            {filteredRows.map((row) => <tr key={row.id} className="border-t align-top">
+                                <td className="p-4 font-black text-gov-950">{row.nama_lengkap ?? "-"}</td>
+                                <td className="p-4 font-bold">{row.username}</td>
+                                <td className="p-4">{row.nip ?? "-"}</td>
+                                <td className="p-4">{row.jabatan ?? "-"}</td>
+                                <td className="p-4"><RoleBadge role={row.role} /></td>
+                                <td className="p-4"><span className={row.is_active ? "rounded-full bg-emerald-100 px-3 py-1 font-black text-emerald-700" : "rounded-full bg-red-100 px-3 py-1 font-black text-red-700"}>{row.is_active ? "Aktif" : "Nonaktif"}</span></td>
+                                <td className="p-4"><div className="flex flex-wrap gap-2">
+                                    <button onClick={() => router.push(`/admin/petugas/edit/${row.id}`)} className="rounded-xl bg-gov-950 px-3 py-2 font-black text-white"><Pencil size={15} className="inline" /> Edit</button>
+                                    <button onClick={() => resetPassword(row)} className="rounded-xl bg-amber-500 px-3 py-2 font-black text-gov-950"><KeyRound size={15} className="inline" /> Reset Password</button>
+                                    <button onClick={() => toggleActive(row)} className="rounded-xl bg-slate-700 px-3 py-2 font-black text-white"><Power size={15} className="inline" /> {row.is_active ? "Nonaktifkan" : "Aktifkan"}</button>
+                                    <button onClick={() => remove(row)} className="rounded-xl bg-red-600 px-3 py-2 font-black text-white"><Trash2 size={15} className="inline" /> Hapus</button>
+                                </div></td>
+                            </tr>)}
+                        </tbody>
+                    </table>
+                </div>
+                <div className="grid gap-4 lg:hidden">
+                    {filteredRows.map((row) => <article key={row.id} className="rounded-[1.5rem] border border-slate-100 bg-slate-50 p-4 shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                            <div><h2 className="font-black text-gov-950">{row.nama_lengkap ?? "-"}</h2><p className="text-sm font-bold text-slate-500">@{row.username}</p></div>
+                            <span className={row.is_active ? "rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-700" : "rounded-full bg-red-100 px-3 py-1 text-xs font-black text-red-700"}>{row.is_active ? "Aktif" : "Nonaktif"}</span>
+                        </div>
+                        <dl className="mt-4 grid gap-3 text-sm">
+                            <Info label="NIP" value={row.nip ?? "-"} />
+                            <Info label="Jabatan" value={row.jabatan ?? "-"} />
+                            <div className="flex items-center justify-between gap-3"><dt className="font-black text-slate-500">Role</dt><dd><RoleBadge role={row.role} /></dd></div>
+                        </dl>
+                        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                            <button onClick={() => router.push(`/admin/petugas/edit/${row.id}`)} className="rounded-xl bg-gov-950 px-3 py-2 font-black text-white"><Pencil size={15} className="inline" /> Edit</button>
+                            <button onClick={() => resetPassword(row)} className="rounded-xl bg-amber-500 px-3 py-2 font-black text-gov-950"><KeyRound size={15} className="inline" /> Reset Password</button>
+                            <button onClick={() => toggleActive(row)} className="rounded-xl bg-slate-700 px-3 py-2 font-black text-white"><Power size={15} className="inline" /> {row.is_active ? "Nonaktifkan" : "Aktifkan"}</button>
+                            <button onClick={() => remove(row)} className="rounded-xl bg-red-600 px-3 py-2 font-black text-white"><Trash2 size={15} className="inline" /> Hapus</button>
+                        </div>
+                    </article>)}
+                </div>
+                {filteredRows.length === 0 && <p className="py-10 text-center font-bold text-slate-500">Tidak ada data petugas yang cocok.</p>}
+            </>}
         </section>
     </PetugasFrame>;
 }
@@ -234,6 +296,14 @@ function Field({ label, value, onChange, type = "text", required = false }: { la
     return <label className="grid gap-2 font-black text-gov-950">{label}
         <input type={type} value={value} onChange={(e) => onChange(e.target.value)} required={required} className="rounded-2xl bg-slate-50 p-4 font-bold outline-none ring-1 ring-slate-100" />
     </label>;
+}
+
+function RoleBadge({ role }: { role: PetugasRole }) {
+    return <span className={`inline-flex rounded-full px-3 py-1 text-xs font-black ring-1 ${roleBadgeClass(role)}`}>{roleLabel(role)}</span>;
+}
+
+function Info({ label, value }: { label: string; value: string }) {
+    return <div className="flex items-center justify-between gap-3"><dt className="font-black text-slate-500">{label}</dt><dd className="text-right font-bold text-gov-950">{value}</dd></div>;
 }
 
 function PetugasFrame({ children }: { children: React.ReactNode }) {

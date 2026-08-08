@@ -52,7 +52,6 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         role,
         is_active: body.is_active,
     };
-    console.log("[PETUGAS PAYLOAD]", payload);
 
     const { data, error } = await supabase
         .from("petugas")

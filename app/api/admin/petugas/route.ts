@@ -62,7 +62,6 @@ export async function POST(request: NextRequest) {
         role,
         is_active: body.is_active ?? true,
     };
-    console.log("[PETUGAS PAYLOAD]", payload);
 
     const { data, error } = await supabase
         .from("petugas")
