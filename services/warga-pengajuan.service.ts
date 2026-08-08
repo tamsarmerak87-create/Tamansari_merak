@@ -13,9 +13,21 @@ export type TrackingPengajuan = {
 export type WargaPengajuan = {
     id: string;
     nomor_pengajuan?: string | null;
-    nomor_tiket?: string | null;
     nik?: string | null;
+    nomor_kk?: string | null;
     nama_lengkap?: string | null;
+    tempat_lahir?: string | null;
+    tanggal_lahir?: string | null;
+    jenis_kelamin?: string | null;
+    agama?: string | null;
+    pekerjaan?: string | null;
+    alamat?: string | null;
+    rt?: string | null;
+    rw?: string | null;
+    kelurahan?: string | null;
+    kecamatan?: string | null;
+    no_hp?: string | null;
+    email?: string | null;
     layanan_id?: string | null;
     keperluan?: string | null;
     status?: string | null;
@@ -26,7 +38,6 @@ export type WargaPengajuan = {
     file_pendukung?: string | null;
     layanan?: { id?: string; nama?: string | null } | null;
     tracking_pengajuan?: TrackingPengajuan[];
-    dokumen_pengajuan?: { nama_file?: string | null; jenis?: string | null; url_file?: string | null }[];
 };
 
 export type WargaFavorit = { id: string; warga_id: string; layanan_id: string; created_at?: string | null; layanan?: { id: string; nama?: string | null; deskripsi?: string | null } | null };
@@ -37,23 +48,40 @@ function client() {
     return supabase;
 }
 
-function normalizeRows(rows: WargaPengajuan[] | null | undefined) {
+const PENGAJUAN_COLUMNS = "id,nomor_pengajuan,nik,nomor_kk,nama_lengkap,tempat_lahir,tanggal_lahir,jenis_kelamin,agama,pekerjaan,alamat,rt,rw,kelurahan,kecamatan,no_hp,email,layanan_id,keperluan,status,created_at,updated_at,file_ktp,file_kk,file_pendukung";
+const TRACKING_COLUMNS = "id,pengajuan_id,status,keterangan,petugas,created_at";
+
+function normalizeRows(rows: WargaPengajuan[] | null | undefined, layananById = new Map<string, { id?: string; nama?: string | null }>(), trackingByPengajuanId = new Map<string, TrackingPengajuan[]>()) {
     return (rows ?? []).map((row) => ({
         ...row,
-        layanan: row.layanan ?? { nama: "Nama layanan tidak tersedia" },
-        tracking_pengajuan: [...(row.tracking_pengajuan ?? [])].sort((a, b) => new Date(a.created_at ?? "").getTime() - new Date(b.created_at ?? "").getTime()),
+        layanan: row.layanan ?? layananById.get(row.layanan_id ?? "") ?? { nama: "Nama layanan tidak tersedia" },
+        tracking_pengajuan: [...(row.tracking_pengajuan ?? trackingByPengajuanId.get(row.id) ?? [])].sort((a, b) => new Date(a.created_at ?? "").getTime() - new Date(b.created_at ?? "").getTime()),
     }));
 }
 
-const pengajuanSelect = "id,nomor_pengajuan,nomor_tiket,nik,nama_lengkap,layanan_id,keperluan,status,created_at,updated_at,file_ktp,file_kk,file_pendukung, layanan:layanan_id(id,nama), tracking_pengajuan(id,pengajuan_id,status,keterangan,petugas,created_at), dokumen_pengajuan(*)";
+async function hydrateRows(rows: WargaPengajuan[]) {
+    const supabase = client();
+    const layananIds = [...new Set(rows.map((row) => row.layanan_id).filter(Boolean))] as string[];
+    const pengajuanIds = rows.map((row) => row.id).filter(Boolean);
+    const layananById = new Map<string, { id?: string; nama?: string | null }>();
+    const trackingByPengajuanId = new Map<string, TrackingPengajuan[]>();
 
-async function attachLayananFallback(rows: WargaPengajuan[]) {
-    const missing = rows.filter((row) => !row.layanan?.nama && row.layanan_id).map((row) => row.layanan_id as string);
-    if (missing.length === 0) return normalizeRows(rows);
+    if (layananIds.length > 0) {
+        const { data, error } = await supabase.from("layanan").select("id,nama").in("id", layananIds);
+        if (error) console.error("[LAYANAN FALLBACK]", error);
+        (data ?? []).forEach((item) => layananById.set(item.id, item));
+    }
 
-    const { data } = await client().from("layanan").select("id,nama").in("id", [...new Set(missing)]);
-    const layananById = new Map((data ?? []).map((item) => [item.id, item]));
-    return normalizeRows(rows.map((row) => ({ ...row, layanan: row.layanan?.nama ? row.layanan : layananById.get(row.layanan_id ?? "") ?? null })));
+    if (pengajuanIds.length > 0) {
+        const { data, error } = await supabase.from("tracking_pengajuan").select(TRACKING_COLUMNS).in("pengajuan_id", pengajuanIds).order("created_at", { ascending: true });
+        if (error) console.error("[TRACKING PENGAJUAN]", error);
+        ((data ?? []) as TrackingPengajuan[]).forEach((track) => {
+            const key = track.pengajuan_id ?? "";
+            trackingByPengajuanId.set(key, [...(trackingByPengajuanId.get(key) ?? []), track]);
+        });
+    }
+
+    return normalizeRows(rows, layananById, trackingByPengajuanId);
 }
 
 export async function getCurrentWargaProfile() {
@@ -78,13 +106,13 @@ export async function getMyPengajuan() {
 
     const { data, error } = await client()
         .from("pengajuan_surat")
-        .select(pengajuanSelect)
+        .select(PENGAJUAN_COLUMNS)
         .eq("nik", profile.nik)
         .order("created_at", { ascending: false });
 
     console.log("[PENGAJUAN RESULT]", { count: data?.length, data, error });
     if (error) throw error;
-    return attachLayananFallback(data as WargaPengajuan[]);
+    return hydrateRows(data as WargaPengajuan[]);
 }
 
 export async function getMyPengajuanDetail(id: string) {
@@ -94,7 +122,7 @@ export async function getMyPengajuanDetail(id: string) {
 
     const { data, error } = await client()
         .from("pengajuan_surat")
-        .select(pengajuanSelect)
+        .select(PENGAJUAN_COLUMNS)
         .eq("id", id)
         .eq("nik", profile.nik)
         .maybeSingle();
@@ -102,13 +130,15 @@ export async function getMyPengajuanDetail(id: string) {
     console.log("[PENGAJUAN RESULT]", { count: data ? 1 : 0, data, error });
     if (error) throw error;
     if (!data) return null;
-    return (await attachLayananFallback([data as WargaPengajuan]))[0] ?? null;
+    return (await hydrateRows([data as WargaPengajuan]))[0] ?? null;
 }
 
 export async function getMyFavorit() {
     const { user } = await getCurrentWargaProfile();
     if (!user) return [];
     const { data, error } = await client().from("warga_favorit").select("id,warga_id,layanan_id,created_at,layanan:layanan_id(id,nama,deskripsi)").eq("warga_id", user.id).order("created_at", { ascending: false });
+    console.log("[FAVORIT]", { data, error });
+    if (error?.code === "42P01" || error?.message?.toLowerCase().includes("could not find the table")) return [];
     if (error) throw error;
     return (data ?? []) as unknown as WargaFavorit[];
 }

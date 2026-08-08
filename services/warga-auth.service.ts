@@ -233,7 +233,7 @@ export async function updateWargaProfile(profile: Partial<WargaProfile>) {
 
 export async function getWargaSubmissions(profile?: WargaProfile | null) {
     if (!profile?.nik) return [];
-    const { data, error } = await client().from("pengajuan_surat").select("*, layanan(*), tracking_pengajuan(*), dokumen_pengajuan(*)").eq("nik", profile.nik).order("created_at", { ascending: false });
+    const { data, error } = await client().from("pengajuan_surat").select("id,nomor_pengajuan,nik,nama_lengkap,layanan_id,keperluan,status,created_at,updated_at,file_ktp,file_kk,file_pendukung").eq("nik", profile.nik).order("created_at", { ascending: false });
     if (error) throw error;
     return data ?? [];
 }

@@ -4,8 +4,8 @@ import type { WargaPengajuan } from "@/services/warga-pengajuan.service";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://tamansari-merak.vercel.app";
 
-export function getNomorTiket(item: Pick<WargaPengajuan, "nomor_tiket" | "nomor_pengajuan">) {
-    return item.nomor_tiket || item.nomor_pengajuan?.replace(/^TMS-/, "TIK-").replace(/-(\d{4})$/, "-00$1") || "-";
+export function getNomorTiket(item: Pick<WargaPengajuan, "nomor_pengajuan"> & { nomor_tiket?: string | null }) {
+    return item.nomor_tiket || item.nomor_pengajuan || "-";
 }
 
 export function getTrackingUrl(nomorPengajuan?: string | null) {
