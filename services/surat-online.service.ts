@@ -10,7 +10,7 @@ const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_FILE_TYPES = ["application/pdf", "image/jpeg", "image/png"];
 
 export const submissionSchema = z.object({
-    layanan_id: z.string().min(1, "Jenis layanan wajib dipilih"),
+    layanan_id: z.string().uuid("Jenis layanan tidak valid"),
     nik: z.string().regex(/^\d{16}$/, "NIK harus 16 angka"),
     nama_lengkap: z.string().min(3, "Nama lengkap wajib diisi"),
     nomor_kk: z.string().regex(/^\d{16}$/, "Nomor KK harus 16 angka"),
@@ -32,6 +32,20 @@ export const submissionSchema = z.object({
 });
 
 export type SubmissionInput = z.infer<typeof submissionSchema>;
+
+class SupabaseOperationError extends Error {
+    details?: string;
+    hint?: string;
+    code?: string;
+
+    constructor(label: string, error: { message?: string; details?: string; hint?: string; code?: string }) {
+        super(error.message ?? label);
+        this.name = label;
+        this.details = error.details;
+        this.hint = error.hint;
+        this.code = error.code;
+    }
+}
 
 export function validateUploadFile(file: File) {
     if (!ALLOWED_FILE_TYPES.includes(file.type)) throw new Error("File harus PDF, JPG, atau PNG.");
@@ -181,6 +195,7 @@ export async function createSubmission(formData: FormData) {
         ktp = formData.get("ktp") as File | null;
         kk = formData.get("kk") as File | null;
         pendukung = formData.get("pendukung") as File | null;
+        if (Number.isNaN(Date.parse(payload.tanggal_lahir))) throw new Error("Tanggal lahir tidak valid.");
         if (!ktp || !kk) throw new Error("Upload KTP dan KK wajib diisi.");
         [ktp, kk, pendukung].filter(Boolean).forEach((file) => validateUploadFile(file as File));
     } catch (error) {
@@ -192,18 +207,11 @@ export async function createSubmission(formData: FormData) {
     }
 
     const uploadedPaths: string[] = [];
-    let pengajuanId: string | null = null;
-
-    const cleanup = async () => {
+    const cleanupUploadedFiles = async () => {
         try {
-            if (pengajuanId) {
-                await client.from("tracking_pengajuan").delete().eq("pengajuan_id", pengajuanId);
-                await client.from("dokumen_pengajuan").delete().eq("pengajuan_id", pengajuanId);
-                await client.from("pengajuan_surat").delete().eq("id", pengajuanId);
-            }
             if (uploadedPaths.length > 0) await client.storage.from("surat").remove(uploadedPaths);
         } catch (cleanupError) {
-            console.error("[surat-online:rollback]", cleanupError);
+            console.error("[surat-online:cleanup-upload]", cleanupError);
         }
     };
 
@@ -230,24 +238,17 @@ export async function createSubmission(formData: FormData) {
             .from("layanan")
             .select(`
                 id,
-                nama,
-                deskripsi,
-                aktif,
-                persyaratan,
-                alur,
-                dasar_hukum,
-                output,
-                kanal,
-                created_at
+                nama
             `)
             .eq("id", payload.layanan_id)
+            .eq("aktif", true)
             .maybeSingle();
         if (layananError) {
             console.error("SUPABASE SELECT LAYANAN ERROR");
             console.dir(layananError, { depth: null });
-            throw layananError;
+            throw new SupabaseOperationError("SUPABASE SELECT LAYANAN ERROR", layananError);
         }
-        if (!layanan) throw new Error("Jenis layanan tidak ditemukan atau tidak aktif.");
+        if (!layanan) throw new Error("Layanan tidak ditemukan atau tidak aktif.");
 
         const layananRecord = layanan as Record<string, unknown>;
         const jenisSuratFromDatabase = String(layananRecord.nama ?? payload.jenis_surat);
@@ -257,7 +258,7 @@ export async function createSubmission(formData: FormData) {
         if (countError) {
             console.error("SUPABASE COUNT PENGAJUAN_SURAT ERROR");
             console.dir(countError, { depth: null });
-            throw countError;
+            throw new SupabaseOperationError("SUPABASE COUNT PENGAJUAN_SURAT ERROR", countError);
         }
         const sequence = (count ?? 0) + 1;
         nomor_pengajuan = createNomorPengajuan(sequence);
@@ -287,30 +288,35 @@ export async function createSubmission(formData: FormData) {
             kecamatan: payload.kecamatan,
             no_hp: payload.nomor_hp,
             email: payload.email,
-            jenis_surat: jenisSuratFromDatabase,
             keperluan: payload.keperluan,
-            catatan: payload.catatan,
+            catatan: payload.catatan || null,
             nomor_pengajuan,
             status: "Menunggu Verifikasi",
-            file_ktp: ktp_url,
-            file_kk: kk_url,
-            file_pendukung: pendukung_url,
+            file_ktp: ktp_url ?? null,
+            file_kk: kk_url ?? null,
+            file_pendukung: pendukung_url ?? null,
         };
 
-        const { data: pengajuan, error } = await client.from("pengajuan_surat").insert(pengajuanPayload).select("*, layanan(*)").single();
+        console.log("[PENGAJUAN PAYLOAD]", {
+            ...pengajuanPayload,
+            file_ktp: pengajuanPayload.file_ktp ? "[FILE]" : null,
+            file_kk: pengajuanPayload.file_kk ? "[FILE]" : null,
+            file_pendukung: pengajuanPayload.file_pendukung ? "[FILE]" : null,
+        });
+
+        const { data: pengajuan, error } = await client.from("pengajuan_surat").insert(pengajuanPayload).select("id,nomor_pengajuan,status,created_at").single();
         if (error) {
-            console.error("INSERT ERROR:", error);
-            console.error("SUPABASE INSERT PENGAJUAN_SURAT ERROR");
+            console.error("[PENGAJUAN INSERT ERROR]", error);
             console.dir(error, { depth: null });
-            throw error;
+            await cleanupUploadedFiles();
+            throw new SupabaseOperationError("PENGAJUAN INSERT ERROR", error);
         }
-        pengajuanId = pengajuan.id;
 
         const { error: verificationError } = await client.from("verifikasi_pengajuan").insert(createVerificationRows(pengajuan.id));
         if (verificationError) {
             console.error("SUPABASE INSERT VERIFIKASI_PENGAJUAN ERROR");
             console.dir(verificationError, { depth: null });
-            throw verificationError;
+            throw new SupabaseOperationError("SUPABASE INSERT VERIFIKASI_PENGAJUAN ERROR", verificationError);
         }
 
         const { error: dokumenError } = await client.from("dokumen_pengajuan").insert([
@@ -338,7 +344,7 @@ export async function createSubmission(formData: FormData) {
         if (dokumenError) {
             console.error("SUPABASE INSERT DOKUMEN_PENGAJUAN ERROR");
             console.dir(dokumenError, { depth: null });
-            throw dokumenError;
+            throw new SupabaseOperationError("SUPABASE INSERT DOKUMEN_PENGAJUAN ERROR", dokumenError);
         }
 
         const { error: trackingError } = await client.from("tracking_pengajuan").insert({
@@ -348,10 +354,9 @@ export async function createSubmission(formData: FormData) {
             petugas: null,
         });
         if (trackingError) {
-            console.error("SUPABASE INSERT TRACKING_PENGAJUAN ERROR");
-            console.error(trackingError);
+            console.error("[PENGAJUAN TRACKING ERROR]", trackingError);
             console.dir(trackingError, { depth: null });
-            throw trackingError;
+            throw new SupabaseOperationError("PENGAJUAN TRACKING ERROR", trackingError);
         }
 
         try {
@@ -388,7 +393,6 @@ export async function createSubmission(formData: FormData) {
     } catch (error) {
         console.error("===== CREATE SUBMISSION FULL ERROR =====");
         console.dir(error, { depth: null });
-        await cleanup();
         throw error;
     } finally {
         // State loading/hasil ditangani oleh client pemanggil; cleanup error ditangani di catch.

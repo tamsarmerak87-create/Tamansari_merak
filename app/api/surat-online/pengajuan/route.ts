@@ -5,10 +5,17 @@ export async function POST(request: Request) {
   try {
     const formData = await request.formData();
     const data = await createSubmission(formData);
-    return NextResponse.json({ ok: true, data });
+    return NextResponse.json({
+      ok: true,
+      message: "Pengajuan berhasil dikirim.",
+      data: {
+        id: data.id,
+        nomor_pengajuan: data.nomor_pengajuan,
+        status: data.status,
+      },
+    });
   } catch (error) {
-    console.error("===== FULL ERROR =====");
-    console.dir(error, { depth: null });
+    console.error("[PENGAJUAN ERROR]", error);
 
     return NextResponse.json(
       {
@@ -17,6 +24,9 @@ export async function POST(request: Request) {
           error instanceof Error
             ? error.message
             : "Gagal mengirim pengajuan.",
+        details: error instanceof Error && "details" in error ? error.details : undefined,
+        hint: error instanceof Error && "hint" in error ? error.hint : undefined,
+        code: error instanceof Error && "code" in error ? error.code : undefined,
       },
       { status: 500 },
     );
