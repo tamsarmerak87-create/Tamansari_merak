@@ -3,9 +3,10 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 let supabaseClient: SupabaseClient | null = null;
 
 function logSupabaseEnvStatus() {
-    console.log("Supabase URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
-    console.log("Anon Key:", !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-    console.log("Service Key:", !!process.env.SUPABASE_SERVICE_ROLE_KEY);
+    console.log("[SUPABASE CONFIG]", {
+        hasUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
+        hasAnonKey: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
+    });
 }
 
 function getSupabaseConfig() {
@@ -24,9 +25,9 @@ export function createSupabaseClient() {
     if (supabaseClient) return supabaseClient;
 
     const { url, anonKey } = getSupabaseConfig();
-    supabaseClient = createClient(url, anonKey);
+    supabaseClient = createClient(url, anonKey, {
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+    });
 
     return supabaseClient;
 }
-
-export const supabase = createSupabaseClient();
