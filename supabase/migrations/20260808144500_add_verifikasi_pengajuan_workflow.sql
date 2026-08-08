@@ -15,9 +15,13 @@ create table if not exists public.verifikasi_pengajuan (
   created_at timestamptz default now(),
   acted_at timestamptz,
   constraint verifikasi_pengajuan_unique_tahap unique (pengajuan_id, tahap),
-  constraint verifikasi_pengajuan_status_check check (status in ('Menunggu', 'Disetujui', 'Ditolak')),
+  constraint verifikasi_pengajuan_status_check check (status in ('Menunggu', 'Diproses', 'Disetujui', 'Ditolak')),
   constraint verifikasi_pengajuan_role_check check (role_petugas in ('staff_pelayanan', 'petugas_lapangan', 'kepala_seksi', 'seklur', 'lurah'))
 );
+
+alter table public.verifikasi_pengajuan drop constraint if exists verifikasi_pengajuan_status_check;
+alter table public.verifikasi_pengajuan
+  add constraint verifikasi_pengajuan_status_check check (status in ('Menunggu', 'Diproses', 'Disetujui', 'Ditolak'));
 
 create index if not exists verifikasi_pengajuan_pengajuan_id_idx on public.verifikasi_pengajuan(pengajuan_id);
 create index if not exists verifikasi_pengajuan_role_status_idx on public.verifikasi_pengajuan(role_petugas, status);

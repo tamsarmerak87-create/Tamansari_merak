@@ -95,7 +95,7 @@ function verificationStages(row: Row) {
 }
 
 function activeStage(row: Row) {
-  return verificationStages(row).find((stage: Row) => stage.status === "Menunggu") ?? null;
+  return verificationStages(row).find((stage: Row) => ["Menunggu", "Diproses"].includes(String(stage.status))) ?? null;
 }
 
 function officerName(stage?: Row | null) {
@@ -634,61 +634,93 @@ function Table({
   onReject: (r: Row) => void;
 }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full text-sm">
-        <thead>
-          <tr className="text-left">
-            <th>Nomor</th>
-            <th>Tanggal</th>
-            <th>Tahap Saat Ini</th>
-            <th>Petugas Saat Ini</th>
-            <th>Nama</th>
-            <th>NIK</th>
-            <th>Layanan</th>
-            <th>Status</th>
-            <th>Aksi</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.id} className="border-t">
-              <td>
-                <Link
-                  className="font-black text-gov-950"
-                  href={`/admin/pengajuan/${r.id}`}
-                >
-                  {r.nomor_pengajuan}
-                </Link>
-              </td>
-              <td>{formatDate(r.created_at)}</td>
-              <td className="min-w-52">
-                <p className="font-black text-gov-950">{activeStage(r)?.nama_tahap ?? (normalizeStatus(r.status) === "Selesai" ? "Selesai" : "Tidak ada tahap aktif")}</p>
-                <p className="mt-1 text-xs font-bold text-slate-500">{roleLabel(activeStage(r)?.role_petugas)}</p>
-              </td>
-              <td>{officerName(activeStage(r))}</td>
-              <td>{r.nama_lengkap}</td>
-              <td>{r.nik}</td>
-              <td>{serviceName(r)}</td>
-              <td>
-                <StatusBadge status={r.status} />
-              </td>
-              <td>
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={() => onDetail(r)} className="rounded-xl bg-slate-100 px-3 py-2 font-black text-slate-700 hover:bg-slate-200"><Eye className="inline" size={14} /> Detail</button>
-                  {canProcessStage(r, adminProfile) ? (
-                    <>
-                      <button type="button" onClick={() => onVerify(r)} className="rounded-xl bg-gov-950 px-3 py-2 font-black text-white hover:bg-gov-800"><ShieldCheck className="inline" size={14} /> {activeStage(r)?.tahap === 5 ? "Setujui" : "Proses Tahap Ini"}</button>
-                      <button type="button" onClick={() => onReject(r)} className="rounded-xl bg-red-600 px-3 py-2 font-black text-white hover:bg-red-700"><XCircle className="inline" size={14} /> Tolak</button>
-                    </>
-                  ) : (
-                    <span className={cn("rounded-xl px-3 py-2 text-xs font-black", adminProfile?.role === "admin" ? "bg-blue-50 text-blue-700" : "bg-amber-50 text-amber-700")}>{accessLabel(r, adminProfile)}</span>
-                  )}
-                </div>
-              </td>
+    <div>
+      <div className="hidden overflow-x-auto rounded-[1.5rem] border border-slate-100 lg:block">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="text-left">
+              <th>Nomor</th>
+              <th>Tanggal</th>
+              <th>Tahap Saat Ini</th>
+              <th>Petugas Saat Ini</th>
+              <th>Nama</th>
+              <th>NIK</th>
+              <th>Layanan</th>
+              <th>Status</th>
+              <th>Aksi</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id} className="border-t">
+                <td>
+                  <Link
+                    className="font-black text-gov-950"
+                    href={`/admin/pengajuan/${r.id}`}
+                  >
+                    {r.nomor_pengajuan}
+                  </Link>
+                </td>
+                <td>{formatDate(r.created_at)}</td>
+                <td className="min-w-52">
+                  <p className="font-black text-gov-950">{activeStage(r)?.nama_tahap ?? (normalizeStatus(r.status) === "Selesai" ? "Selesai" : "Tidak ada tahap aktif")}</p>
+                  <p className="mt-1 text-xs font-bold text-slate-500">{roleLabel(activeStage(r)?.role_petugas)}</p>
+                </td>
+                <td>{officerName(activeStage(r))}</td>
+                <td>{r.nama_lengkap}</td>
+                <td>{r.nik}</td>
+                <td>{serviceName(r)}</td>
+                <td>
+                  <StatusBadge status={r.status} />
+                </td>
+                <td>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => onDetail(r)} className="rounded-xl bg-slate-100 px-3 py-2 font-black text-slate-700 hover:bg-slate-200"><Eye className="inline" size={14} /> Detail</button>
+                    {canProcessStage(r, adminProfile) ? (
+                      <>
+                        <button type="button" onClick={() => onVerify(r)} className="rounded-xl bg-gov-950 px-3 py-2 font-black text-white hover:bg-gov-800"><ShieldCheck className="inline" size={14} /> {activeStage(r)?.tahap === 5 ? "Setujui" : "Proses Tahap Ini"}</button>
+                        <button type="button" onClick={() => onReject(r)} className="rounded-xl bg-red-600 px-3 py-2 font-black text-white hover:bg-red-700"><XCircle className="inline" size={14} /> Tolak</button>
+                      </>
+                    ) : (
+                      <span className={cn("rounded-xl px-3 py-2 text-xs font-black", adminProfile?.role === "admin" ? "bg-blue-50 text-blue-700" : "bg-amber-50 text-amber-700")}>{accessLabel(r, adminProfile)}</span>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="grid gap-3 lg:hidden">
+        {rows.map((r) => (
+          <div key={r.id} className="rounded-[1.5rem] border border-slate-100 bg-slate-50 p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate font-black text-gov-950">{r.nomor_pengajuan}</p>
+                <p className="mt-1 text-sm font-bold text-slate-500">{formatDate(r.created_at)} - {r.nama_lengkap}</p>
+              </div>
+              <StatusBadge status={r.status} />
+            </div>
+            <div className="mt-4 grid gap-2 text-sm font-bold text-slate-600">
+              <p><b className="text-gov-950">Tahap:</b> {activeStage(r)?.nama_tahap ?? (normalizeStatus(r.status) === "Selesai" ? "Selesai" : "Tidak ada tahap aktif")}</p>
+              <p><b className="text-gov-950">Petugas:</b> {officerName(activeStage(r))}</p>
+              <p><b className="text-gov-950">NIK:</b> {r.nik}</p>
+              <p><b className="text-gov-950">Layanan:</b> {serviceName(r)}</p>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button type="button" onClick={() => onDetail(r)} className="rounded-xl bg-white px-3 py-2 font-black text-slate-700 shadow-sm"><Eye className="inline" size={14} /> Detail</button>
+              {canProcessStage(r, adminProfile) ? (
+                <>
+                  <button type="button" onClick={() => onVerify(r)} className="rounded-xl bg-gov-950 px-3 py-2 font-black text-white"><ShieldCheck className="inline" size={14} /> {activeStage(r)?.tahap === 5 ? "Setujui" : "Proses"}</button>
+                  <button type="button" onClick={() => onReject(r)} className="rounded-xl bg-red-600 px-3 py-2 font-black text-white"><XCircle className="inline" size={14} /> Tolak</button>
+                </>
+              ) : (
+                <span className={cn("rounded-xl px-3 py-2 text-xs font-black", adminProfile?.role === "admin" ? "bg-blue-50 text-blue-700" : "bg-amber-50 text-amber-700")}>{accessLabel(r, adminProfile)}</span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
       {rows.length === 0 && <p className="py-8 text-center">Belum ada data.</p>}
     </div>
   );
@@ -813,7 +845,7 @@ function SubmissionTimeline({ row }: { row: Row }) {
       <div className="space-y-3">
         {stages.map((stage: Row) => {
           const done = stage.status === "Disetujui";
-          const active = stage.status === "Menunggu" && !rejected;
+          const active = ["Menunggu", "Diproses"].includes(String(stage.status)) && !rejected;
           const declined = stage.status === "Ditolak";
           return (
             <div key={stage.id ?? stage.tahap} className={cn("grid gap-4 rounded-2xl border p-4 sm:grid-cols-[auto_1fr]", done ? "border-emerald-200 bg-emerald-50" : declined ? "border-red-200 bg-red-50" : active ? "border-accent-200 bg-accent-50" : "border-slate-100 bg-slate-50")}>

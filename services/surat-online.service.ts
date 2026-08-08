@@ -344,7 +344,7 @@ export async function createSubmission(formData: FormData) {
         const { error: trackingError } = await client.from("tracking_pengajuan").insert({
             pengajuan_id: pengajuan.id,
             status: "Menunggu Verifikasi",
-            keterangan: "Permohonan diterima dan menunggu verifikasi.",
+            keterangan: "Permohonan diterima dan masuk tahap Verifikasi Staff Pelayanan.",
             petugas: null,
         });
         if (trackingError) {

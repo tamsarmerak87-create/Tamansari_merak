@@ -6,6 +6,8 @@ export type VerificationStage = {
     role_petugas: WorkflowRole;
 };
 
+export const VERIFICATION_STATUS = ["Menunggu", "Diproses", "Disetujui", "Ditolak"] as const;
+
 export const VERIFICATION_STAGES: VerificationStage[] = [
     { tahap: 1, nama_tahap: "Verifikasi Staff Pelayanan", role_petugas: "staff_pelayanan" },
     { tahap: 2, nama_tahap: "Verifikasi Petugas Lapangan", role_petugas: "petugas_lapangan" },
@@ -24,13 +26,13 @@ export function createVerificationRows(pengajuanId: string) {
         tahap: stage.tahap,
         nama_tahap: stage.nama_tahap,
         role_petugas: stage.role_petugas,
-        status: "Menunggu",
+        status: stage.tahap === 1 ? "Diproses" : "Menunggu",
     }));
 }
 
 export function getActiveStage<T extends { tahap?: number | null; status?: string | null }>(stages?: T[] | null) {
     const ordered = [...(stages ?? [])].sort((a, b) => Number(a.tahap ?? 0) - Number(b.tahap ?? 0));
-    return ordered.find((stage) => stage.status === "Menunggu") ?? null;
+    return ordered.find((stage) => stage.status === "Diproses") ?? ordered.find((stage) => stage.status === "Menunggu") ?? null;
 }
 
 export function displayWorkflowRole(role?: string | null) {
