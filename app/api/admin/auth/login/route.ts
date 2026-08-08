@@ -1,3 +1,4 @@
+import bcrypt from "bcryptjs";
 import { NextResponse, type NextRequest } from "next/server";
 import { isPetugasRole } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
@@ -44,10 +45,10 @@ export async function POST(request: NextRequest) {
         if (!row?.password_hash) return failedResponse();
         if (!isPetugasRole(row.role) || row.is_active !== true) return failedResponse();
 
-        // TODO:
-        // Ganti kembali menggunakan bcrypt.compare()
-        // setelah seluruh password di database di-hash.
-        const passwordValid = password === row.password_hash;
+        const isBcryptHash = /^\$2[aby]\$\d{2}\$/.test(row.password_hash);
+        const passwordValid = isBcryptHash
+            ? await bcrypt.compare(password, row.password_hash)
+            : password === row.password_hash;
         if (passwordValid === false) return failedResponse();
 
         const { password_hash: _passwordHash, ...safeProfile } = row;
