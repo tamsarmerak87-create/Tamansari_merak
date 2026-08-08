@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { motion } from "framer-motion";
-import { jsPDF } from "jspdf";
 import {
     ArrowRight,
     Bell,
@@ -13,7 +12,6 @@ import {
     CheckCircle2,
     Clock,
     CloudUpload,
-    Download,
     FileCheck2,
     FileText,
     HelpCircle,
@@ -37,6 +35,7 @@ import { cn } from "@/utils/cn";
 import QRCode from "qrcode";
 import { createSupabaseBrowserClient } from "@/services/supabase";
 import { useWargaAuth } from "@/components/auth/warga-auth-provider";
+import { BuktiPengajuanPrint } from "@/components/pengajuan/BuktiPengajuanPrint";
 
 type ServiceCatalogItem = PublicService & { estimate: string };
 
@@ -92,6 +91,7 @@ type SubmissionResult = Record<string, unknown> & {
     status?: string;
     petugas?: string | null;
     layanan?: { nama?: string; output?: string } | null;
+    tracking_pengajuan?: TrackingItem[];
 };
 type TrackingItem = { status?: string; progress?: number; petugas?: string | null; created_at?: string; keterangan?: string | null };
 type DocumentItem = { jenis_dokumen?: string; file_url?: string; jenis?: string; url_file?: string; nama_file?: string; created_at?: string };
@@ -394,53 +394,14 @@ function Success({ ticket, service, estimate, data }: { ticket: string; service:
     const nomorTiket = data?.nomor_tiket ?? ticket.replace(/^TMS-/, "TIK-").replace(/-(\d{4})$/, "-00$1");
     const trackingUrl = data?.tracking_url ?? `${window.location.origin}/surat-online/tracking?nomor=${encodeURIComponent(ticket)}`;
     const [qrDataUrl, setQrDataUrl] = useState("");
+    const [previewOpen, setPreviewOpen] = useState(false);
     useEffect(() => {
-        QRCode.toDataURL(ticket, { margin: 1, width: 220 })
+        QRCode.toDataURL(trackingUrl, { margin: 1, width: 220 })
             .then(setQrDataUrl)
             .catch(() => setQrDataUrl(""));
-    }, [ticket]);
-    async function downloadProof() {
-        try {
-            const qr = qrDataUrl || await QRCode.toDataURL(ticket, { margin: 1, width: 260 });
-            const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-            pdf.setFillColor(7, 26, 51);
-            pdf.rect(0, 0, 210, 38, "F");
-            pdf.setTextColor(255, 255, 255);
-            pdf.setFont("helvetica", "bold");
-            pdf.setFontSize(10);
-            pdf.text("LOGO KOTA CILEGON", 14, 14);
-            pdf.text("LOGO KELURAHAN", 154, 14);
-            pdf.setFontSize(18);
-            pdf.text("BUKTI PENGAJUAN SURAT ONLINE", 105, 20, { align: "center" });
-            pdf.setFontSize(10);
-            pdf.text("Kelurahan Tamansari - Kecamatan Pulomerak - Kota Cilegon", 105, 29, { align: "center" });
-            pdf.setTextColor(15, 23, 42);
-            pdf.setFontSize(12);
-            const rows = [["Nomor Pengajuan", ticket], ["Nomor Tiket", nomorTiket], ["Tanggal", date.toLocaleDateString("id-ID")], ["Nama", data?.nama_lengkap ?? "-"], ["NIK", data?.nik ?? "-"], ["Jenis Pelayanan", serviceName], ["Keperluan", data?.keperluan ?? "-"], ["Status", data?.status ?? "Menunggu Verifikasi"]];
-            rows.forEach(([label, value], index) => {
-                const y = 58 + index * 12;
-                pdf.setFont("helvetica", "bold");
-                pdf.text(label, 20, y);
-                pdf.setFont("helvetica", "normal");
-                pdf.text(String(value).slice(0, 80), 78, y);
-            });
-            pdf.addImage(qr, "PNG", 144, 54, 42, 42);
-            pdf.setFontSize(9);
-            pdf.text("Scan QR Code berisi Nomor Pengajuan untuk validasi bukti.", 20, 166);
-            pdf.text(`QR: ${ticket}`, 20, 172);
-            pdf.setDrawColor(226, 232, 240);
-            pdf.line(20, 252, 190, 252);
-            pdf.setFont("helvetica", "bold");
-            pdf.text("Kelurahan Tamansari", 105, 262, { align: "center" });
-            pdf.setFont("helvetica", "normal");
-            pdf.text("Kecamatan Pulomerak", 105, 268, { align: "center" });
-            pdf.text("Kota Cilegon", 105, 274, { align: "center" });
-            pdf.save(`bukti-${ticket}.pdf`);
-        } catch (error) {
-            alert(error instanceof Error ? error.message : "Gagal membuat PDF bukti pengajuan.");
-        }
-    }
-    return <div className="mt-8 rounded-[24px] border border-emerald-200 bg-emerald-50 p-6"><CheckCircle2 className="text-emerald-600" size={40} /><h2 className="mt-4 text-3xl font-black text-gov-950">Permohonan berhasil dikirim</h2><div className="mt-5 grid gap-3 md:grid-cols-2"><p><b>Nomor Pengajuan:</b> {ticket}</p><p><b>Nomor Tiket:</b> {nomorTiket}</p><p><b>Tanggal:</b> {date.toLocaleDateString("id-ID")}</p><p><b>Jenis Pelayanan:</b> {serviceName}</p><p><b>Estimasi selesai:</b> {serviceEstimate}</p><p><b>Link Tracking:</b> <a className="underline" href={trackingUrl}>{trackingUrl}</a></p></div><div className="mt-6 flex flex-wrap gap-3"><div className="grid size-28 place-items-center rounded-3xl bg-white text-gov-950">{qrDataUrl ? <Image src={qrDataUrl} alt="QR Code Nomor Pengajuan" width={96} height={96} unoptimized className="size-24" /> : <QrCode size={76} />}</div><Button type="button" variant="primary" onClick={downloadProof}><Download size={18} />Download Bukti Pengajuan</Button><Button type="button" variant="glass" onClick={() => window.print()}><Printer size={18} />Cetak Bukti</Button></div></div>;
+    }, [trackingUrl]);
+    const printData = { ...(data ?? {}), nomor_pengajuan: ticket, nomor_tiket: nomorTiket, tracking_url: trackingUrl, jenis_surat: serviceName, created_at: data?.created_at ?? date.toISOString() };
+    return <div className="mt-8 rounded-[24px] border border-emerald-200 bg-emerald-50 p-6"><CheckCircle2 className="text-emerald-600" size={40} /><h2 className="mt-4 text-3xl font-black text-gov-950">Permohonan berhasil dikirim</h2><div className="mt-5 grid gap-3 md:grid-cols-2"><p><b>Nomor Pengajuan:</b> {ticket}</p><p><b>Nomor Tiket:</b> {nomorTiket}</p><p><b>Tanggal:</b> {date.toLocaleDateString("id-ID")}</p><p><b>Jenis Pelayanan:</b> {serviceName}</p><p><b>Estimasi selesai:</b> {serviceEstimate}</p><p><b>Link Tracking:</b> <a className="underline" href={trackingUrl}>{trackingUrl}</a></p></div><div className="mt-6 flex flex-wrap gap-3"><div className="grid size-28 place-items-center rounded-3xl bg-white text-gov-950">{qrDataUrl ? <Image src={qrDataUrl} alt="QR Code tracking pengajuan" width={96} height={96} unoptimized className="size-24" /> : <QrCode size={76} />}</div><Button type="button" variant="primary" title="Cetak atau simpan bukti pengajuan sebagai PDF" className="w-full sm:w-auto" onClick={() => setPreviewOpen(true)}><Printer size={18} />Cetak Bukti Pengajuan</Button></div>{previewOpen ? <div className="fixed inset-0 z-[80] overflow-y-auto bg-slate-950/70 p-4 backdrop-blur-sm no-print"><div className="mx-auto max-w-5xl rounded-[28px] bg-white p-4 shadow-2xl sm:p-6"><div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-black uppercase tracking-[.18em] text-accent-600">Pratinjau Bukti Pengajuan</p><h3 className="text-2xl font-black text-gov-950">Dokumen A4 siap cetak</h3></div><div className="flex flex-col gap-2 sm:flex-row"><Button type="button" variant="glass" onClick={() => setPreviewOpen(false)}>Tutup</Button><Button type="button" variant="primary" title="Cetak atau simpan bukti pengajuan sebagai PDF" onClick={() => window.print()}><Printer size={18} />Cetak Bukti</Button></div></div><div className="max-h-[78vh] overflow-auto rounded-2xl bg-slate-100 p-3"><BuktiPengajuanPrint data={printData} serviceName={serviceName} qrDataUrl={qrDataUrl} className="mx-auto" /></div></div></div> : null}</div>;
 }
 
 function InfoSidebar() {
