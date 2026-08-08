@@ -57,6 +57,18 @@ const statuses = [
 ];
 const workflowRoles = ["staff_pelayanan", "petugas_lapangan", "kepala_seksi", "seklur", "lurah"] as const;
 
+function roleLabel(role?: string | null) {
+  const labels: Record<string, string> = {
+    admin: "Administrator",
+    staff_pelayanan: "Staff Pelayanan",
+    petugas_lapangan: "Petugas Lapangan",
+    kepala_seksi: "Kepala Seksi",
+    seklur: "Seklur",
+    lurah: "Lurah",
+  };
+  return labels[String(role ?? "")] ?? String(role ?? "Petugas");
+}
+
 function normalizeStatus(value?: string | null) {
   if (!value) return "Menunggu Verifikasi";
   if (value === "Sedang Diproses") return "Diproses";
@@ -94,6 +106,15 @@ function canProcessStage(row: Row, profile?: AdminPortalProfile | null) {
   const stage = activeStage(row);
   const role = profile?.role;
   return Boolean(stage && role === stage.role_petugas && workflowRoles.includes(role as typeof workflowRoles[number]));
+}
+
+function accessLabel(row: Row, profile?: AdminPortalProfile | null) {
+  const stage = activeStage(row);
+  if (profile?.role === "admin") return "Administrator - Monitoring";
+  if (!stage) return normalizeStatus(row.status) === "Selesai" ? "Selesai" : "Tidak ada tahap aktif";
+  if (stage.tahap === 5 && profile?.role !== "lurah") return "Menunggu Persetujuan Lurah";
+  if (profile?.role === stage.role_petugas) return stage.tahap === 5 ? "Setujui / Tolak" : "Proses Tahap Ini";
+  return `Menunggu ${roleLabel(stage.role_petugas)}`;
 }
 
 function fileUrl(row: Row) {
@@ -353,7 +374,7 @@ export function AdminShell({
         <div className="flex items-center justify-between">
           <div>
             <b className="text-xl">Admin Tamansari</b>
-            <p className="mt-1 text-xs font-bold uppercase tracking-[.18em] text-accent-200">{adminProfile.role}</p>
+            <p className="mt-1 text-xs font-bold uppercase tracking-[.18em] text-accent-200">{adminProfile.role === "admin" ? "ADMINISTRATOR - Kontrol Sistem" : roleLabel(adminProfile.role)}</p>
           </div>
           <button onClick={() => setOpen(false)} className="lg:hidden">
             <X />
@@ -642,7 +663,7 @@ function Table({
               <td>{formatDate(r.created_at)}</td>
               <td className="min-w-52">
                 <p className="font-black text-gov-950">{activeStage(r)?.nama_tahap ?? (normalizeStatus(r.status) === "Selesai" ? "Selesai" : "Tidak ada tahap aktif")}</p>
-                <p className="mt-1 text-xs font-bold text-slate-500">{activeStage(r)?.role_petugas ?? "-"}</p>
+                <p className="mt-1 text-xs font-bold text-slate-500">{roleLabel(activeStage(r)?.role_petugas)}</p>
               </td>
               <td>{officerName(activeStage(r))}</td>
               <td>{r.nama_lengkap}</td>
@@ -656,11 +677,11 @@ function Table({
                   <button type="button" onClick={() => onDetail(r)} className="rounded-xl bg-slate-100 px-3 py-2 font-black text-slate-700 hover:bg-slate-200"><Eye className="inline" size={14} /> Detail</button>
                   {canProcessStage(r, adminProfile) ? (
                     <>
-                      <button type="button" onClick={() => onVerify(r)} className="rounded-xl bg-gov-950 px-3 py-2 font-black text-white hover:bg-gov-800"><ShieldCheck className="inline" size={14} /> Proses Tahap Ini</button>
+                      <button type="button" onClick={() => onVerify(r)} className="rounded-xl bg-gov-950 px-3 py-2 font-black text-white hover:bg-gov-800"><ShieldCheck className="inline" size={14} /> {activeStage(r)?.tahap === 5 ? "Setujui" : "Proses Tahap Ini"}</button>
                       <button type="button" onClick={() => onReject(r)} className="rounded-xl bg-red-600 px-3 py-2 font-black text-white hover:bg-red-700"><XCircle className="inline" size={14} /> Tolak</button>
                     </>
                   ) : (
-                    <span className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-black text-amber-700">Menunggu Petugas {activeStage(r)?.nama_tahap ?? "berwenang"}</span>
+                    <span className={cn("rounded-xl px-3 py-2 text-xs font-black", adminProfile?.role === "admin" ? "bg-blue-50 text-blue-700" : "bg-amber-50 text-amber-700")}>{accessLabel(r, adminProfile)}</span>
                   )}
                 </div>
               </td>
@@ -911,7 +932,7 @@ function SubmissionDetail({
             </div>
           </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:w-80 lg:grid-cols-1">
-            {mayProcessStage ? <button onClick={() => onVerify(row)} className="rounded-2xl bg-white px-5 py-3 font-black text-gov-950 shadow-lg transition hover:-translate-y-0.5"><ShieldCheck className="inline" size={17} /> Proses Tahap Ini</button> : <p className="rounded-2xl bg-white/10 p-4 text-sm font-black text-white ring-1 ring-white/15">Menunggu Petugas {activeStage(row)?.nama_tahap ?? "berwenang"}</p>}
+            {mayProcessStage ? <button onClick={() => onVerify(row)} className="rounded-2xl bg-white px-5 py-3 font-black text-gov-950 shadow-lg transition hover:-translate-y-0.5"><ShieldCheck className="inline" size={17} /> {activeStage(row)?.tahap === 5 ? "Setujui" : "Proses Tahap Ini"}</button> : <p className="rounded-2xl bg-white/10 p-4 text-sm font-black text-white ring-1 ring-white/15">{accessLabel(row, adminProfile)}</p>}
             {mayComplete && <button onClick={() => onComplete(row)} className="rounded-2xl bg-emerald-500 px-5 py-3 font-black text-white shadow-lg transition hover:-translate-y-0.5"><CheckCircle2 className="inline" size={17} /> Selesai</button>}
             {mayProcessStage && <button onClick={() => onReject(row)} className="rounded-2xl bg-red-600 px-5 py-3 font-black text-white shadow-lg transition hover:-translate-y-0.5"><XCircle className="inline" size={17} /> Tolak</button>}
           </div>
