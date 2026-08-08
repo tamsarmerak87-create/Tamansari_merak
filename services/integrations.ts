@@ -31,7 +31,7 @@ async function postJson(url: string, body: Json, headers: HeadersInit = {}) {
 }
 
 export function getAppBaseUrl() {
-    return normalizeUrl(process.env.NEXT_PUBLIC_SITE_URL) ?? "http://localhost:3000";
+    return normalizeUrl(process.env.NEXT_PUBLIC_SITE_URL) ?? normalizeUrl(process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined) ?? "https://tamansari-merak.vercel.app";
 }
 
 export async function forwardToN8n(flow: string, payload: Json) {
