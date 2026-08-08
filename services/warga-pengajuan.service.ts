@@ -17,6 +17,8 @@ export type DokumenPengajuan = {
     jenis?: string | null;
     url_file?: string | null;
     created_at?: string | null;
+    nomor_pengajuan?: string | null;
+    status?: string | null;
 };
 
 export type WargaPengajuan = {
@@ -82,13 +84,18 @@ function normalizeRows(rows: WargaPengajuan[] | null | undefined, layananById = 
     }));
 }
 
-async function hydrateRows(rows: WargaPengajuan[]) {
+async function hydrateRows(rows: WargaPengajuan[], profile?: WargaProfile | null) {
     const supabase = client();
     const layananIds = [...new Set(rows.map((row) => row.layanan_id).filter(Boolean))] as string[];
     const pengajuanIds = rows.map((row) => row.id).filter(Boolean);
+    const pengajuanMap = new Map(rows.map((item) => [item.id, item]));
     const layananById = new Map<string, { id?: string; nama?: string | null; deskripsi?: string | null }>();
     const trackingByPengajuanId = new Map<string, TrackingPengajuan[]>();
     const dokumenByPengajuanId = new Map<string, DokumenPengajuan[]>();
+
+    if (profile !== undefined) console.log("[DASHBOARD WARGA] profile:", profile);
+    console.log("[DASHBOARD WARGA] pengajuan:", rows);
+    console.log("[DASHBOARD WARGA] pengajuanIds:", pengajuanIds);
 
     if (layananIds.length > 0) {
         const { data, error } = await supabase.from("layanan").select("id,nama,deskripsi").in("id", layananIds);
@@ -105,13 +112,20 @@ async function hydrateRows(rows: WargaPengajuan[]) {
         });
 
         const { data: dokumen, error: dokumenError } = await supabase.from("dokumen_pengajuan").select(DOKUMEN_COLUMNS).in("pengajuan_id", pengajuanIds).order("created_at", { ascending: false });
-        console.log("[DOKUMEN ERROR]", dokumenError);
-        console.log("[DOKUMEN PENGAJUAN]", dokumen);
-        if (dokumenError) console.error("[DOKUMEN ERROR]", dokumenError);
-        ((dokumen ?? []) as DokumenPengajuan[]).forEach((doc) => {
+        console.log("[DASHBOARD WARGA] dokumen:", dokumen);
+        console.log("[DASHBOARD WARGA] dokumenError:", dokumenError);
+        if (dokumenError) console.error("[DASHBOARD WARGA] dokumenError:", dokumenError);
+        ((dokumen ?? []) as DokumenPengajuan[]).map((doc) => ({
+            ...doc,
+            nomor_pengajuan: pengajuanMap.get(doc.pengajuan_id ?? "")?.nomor_pengajuan ?? "-",
+            status: pengajuanMap.get(doc.pengajuan_id ?? "")?.status ?? "-",
+        })).forEach((doc) => {
             const key = doc.pengajuan_id ?? "";
             dokumenByPengajuanId.set(key, [...(dokumenByPengajuanId.get(key) ?? []), doc]);
         });
+    } else {
+        console.log("[DASHBOARD WARGA] dokumen:", []);
+        console.log("[DASHBOARD WARGA] dokumenError:", null);
     }
 
     return normalizeRows(rows, layananById, trackingByPengajuanId, dokumenByPengajuanId);
@@ -141,7 +155,7 @@ export async function getMyPengajuan() {
 
     if (error) throw error;
     console.log("[PENGAJUAN WARGA]", data);
-    return hydrateRows(data as WargaPengajuan[]);
+    return hydrateRows(data as WargaPengajuan[], profile);
 }
 
 export async function getMyPengajuanDetail(id: string) {
@@ -157,7 +171,7 @@ export async function getMyPengajuanDetail(id: string) {
 
     if (error) throw error;
     if (!data) return null;
-    return (await hydrateRows([data as WargaPengajuan]))[0] ?? null;
+    return (await hydrateRows([data as WargaPengajuan], profile))[0] ?? null;
 }
 
 export async function getMyFavorit() {
