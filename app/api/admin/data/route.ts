@@ -53,9 +53,8 @@ export async function GET(request: NextRequest) {
     }
 
     const submissionIds = (submissions ?? []).map((item) => item.id).filter(Boolean);
-    const petugasIds = Array.from(new Set((submissions ?? []).map((item) => item.verified_by).filter(Boolean)));
 
-    const [{ data: documents, error: documentsError }, { data: tracking, error: trackingError }, { data: petugas, error: petugasError }] = await Promise.all([
+    const [{ data: documents, error: documentsError }, { data: tracking, error: trackingError }, { data: verification, error: verificationError }] = await Promise.all([
         submissionIds.length
             ? supabase
                 .from("dokumen_pengajuan")
@@ -70,16 +69,26 @@ export async function GET(request: NextRequest) {
                 .in("pengajuan_id", submissionIds)
                 .order("created_at", { ascending: true })
             : Promise.resolve({ data: [], error: null }),
-        petugasIds.length
+        submissionIds.length
             ? supabase
-                .from("petugas")
-                .select("id,username,nama_lengkap,nip,jabatan,role")
-                .in("id", petugasIds)
+                .from("verifikasi_pengajuan")
+                .select("*")
+                .in("pengajuan_id", submissionIds)
+                .order("tahap", { ascending: true })
             : Promise.resolve({ data: [], error: null }),
     ]);
 
     if (documentsError) return jsonError(documentsError.message, 500);
     if (trackingError) return jsonError(trackingError.message, 500);
+    if (verificationError) return jsonError(verificationError.message, 500);
+
+    const petugasIds = Array.from(new Set([
+        ...(submissions ?? []).map((item) => item.verified_by).filter(Boolean),
+        ...(verification ?? []).map((item) => item.petugas_id).filter(Boolean),
+    ]));
+    const { data: petugas, error: petugasError } = petugasIds.length
+        ? await supabase.from("petugas").select("id,username,nama_lengkap,nip,jabatan,role").in("id", petugasIds)
+        : { data: [], error: null };
     if (petugasError) return jsonError(petugasError.message, 500);
 
     const documentsBySubmission = new Map<string, unknown[]>();
@@ -96,11 +105,22 @@ export async function GET(request: NextRequest) {
         trackingBySubmission.get(pengajuanId)?.push(item);
     }
 
+    const verificationBySubmission = new Map<string, Record<string, unknown>[]>();
+    for (const item of verification ?? []) {
+        const pengajuanId = String(item.pengajuan_id ?? "");
+        if (!verificationBySubmission.has(pengajuanId)) verificationBySubmission.set(pengajuanId, []);
+        verificationBySubmission.get(pengajuanId)?.push(item);
+    }
+
     const petugasById = new Map((petugas ?? []).map((item) => [item.id, item]));
     const enrichedSubmissions = (submissions ?? []).map((item) => ({
         ...item,
         dokumen_pengajuan: documentsBySubmission.get(String(item.id)) ?? [],
         tracking_pengajuan: trackingBySubmission.get(String(item.id)) ?? [],
+        verifikasi_pengajuan: (verificationBySubmission.get(String(item.id)) ?? []).map((stage) => ({
+            ...stage,
+            petugas: stage.petugas_id ? petugasById.get(stage.petugas_id) ?? null : null,
+        })),
         petugas: item.verified_by ? petugasById.get(item.verified_by) ?? null : null,
     }));
 

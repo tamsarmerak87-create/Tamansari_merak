@@ -1,4 +1,6 @@
-export type AdminPortalRole = "admin" | "petugas";
+import { isWorkflowRole, type WorkflowRole } from "@/services/verification-workflow";
+
+export type AdminPortalRole = "admin" | "petugas" | WorkflowRole;
 
 export type AdminPortalUser = {
     id: string;
@@ -30,11 +32,11 @@ type PetugasRow = {
 };
 
 export function isAdminPortalRole(role?: string | null): role is AdminPortalRole {
-    return role === "admin" || role === "petugas";
+    return role === "admin" || role === "petugas" || isWorkflowRole(role);
 }
 
 function mapPetugasToAdminProfile(row: PetugasRow): AdminPortalProfile {
-    const normalizedRole: AdminPortalRole = row.role === "admin" ? "admin" : "petugas";
+    const normalizedRole: AdminPortalRole = isAdminPortalRole(row.role) ? row.role : "petugas";
     return {
         id: row.id,
         user_id: row.id,

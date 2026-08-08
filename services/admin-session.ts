@@ -1,7 +1,8 @@
 import { type NextRequest } from "next/server";
 import { createSupabaseAdminClient } from "@/services/supabase";
+import { isWorkflowRole, type WorkflowRole } from "@/services/verification-workflow";
 
-export type PetugasRole = "admin" | "petugas";
+export type PetugasRole = "admin" | "petugas" | WorkflowRole;
 
 export type PetugasProfile = {
     id: string;
@@ -14,7 +15,7 @@ export type PetugasProfile = {
 };
 
 export function isPetugasRole(role?: string | null): role is PetugasRole {
-    return role === "admin" || role === "petugas";
+    return role === "admin" || role === "petugas" || isWorkflowRole(role);
 }
 
 export async function getAdminSession(request: NextRequest) {

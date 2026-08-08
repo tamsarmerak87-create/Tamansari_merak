@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { createSupabaseAdminClient, createSupabaseBrowserClient } from "@/services/supabase";
 import { forwardToN8n, getAppBaseUrl } from "@/services/integrations";
+import { createVerificationRows } from "@/services/verification-workflow";
 
 export const STATUS_STEPS = ["Permohonan diterima", "Verifikasi", "Diproses", "Ditandatangani", "Selesai"] as const;
 export const SUBMISSION_STATUS = ["Menunggu Verifikasi", "Verifikasi", "Diproses", "Ditandatangani", "Selesai", "Ditolak"] as const;
@@ -304,6 +305,13 @@ export async function createSubmission(formData: FormData) {
             throw error;
         }
         pengajuanId = pengajuan.id;
+
+        const { error: verificationError } = await client.from("verifikasi_pengajuan").insert(createVerificationRows(pengajuan.id));
+        if (verificationError) {
+            console.error("SUPABASE INSERT VERIFIKASI_PENGAJUAN ERROR");
+            console.dir(verificationError, { depth: null });
+            throw verificationError;
+        }
 
         const { error: dokumenError } = await client.from("dokumen_pengajuan").insert([
             {

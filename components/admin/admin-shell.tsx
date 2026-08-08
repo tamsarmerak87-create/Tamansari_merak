@@ -51,11 +51,11 @@ type PendingWarga = {
 };
 const statuses = [
   "Menunggu Verifikasi",
-  "Terverifikasi",
-  "Diproses",
+  "Disetujui",
   "Selesai",
   "Ditolak",
 ];
+const workflowRoles = ["staff_pelayanan", "petugas_lapangan", "kepala_seksi", "seklur", "lurah"] as const;
 
 function normalizeStatus(value?: string | null) {
   if (!value) return "Menunggu Verifikasi";
@@ -78,6 +78,24 @@ function petugasName(row: Row) {
   return row.petugas?.full_name ?? row.petugas?.nama_lengkap ?? row.petugas?.nama ?? row.petugas_nama ?? row.admin?.full_name ?? row.admin?.nama ?? "-";
 }
 
+function verificationStages(row: Row) {
+  return Array.isArray(row.verifikasi_pengajuan) ? [...row.verifikasi_pengajuan].sort((a: Row, b: Row) => Number(a.tahap ?? 0) - Number(b.tahap ?? 0)) : [];
+}
+
+function activeStage(row: Row) {
+  return verificationStages(row).find((stage: Row) => stage.status === "Menunggu") ?? null;
+}
+
+function officerName(stage?: Row | null) {
+  return stage?.petugas?.nama_lengkap ?? stage?.petugas?.username ?? stage?.petugas_nama ?? "Belum diproses";
+}
+
+function canProcessStage(row: Row, profile?: AdminPortalProfile | null) {
+  const stage = activeStage(row);
+  const role = profile?.role;
+  return Boolean(stage && role === stage.role_petugas && workflowRoles.includes(role as typeof workflowRoles[number]));
+}
+
 function fileUrl(row: Row) {
   return row.url_file ?? row.file_url ?? row.url ?? row.public_url ?? row.path ?? "";
 }
@@ -85,6 +103,7 @@ function fileUrl(row: Row) {
 function statusBadgeClass(status?: string | null) {
   const normalized = normalizeStatus(status);
   if (normalized === "Selesai") return "bg-emerald-100 text-emerald-800 ring-emerald-200";
+  if (normalized === "Disetujui") return "bg-cyan-100 text-cyan-800 ring-cyan-200";
   if (normalized === "Diproses") return "bg-blue-100 text-blue-800 ring-blue-200";
   if (normalized === "Terverifikasi") return "bg-cyan-100 text-cyan-800 ring-cyan-200";
   if (normalized === "Ditolak") return "bg-red-100 text-red-800 ring-red-200";
@@ -228,7 +247,7 @@ export function AdminShell({
     ["Pengajuan Selesai", stat("Selesai")],
     ["Pengajuan Ditolak", stat("Ditolak")],
   ];
-  const updateStatus = async (row: Row, action: "verifikasi" | "setujui" | "selesai" | "tolak", extra?: { catatan_petugas?: string; alasan_penolakan?: string }) => {
+  const updateStatus = async (row: Row, action: "proses_tahap" | "verifikasi" | "setujui" | "selesai" | "tolak", extra?: { catatan_petugas?: string; alasan_penolakan?: string }) => {
     try {
       setToast({ type: "loading", text: "Menyimpan perubahan..." });
       const res = await fetch("/api/admin/pengajuan", {
@@ -239,7 +258,7 @@ export function AdminShell({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Gagal memperbarui status");
-      setToast({ type: "success", text: action === "tolak" ? "Pengajuan berhasil ditolak." : action === "selesai" ? "Pengajuan berhasil diselesaikan." : action === "setujui" ? "Pengajuan berhasil masuk Diproses." : "Berkas berhasil diverifikasi." });
+      setToast({ type: "success", text: action === "tolak" ? "Pengajuan berhasil ditolak." : action === "selesai" ? "Pengajuan berhasil diselesaikan." : "Tahap verifikasi berhasil diproses." });
       setSelectedSubmission(null);
       setRejectTarget(null);
     } catch (error) {
@@ -293,7 +312,7 @@ export function AdminShell({
   };
   const exportCsv = () => {
     const csv = [
-      "Nomor Pengajuan,Tanggal,Nama Pemohon,NIK,Jenis Layanan,Nomor HP,Status,Petugas",
+      "Nomor Pengajuan,Tanggal,Nama Pemohon,NIK,Jenis Layanan,Status,Tahap Saat Ini,Petugas Saat Ini",
       ...filtered.map((r) =>
         [
           r.nomor_pengajuan,
@@ -301,9 +320,9 @@ export function AdminShell({
           r.nama_lengkap,
           r.nik,
           serviceName(r),
-          r.nomor_hp ?? r.no_hp,
           normalizeStatus(r.status),
-          petugasName(r),
+          activeStage(r)?.nama_tahap ?? (normalizeStatus(r.status) === "Selesai" ? "Selesai" : "-"),
+          officerName(activeStage(r)),
         ].map(csvCell).join(","),
       ),
     ].join("\n");
@@ -508,14 +527,14 @@ export function AdminShell({
               rows={filtered}
               onDetail={(row) => router.push(`/admin/pengajuan/${row.id}`)}
               onVerify={setSelectedSubmission}
-              onApprove={(row) => updateStatus(row, "setujui")}
               onReject={rejectSubmission}
+              adminProfile={adminProfile}
             />
             {selectedSubmission && (
               <VerificationDialog
                 row={selectedSubmission}
                 onClose={() => setSelectedSubmission(null)}
-                onSave={(catatan) => updateStatus(selectedSubmission, "verifikasi", { catatan_petugas: catatan })}
+                onSave={(catatan) => updateStatus(selectedSubmission, "proses_tahap", { catatan_petugas: catatan })}
               />
             )}
           </Panel>
@@ -523,11 +542,12 @@ export function AdminShell({
           detail ? (
             <SubmissionDetail
               row={detail}
-              onVerify={(row) => updateStatus(row, "verifikasi", { catatan_petugas: "Berkas pengajuan telah diverifikasi petugas." })}
-              onProcess={(row) => updateStatus(row, "setujui", { catatan_petugas: "Pengajuan masuk tahap Diproses." })}
+              onVerify={setSelectedSubmission}
+              onProcess={setSelectedSubmission}
               onComplete={(row) => updateStatus(row, "selesai", { catatan_petugas: "Pengajuan telah selesai dan dokumen dapat dicetak/diunduh." })}
               onReject={rejectSubmission}
               setToast={setToast}
+              adminProfile={adminProfile}
             />
           ) : (
             <Panel title="Detail Pengajuan">Data tidak ditemukan</Panel>
@@ -583,13 +603,13 @@ function Table({
   rows,
   onDetail,
   onVerify,
-  onApprove,
+  adminProfile,
   onReject,
 }: {
   rows: Row[];
   onDetail: (r: Row) => void;
   onVerify: (r: Row) => void;
-  onApprove: (r: Row) => void;
+  adminProfile: AdminPortalProfile | null;
   onReject: (r: Row) => void;
 }) {
   return (
@@ -599,10 +619,11 @@ function Table({
           <tr className="text-left">
             <th>Nomor</th>
             <th>Tanggal</th>
+            <th>Tahap Saat Ini</th>
+            <th>Petugas Saat Ini</th>
             <th>Nama</th>
             <th>NIK</th>
             <th>Layanan</th>
-            <th>No HP</th>
             <th>Status</th>
             <th>Aksi</th>
           </tr>
@@ -619,19 +640,28 @@ function Table({
                 </Link>
               </td>
               <td>{formatDate(r.created_at)}</td>
+              <td className="min-w-52">
+                <p className="font-black text-gov-950">{activeStage(r)?.nama_tahap ?? (normalizeStatus(r.status) === "Selesai" ? "Selesai" : "Tidak ada tahap aktif")}</p>
+                <p className="mt-1 text-xs font-bold text-slate-500">{activeStage(r)?.role_petugas ?? "-"}</p>
+              </td>
+              <td>{officerName(activeStage(r))}</td>
               <td>{r.nama_lengkap}</td>
               <td>{r.nik}</td>
               <td>{serviceName(r)}</td>
-              <td>{r.nomor_hp ?? r.no_hp}</td>
               <td>
                 <StatusBadge status={r.status} />
               </td>
               <td>
                 <div className="flex flex-wrap gap-2">
                   <button type="button" onClick={() => onDetail(r)} className="rounded-xl bg-slate-100 px-3 py-2 font-black text-slate-700 hover:bg-slate-200"><Eye className="inline" size={14} /> Detail</button>
-                  <button type="button" onClick={() => onVerify(r)} className="rounded-xl bg-gov-950 px-3 py-2 font-black text-white hover:bg-gov-800"><ShieldCheck className="inline" size={14} /> Verifikasi</button>
-                  <button type="button" onClick={() => onApprove(r)} className="rounded-xl bg-emerald-600 px-3 py-2 font-black text-white hover:bg-emerald-700"><CheckCircle2 className="inline" size={14} /> Setujui</button>
-                  <button type="button" onClick={() => onReject(r)} className="rounded-xl bg-red-600 px-3 py-2 font-black text-white hover:bg-red-700"><XCircle className="inline" size={14} /> Tolak</button>
+                  {canProcessStage(r, adminProfile) ? (
+                    <>
+                      <button type="button" onClick={() => onVerify(r)} className="rounded-xl bg-gov-950 px-3 py-2 font-black text-white hover:bg-gov-800"><ShieldCheck className="inline" size={14} /> Proses Tahap Ini</button>
+                      <button type="button" onClick={() => onReject(r)} className="rounded-xl bg-red-600 px-3 py-2 font-black text-white hover:bg-red-700"><XCircle className="inline" size={14} /> Tolak</button>
+                    </>
+                  ) : (
+                    <span className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-black text-amber-700">Menunggu Petugas {activeStage(r)?.nama_tahap ?? "berwenang"}</span>
+                  )}
                 </div>
               </td>
             </tr>
@@ -753,33 +783,36 @@ function DetailCard({ icon: Icon, title, children }: { icon: React.ElementType; 
 }
 
 function SubmissionTimeline({ row }: { row: Row }) {
+  const stages = verificationStages(row);
   const current = normalizeStatus(row.status);
-  const timeline = [
-    { status: "Menunggu Verifikasi", label: "Pengajuan Masuk", time: row.created_at, icon: FileClock },
-    { status: "Terverifikasi", label: "Verifikasi Berkas", time: current === "Terverifikasi" || current === "Diproses" || current === "Selesai" ? row.verified_at : null, icon: ShieldCheck },
-    { status: "Diproses", label: "Diproses Petugas", time: current === "Diproses" || current === "Selesai" ? row.verified_at : null, icon: ClipboardList },
-    { status: "Selesai", label: "Selesai", time: current === "Selesai" ? row.verified_at : null, icon: CheckCircle2 },
-  ];
   const rejected = current === "Ditolak";
-  const activeStatuses = new Set<string>(["Menunggu Verifikasi"]);
-  if (["Terverifikasi", "Diproses", "Selesai"].includes(current)) activeStatuses.add("Terverifikasi");
-  if (["Diproses", "Selesai"].includes(current)) activeStatuses.add("Diproses");
-  if (current === "Selesai") activeStatuses.add("Selesai");
 
   return (
-    <DetailCard icon={CalendarClock} title="Timeline Proses">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {timeline.map((item) => {
-          const Icon = item.icon;
-          const active = activeStatuses.has(item.status);
+    <DetailCard icon={CalendarClock} title="Timeline Verifikasi Berjenjang">
+      <div className="space-y-3">
+        {stages.map((stage: Row) => {
+          const done = stage.status === "Disetujui";
+          const active = stage.status === "Menunggu" && !rejected;
+          const declined = stage.status === "Ditolak";
           return (
-            <div key={item.status} className={cn("relative rounded-2xl border p-4", active ? "border-accent-200 bg-accent-50" : "border-slate-100 bg-slate-50")}>
-              <div className={cn("grid size-10 place-items-center rounded-xl", active ? "bg-accent-400 text-gov-950" : "bg-white text-slate-400")}> <Icon size={18} /> </div>
-              <p className="mt-3 text-sm font-black text-gov-950">{item.label}</p>
-              <p className="mt-1 text-xs font-bold text-slate-500">{item.time ? formatDate(item.time) : active ? "Tercatat" : "Menunggu"}</p>
+            <div key={stage.id ?? stage.tahap} className={cn("grid gap-4 rounded-2xl border p-4 sm:grid-cols-[auto_1fr]", done ? "border-emerald-200 bg-emerald-50" : declined ? "border-red-200 bg-red-50" : active ? "border-accent-200 bg-accent-50" : "border-slate-100 bg-slate-50")}>
+              <span className={cn("grid size-11 place-items-center rounded-full text-lg font-black", done ? "bg-emerald-500 text-white" : declined ? "bg-red-600 text-white" : active ? "bg-accent-400 text-gov-950" : "bg-white text-slate-400")}>{done ? "✓" : declined ? "×" : active ? "●" : "○"}</span>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-black text-gov-950">{stage.nama_tahap}</p>
+                  <StatusBadge status={stage.status} />
+                </div>
+                <p className="mt-1 text-sm font-bold text-slate-600">Petugas: {officerName(stage)}</p>
+                <p className="mt-1 text-xs font-bold text-slate-500">Waktu: {stage.acted_at ? new Date(stage.acted_at).toLocaleString("id-ID") : "Menunggu tindakan"}</p>
+                {stage.catatan && <p className="mt-2 rounded-xl bg-white/70 p-3 text-sm font-bold text-slate-700">Catatan: {stage.catatan}</p>}
+              </div>
             </div>
           );
         })}
+        <div className={cn("grid gap-4 rounded-2xl border p-4 sm:grid-cols-[auto_1fr]", current === "Selesai" ? "border-emerald-200 bg-emerald-50" : "border-slate-100 bg-slate-50")}>
+          <span className={cn("grid size-11 place-items-center rounded-full text-lg font-black", current === "Selesai" ? "bg-emerald-500 text-white" : "bg-white text-slate-400")}>{current === "Selesai" ? "✓" : "○"}</span>
+          <div><p className="font-black text-gov-950">Selesai</p><p className="mt-1 text-sm font-bold text-slate-600">Dokumen final telah diproses.</p></div>
+        </div>
       </div>
       {rejected && (
         <div className="mt-4 rounded-2xl border border-red-100 bg-red-50 p-4 text-red-800">
@@ -847,6 +880,7 @@ function SubmissionDetail({
   onComplete,
   onReject,
   setToast,
+  adminProfile,
 }: {
   row: Row;
   onVerify: (row: Row) => void;
@@ -854,11 +888,14 @@ function SubmissionDetail({
   onComplete: (row: Row) => void;
   onReject: (row: Row) => void;
   setToast: (t: Toast) => void;
+  adminProfile: AdminPortalProfile | null;
 }) {
   const current = normalizeStatus(row.status);
   const trackingRows = Array.isArray(row.tracking_pengajuan) ? row.tracking_pengajuan : [];
   const outputDoc = (Array.isArray(row.dokumen_pengajuan) ? row.dokumen_pengajuan : []).find((doc: Row) => String(doc.jenis ?? "").toLowerCase().includes("hasil") || String(doc.nama_file ?? "").toLowerCase().includes("surat"));
   const outputUrl = outputDoc ? fileUrl(outputDoc) : "";
+  const mayProcessStage = canProcessStage(row, adminProfile);
+  const mayComplete = current === "Disetujui";
   return (
     <div className="space-y-6">
       <section className="overflow-hidden rounded-[2rem] bg-[linear-gradient(135deg,#071a33,#0B2C6A)] text-white shadow-[0_24px_80px_rgba(7,26,51,.25)]">
@@ -874,10 +911,9 @@ function SubmissionDetail({
             </div>
           </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:w-80 lg:grid-cols-1">
-            <button onClick={() => onVerify(row)} className="rounded-2xl bg-white px-5 py-3 font-black text-gov-950 shadow-lg transition hover:-translate-y-0.5"><ShieldCheck className="inline" size={17} /> Verifikasi</button>
-            <button onClick={() => onProcess(row)} className="rounded-2xl bg-blue-500 px-5 py-3 font-black text-white shadow-lg transition hover:-translate-y-0.5"><ClipboardList className="inline" size={17} /> Diproses</button>
-            <button onClick={() => onComplete(row)} className="rounded-2xl bg-emerald-500 px-5 py-3 font-black text-white shadow-lg transition hover:-translate-y-0.5"><CheckCircle2 className="inline" size={17} /> Selesai</button>
-            <button onClick={() => onReject(row)} className="rounded-2xl bg-red-600 px-5 py-3 font-black text-white shadow-lg transition hover:-translate-y-0.5"><XCircle className="inline" size={17} /> Tolak</button>
+            {mayProcessStage ? <button onClick={() => onVerify(row)} className="rounded-2xl bg-white px-5 py-3 font-black text-gov-950 shadow-lg transition hover:-translate-y-0.5"><ShieldCheck className="inline" size={17} /> Proses Tahap Ini</button> : <p className="rounded-2xl bg-white/10 p-4 text-sm font-black text-white ring-1 ring-white/15">Menunggu Petugas {activeStage(row)?.nama_tahap ?? "berwenang"}</p>}
+            {mayComplete && <button onClick={() => onComplete(row)} className="rounded-2xl bg-emerald-500 px-5 py-3 font-black text-white shadow-lg transition hover:-translate-y-0.5"><CheckCircle2 className="inline" size={17} /> Selesai</button>}
+            {mayProcessStage && <button onClick={() => onReject(row)} className="rounded-2xl bg-red-600 px-5 py-3 font-black text-white shadow-lg transition hover:-translate-y-0.5"><XCircle className="inline" size={17} /> Tolak</button>}
           </div>
         </div>
       </section>
