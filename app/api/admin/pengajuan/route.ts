@@ -85,9 +85,7 @@ export async function PATCH(request: NextRequest) {
         pengajuan_id: body.id,
         status: updatePayload.status,
         keterangan: updatePayload.catatan_admin ?? actionLabel(body.action),
-        catatan: updatePayload.catatan_admin ?? actionLabel(body.action),
-        petugas_id: session.profile.id,
-        nama_petugas: session.profile.nama_lengkap ?? session.profile.username ?? "Petugas Kelurahan",
+        petugas: session.profile.nama_lengkap ?? session.profile.username ?? "Petugas Kelurahan",
         created_at: now,
     };
 

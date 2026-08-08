@@ -336,8 +336,6 @@ export async function createSubmission(formData: FormData) {
         const { error: trackingError } = await client.from("tracking_pengajuan").insert({
             pengajuan_id: pengajuan.id,
             status: "Menunggu Verifikasi",
-            progress: 1,
-            catatan: "Permohonan diterima dan menunggu verifikasi.",
             keterangan: "Permohonan diterima dan menunggu verifikasi.",
             petugas: null,
         });
@@ -432,8 +430,6 @@ export async function updateSubmissionStatus(id: string, status: string, catatan
     const { error: trackingError } = await client.from("tracking_pengajuan").insert({
         pengajuan_id: id,
         status,
-        progress: getProgressFromStatus(status),
-        catatan,
         keterangan: catatan,
         petugas,
     });

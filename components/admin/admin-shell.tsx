@@ -803,7 +803,7 @@ function ActivityHistory({ rows }: { rows: Row[] }) {
                 <StatusBadge status={item.status} />
                 <span className="text-xs font-black text-slate-400">{item.created_at ? new Date(item.created_at).toLocaleString("id-ID") : "-"}</span>
               </div>
-              <p className="mt-2 font-black text-gov-950">{item.keterangan ?? item.catatan ?? "Perubahan status pengajuan"}</p>
+              <p className="mt-2 font-black text-gov-950">{item.keterangan ?? "Perubahan status pengajuan"}</p>
               <p className="mt-1 text-sm font-bold text-slate-500">Petugas: {item.nama_petugas ?? item.petugas?.nama_lengkap ?? item.petugas_nama ?? "Petugas Kelurahan"}</p>
             </div>
           </div>

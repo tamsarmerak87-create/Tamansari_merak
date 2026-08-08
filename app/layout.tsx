@@ -1,10 +1,7 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 import { site } from "@/constants/site";
 import { PortalChrome } from "@/components/layout/portal-chrome";
-
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 
 export const metadata: Metadata = {
     title: `${site.name} | Portal Pelayanan Digital`,
@@ -18,7 +15,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     const jsonLd = { "@context": "https://schema.org", "@type": "GovernmentOffice", name: site.name, address: site.address, telephone: site.phone };
 
     return (
-        <html lang="id" className={inter.variable} suppressHydrationWarning>
+        <html lang="id" suppressHydrationWarning>
             <body className="font-sans antialiased">
                 <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
                 <PortalChrome>{children}</PortalChrome>

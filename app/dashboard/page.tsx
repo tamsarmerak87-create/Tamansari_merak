@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useWargaAuth } from "@/components/auth/warga-auth-provider";
 import { getWargaSubmissions, isVerified, type WargaProfile } from "@/services/warga-auth.service";
 
-type Submission = { id: string; nomor_pengajuan?: string; jenis_surat?: string; status?: string; created_at?: string; layanan?: { nama?: string } | null; tracking_pengajuan?: { status?: string; progress?: number; created_at?: string; catatan?: string; petugas?: string | null }[]; dokumen_pengajuan?: { nama_file?: string; jenis?: string; url_file?: string }[] };
+type Submission = { id: string; nomor_pengajuan?: string; jenis_surat?: string; status?: string; created_at?: string; layanan?: { nama?: string } | null; tracking_pengajuan?: { status?: string; progress?: number; created_at?: string; keterangan?: string; petugas?: string | null }[]; dokumen_pengajuan?: { nama_file?: string; jenis?: string; url_file?: string }[] };
 const cards = [{ id: "pengajuan", title: "📄 Pengajuan Saya", icon: FileText }, { id: "notifikasi", title: "📢 Notifikasi", icon: Bell }, { id: "profil", title: "👤 Profil Saya", icon: UserRound }, { id: "favorit", title: "❤️ Favorit", icon: Heart }, { id: "dokumen", title: "📂 Dokumen Saya", icon: FolderOpen }, { id: "pengaturan", title: "⚙ Pengaturan", icon: Settings }];
 
 export default function DashboardPage() {
