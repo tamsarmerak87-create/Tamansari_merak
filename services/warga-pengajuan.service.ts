@@ -20,6 +20,7 @@ export type WargaPengajuan = {
     tanggal_lahir?: string | null;
     jenis_kelamin?: string | null;
     agama?: string | null;
+    status_perkawinan?: string | null;
     pekerjaan?: string | null;
     alamat?: string | null;
     rt?: string | null;
@@ -30,14 +31,22 @@ export type WargaPengajuan = {
     email?: string | null;
     layanan_id?: string | null;
     keperluan?: string | null;
+    catatan?: string | null;
     status?: string | null;
     created_at?: string | null;
     updated_at?: string | null;
     alasan_penolakan?: string | null;
+    verified_at?: string | null;
+    verified_by?: string | null;
+    diproses_at?: string | null;
+    diproses_by?: string | null;
+    selesai_at?: string | null;
+    selesai_by?: string | null;
+    catatan_admin?: string | null;
     file_ktp?: string | null;
     file_kk?: string | null;
     file_pendukung?: string | null;
-    layanan?: { id?: string; nama?: string | null } | null;
+    layanan?: { id?: string; nama?: string | null; deskripsi?: string | null } | null;
     tracking_pengajuan?: TrackingPengajuan[];
 };
 
@@ -49,10 +58,11 @@ function client() {
     return supabase;
 }
 
-const PENGAJUAN_COLUMNS = "id,nomor_pengajuan,nik,nomor_kk,nama_lengkap,tempat_lahir,tanggal_lahir,jenis_kelamin,agama,pekerjaan,alamat,rt,rw,kelurahan,kecamatan,no_hp,email,layanan_id,keperluan,status,created_at,updated_at,alasan_penolakan,file_ktp,file_kk,file_pendukung";
+const PENGAJUAN_COLUMNS = "id,nomor_pengajuan,nik,nomor_kk,nama_lengkap,tempat_lahir,tanggal_lahir,jenis_kelamin,agama,status_perkawinan,pekerjaan,alamat,rt,rw,kelurahan,kecamatan,no_hp,email,layanan_id,keperluan,catatan,file_ktp,file_kk,file_pendukung,status,created_at,updated_at,alasan_penolakan,verified_at,verified_by,diproses_at,diproses_by,selesai_at,selesai_by,catatan_admin";
 const TRACKING_COLUMNS = "id,pengajuan_id,status,keterangan,petugas,created_at";
+let favoritTableAvailable: boolean | null = null;
 
-function normalizeRows(rows: WargaPengajuan[] | null | undefined, layananById = new Map<string, { id?: string; nama?: string | null }>(), trackingByPengajuanId = new Map<string, TrackingPengajuan[]>()) {
+function normalizeRows(rows: WargaPengajuan[] | null | undefined, layananById = new Map<string, { id?: string; nama?: string | null; deskripsi?: string | null }>(), trackingByPengajuanId = new Map<string, TrackingPengajuan[]>()) {
     return (rows ?? []).map((row) => ({
         ...row,
         layanan: row.layanan ?? layananById.get(row.layanan_id ?? "") ?? { nama: "Nama layanan tidak tersedia" },
@@ -64,18 +74,18 @@ async function hydrateRows(rows: WargaPengajuan[]) {
     const supabase = client();
     const layananIds = [...new Set(rows.map((row) => row.layanan_id).filter(Boolean))] as string[];
     const pengajuanIds = rows.map((row) => row.id).filter(Boolean);
-    const layananById = new Map<string, { id?: string; nama?: string | null }>();
+    const layananById = new Map<string, { id?: string; nama?: string | null; deskripsi?: string | null }>();
     const trackingByPengajuanId = new Map<string, TrackingPengajuan[]>();
 
     if (layananIds.length > 0) {
-        const { data, error } = await supabase.from("layanan").select("id,nama").in("id", layananIds);
-        if (error) console.error("[LAYANAN FALLBACK]", error);
+        const { data, error } = await supabase.from("layanan").select("id,nama,deskripsi").in("id", layananIds);
+        if (error) console.error("[DASHBOARD WARGA]", error);
         (data ?? []).forEach((item) => layananById.set(item.id, item));
     }
 
     if (pengajuanIds.length > 0) {
         const { data, error } = await supabase.from("tracking_pengajuan").select(TRACKING_COLUMNS).in("pengajuan_id", pengajuanIds).order("created_at", { ascending: true });
-        if (error) console.error("[TRACKING PENGAJUAN]", error);
+        if (error) console.error("[DASHBOARD WARGA]", error);
         ((data ?? []) as TrackingPengajuan[]).forEach((track) => {
             const key = track.pengajuan_id ?? "";
             trackingByPengajuanId.set(key, [...(trackingByPengajuanId.get(key) ?? []), track]);
@@ -128,10 +138,23 @@ export async function getMyPengajuanDetail(id: string) {
 }
 
 export async function getMyFavorit() {
+    if (favoritTableAvailable === false) return [];
     const { user } = await getCurrentWargaProfile();
     if (!user) return [];
     const { data, error } = await client().from("warga_favorit").select("id,warga_id,layanan_id,created_at,layanan:layanan_id(id,nama,deskripsi)").eq("warga_id", user.id).order("created_at", { ascending: false });
-    if (error?.code === "42P01" || error?.message?.toLowerCase().includes("could not find the table")) return [];
+    if (error?.code === "42P01" || error?.message?.toLowerCase().includes("could not find the table")) {
+        favoritTableAvailable = false;
+        return [];
+    }
     if (error) throw error;
+    favoritTableAvailable = true;
     return (data ?? []) as unknown as WargaFavorit[];
+}
+
+export async function removeMyFavorit(id: string) {
+    if (favoritTableAvailable === false) return;
+    const { user } = await getCurrentWargaProfile();
+    if (!user) throw new Error("Silakan login terlebih dahulu.");
+    const { error } = await client().from("warga_favorit").delete().eq("id", id).eq("warga_id", user.id);
+    if (error) throw error;
 }
