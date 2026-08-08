@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
+import { getAdminSession } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
 import { updateSubmissionStatus } from "@/services/surat-online.service";
 
@@ -42,14 +43,20 @@ export async function GET() {
   }
 }
 
-export async function PATCH(request: Request) {
+export async function PATCH(request: NextRequest) {
   try {
-    const body = await request.json() as { id?: string; status?: string; catatan?: string; petugas?: string; file_surat_url?: string };
+    const session = await getAdminSession(request);
+    if (session.error || !session.profile) {
+      return NextResponse.json({ ok: false, error: "Session admin tidak valid." }, { status: 401 });
+    }
+
+    const body = await request.json() as { id?: string; status?: string; catatan?: string; file_surat_url?: string };
     if (!body.id || !body.status) {
       return NextResponse.json({ ok: false, error: "ID dan status wajib diisi." }, { status: 400 });
     }
 
-    const data = await updateSubmissionStatus(body.id, body.status, body.catatan, body.petugas, body.file_surat_url);
+    const namaPetugas = session.profile.nama_lengkap ?? session.profile.username ?? "Petugas Kelurahan";
+    const data = await updateSubmissionStatus(body.id, body.status, body.catatan, namaPetugas, body.file_surat_url, session.profile.id);
     return NextResponse.json({ ok: true, data });
   } catch (error) {
     console.error("===== ADMIN PATCH ERROR =====");

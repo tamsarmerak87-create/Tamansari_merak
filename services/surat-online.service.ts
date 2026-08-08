@@ -417,10 +417,40 @@ export async function searchSubmission(query: string) {
     return data ?? [];
 }
 
-export async function updateSubmissionStatus(id: string, status: string, catatan?: string, petugas?: string, file_surat_url?: string) {
+export async function updateSubmissionStatus(id: string, status: string, catatan?: string, petugas?: string, file_surat_url?: string, petugasId?: string) {
     const client = createSupabaseAdminClient();
     if (!client) throw new Error("Supabase service role belum dikonfigurasi.");
-    const { data, error } = await client.from("pengajuan_surat").update({ status, catatan_admin: catatan, petugas, file_surat_url }).eq("id", id).select("*").single();
+    if (!petugasId) throw new Error("ID petugas dari session admin wajib tersedia untuk mengubah status pengajuan.");
+
+    const now = new Date().toISOString();
+    const normalizedStatus = status === "Sedang Diproses" ? "Diproses" : status;
+    const updatePayload: Record<string, string | null | undefined> = {
+        status: normalizedStatus,
+        updated_at: now,
+        catatan_admin: catatan ?? null,
+        file_surat_url,
+    };
+
+    if (normalizedStatus === "Terverifikasi") {
+        updatePayload.verified_at = now;
+        updatePayload.verified_by = petugasId;
+        updatePayload.alasan_penolakan = null;
+    } else if (normalizedStatus === "Diproses") {
+        updatePayload.diproses_at = now;
+        updatePayload.diproses_by = petugasId;
+        updatePayload.alasan_penolakan = null;
+    } else if (normalizedStatus === "Selesai") {
+        updatePayload.selesai_at = now;
+        updatePayload.selesai_by = petugasId;
+        updatePayload.alasan_penolakan = null;
+    } else if (normalizedStatus === "Ditolak") {
+        if (!catatan?.trim()) throw new Error("Alasan penolakan wajib diisi.");
+        updatePayload.alasan_penolakan = catatan.trim();
+    } else {
+        throw new Error("Status pengajuan tidak valid untuk workflow admin.");
+    }
+
+    const { data, error } = await client.from("pengajuan_surat").update(updatePayload).eq("id", id).select("*").single();
     if (error) {
         console.error("SUPABASE UPDATE PENGAJUAN_SURAT ERROR");
         console.dir(error, { depth: null });
@@ -429,9 +459,10 @@ export async function updateSubmissionStatus(id: string, status: string, catatan
 
     const { error: trackingError } = await client.from("tracking_pengajuan").insert({
         pengajuan_id: id,
-        status,
-        keterangan: catatan,
+        status: normalizedStatus,
+        keterangan: catatan ?? null,
         petugas,
+        created_at: now,
     });
     if (trackingError) {
         console.error("SUPABASE INSERT STATUS TRACKING_PENGAJUAN ERROR");
