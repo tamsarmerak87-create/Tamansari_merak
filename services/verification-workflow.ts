@@ -26,6 +26,22 @@ export const STAGE_WAITING_STATUS: Record<number, WorkflowStatus> = {
     5: "MENUNGGU_LURAH",
 };
 
+export const ROLE_STAGE_STATUS: Record<WorkflowRole, WorkflowStatus> = {
+    staff_pelayanan: "MENUNGGU_STAFF",
+    petugas_lapangan: "MENUNGGU_PETUGAS_LAPANGAN",
+    kepala_seksi: "MENUNGGU_KASI",
+    seklur: "MENUNGGU_SEKLUR",
+    lurah: "MENUNGGU_LURAH",
+};
+
+export function normalizeWorkflowRole(role?: string | null): WorkflowRole | null {
+    const normalized = String(role ?? "").toLowerCase().trim();
+    if (["kasi", "kepala_seksi"].includes(normalized)) return "kepala_seksi";
+    if (["seklur", "sekretaris_lurah", "sekretaris lurah"].includes(normalized)) return "seklur";
+    if (isWorkflowRole(normalized)) return normalized;
+    return null;
+}
+
 export function isWorkflowRole(role?: string | null): role is WorkflowRole {
     return VERIFICATION_STAGES.some((stage) => stage.role_petugas === role);
 }

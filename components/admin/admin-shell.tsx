@@ -23,9 +23,12 @@ import {
   Menu,
   Newspaper,
   Printer,
+  QrCode,
   Scale,
   RefreshCw,
+  RotateCcw,
   Search,
+  Send,
   Settings,
   ShieldCheck,
   UserRound,
@@ -56,6 +59,13 @@ const statuses = [
   "Ditolak",
 ];
 const workflowRoles = ["staff_pelayanan", "petugas_lapangan", "kepala_seksi", "seklur", "lurah"] as const;
+const roleStatus: Record<string, string> = {
+  staff_pelayanan: "MENUNGGU_STAFF",
+  petugas_lapangan: "MENUNGGU_PETUGAS_LAPANGAN",
+  kepala_seksi: "MENUNGGU_KASI",
+  seklur: "MENUNGGU_SEKLUR",
+  lurah: "MENUNGGU_LURAH",
+};
 
 function roleLabel(role?: string | null) {
   const labels: Record<string, string> = {
@@ -71,8 +81,26 @@ function roleLabel(role?: string | null) {
 
 function normalizeStatus(value?: string | null) {
   if (!value) return "Menunggu Verifikasi";
+  const workflowLabels: Record<string, string> = {
+    MENUNGGU_STAFF: "MENUNGGU_STAFF",
+    MENUNGGU_PETUGAS_LAPANGAN: "MENUNGGU_PETUGAS_LAPANGAN",
+    MENUNGGU_KASI: "MENUNGGU_KASI",
+    MENUNGGU_SEKLUR: "MENUNGGU_SEKLUR",
+    MENUNGGU_LURAH: "MENUNGGU_LURAH",
+    REVISI: "REVISI",
+    DITOLAK: "Ditolak",
+    SELESAI: "Selesai",
+  };
+  if (workflowLabels[value]) return workflowLabels[value];
   if (value === "Sedang Diproses") return "Diproses";
   return value;
+}
+
+function normalizedWorkflowStatus(row: Row) {
+  const raw = String(row.workflow_status ?? row.status ?? "").toUpperCase().replace(/\s+/g, "_");
+  if (raw === "MENUNGGU_VERIFIKASI" || !raw) return "MENUNGGU_STAFF";
+  if (raw === "DISETUJUI") return "SELESAI";
+  return raw;
 }
 
 function formatDate(value?: string | null) {
@@ -116,12 +144,12 @@ function stageByNumber(row: Row, tahap: number) {
 }
 
 function stepState(row: Row, tahap: number) {
-  const current = normalizeStatus(row.status);
-  if (tahap === 6) return current === "Selesai" ? "done" : "pending";
+  const current = normalizedWorkflowStatus(row);
+  if (tahap === 6) return current === "SELESAI" ? "done" : "pending";
   const stage = stageByNumber(row, tahap);
   if (stage?.status === "Ditolak") return "rejected";
   if (stage?.status === "Disetujui") return "done";
-  if (["Menunggu", "Diproses"].includes(String(stage?.status)) && current !== "Ditolak") return "active";
+  if (["Menunggu", "Diproses"].includes(String(stage?.status)) && current !== "DITOLAK") return "active";
   return "pending";
 }
 
@@ -156,7 +184,21 @@ function WorkflowStepper({ row }: { row: Row }) {
 function canProcessStage(row: Row, profile?: AdminPortalProfile | null) {
   const stage = activeStage(row);
   const role = profile?.role;
-  return Boolean(stage && role === stage.role_petugas && workflowRoles.includes(role as typeof workflowRoles[number]));
+  return Boolean(stage && role === stage.role_petugas && roleStatus[String(role)] === normalizedWorkflowStatus(row) && workflowRoles.includes(role as typeof workflowRoles[number]));
+}
+
+function isIssued(row: Row) {
+  return normalizedWorkflowStatus(row) === "SELESAI" || normalizeStatus(row.status) === "Selesai";
+}
+
+function actionLabel(row: Row) {
+  const stage = activeStage(row);
+  if (!stage) return "Verifikasi";
+  if (stage.tahap === 1) return "Verifikasi";
+  if (stage.tahap === 2) return "Verifikasi Lapangan";
+  if (stage.tahap === 3) return "Verifikasi Kasi";
+  if (stage.tahap === 4) return "Verifikasi Seklur";
+  return "Validasi & Terbitkan";
 }
 
 function accessLabel(row: Row, profile?: AdminPortalProfile | null) {
@@ -319,7 +361,7 @@ export function AdminShell({
     ["Pengajuan Selesai", stat("Selesai")],
     ["Pengajuan Ditolak", stat("Ditolak")],
   ];
-  const updateStatus = async (row: Row, action: "proses_tahap" | "verifikasi" | "setujui" | "selesai" | "tolak", extra?: { catatan_petugas?: string; alasan_penolakan?: string }) => {
+  const updateStatus = async (row: Row, action: "proses_tahap" | "verifikasi" | "setujui" | "selesai" | "tolak" | "revisi", extra?: { catatan_petugas?: string; alasan_penolakan?: string; hasil_verifikasi?: string; dokumentasi_url?: string; checklist?: Record<string, boolean> }) => {
     try {
       setToast({ type: "loading", text: "Menyimpan perubahan..." });
       const res = await fetch("/api/admin/pengajuan", {
@@ -330,7 +372,7 @@ export function AdminShell({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Gagal memperbarui status");
-      setToast({ type: "success", text: action === "tolak" ? "Pengajuan berhasil ditolak." : action === "selesai" ? "Pengajuan berhasil diselesaikan." : "Tahap verifikasi berhasil diproses." });
+      setToast({ type: "success", text: action === "tolak" ? "Pengajuan berhasil ditolak." : action === "revisi" ? "Pengajuan dikembalikan untuk revisi." : action === "selesai" ? "Surat berhasil diterbitkan." : "Tahap verifikasi berhasil diproses." });
       setSelectedSubmission(null);
       setRejectTarget(null);
     } catch (error) {
@@ -606,7 +648,9 @@ export function AdminShell({
               <VerificationDialog
                 row={selectedSubmission}
                 onClose={() => setSelectedSubmission(null)}
-                onSave={(catatan) => updateStatus(selectedSubmission, "proses_tahap", { catatan_petugas: catatan })}
+                onApprove={(payload) => updateStatus(selectedSubmission, activeStage(selectedSubmission)?.tahap === 5 ? "selesai" : "proses_tahap", payload)}
+                onRevise={(reason) => updateStatus(selectedSubmission, "revisi", { alasan_penolakan: reason, catatan_petugas: reason })}
+                onReject={(reason) => updateStatus(selectedSubmission, "tolak", { alasan_penolakan: reason, catatan_petugas: reason })}
               />
             )}
           </Panel>
@@ -782,26 +826,53 @@ function Table({
 function VerificationDialog({
   row,
   onClose,
-  onSave,
+  onApprove,
+  onRevise,
+  onReject,
 }: {
   row: Row;
   onClose: () => void;
-  onSave: (catatan: string) => void;
+  onApprove: (payload: { catatan_petugas?: string; hasil_verifikasi?: string; dokumentasi_url?: string; checklist?: Record<string, boolean> }) => void;
+  onRevise: (reason: string) => void;
+  onReject: (reason: string) => void;
 }) {
-  const [catatan, setCatatan] = useState(`Berkas pengajuan ${row.nomor_pengajuan ?? ""} telah diverifikasi petugas.`.trim());
+  const stage = activeStage(row);
+  const tahap = Number(stage?.tahap ?? 1);
+  const [catatan, setCatatan] = useState(tahap === 5 ? "Surat divalidasi dan diterbitkan oleh Lurah." : `Berkas pengajuan ${row.nomor_pengajuan ?? ""} telah diverifikasi.`.trim());
+  const [reason, setReason] = useState("");
+  const [hasil, setHasil] = useState("Sesuai");
+  const [dokumentasi, setDokumentasi] = useState("");
+  const [checklist, setChecklist] = useState<Record<string, boolean>>({});
+  const title = tahap === 1 ? "VERIFIKASI STAFF PELAYANAN" : tahap === 2 ? "VERIFIKASI LAPANGAN" : tahap === 3 ? "VERIFIKASI KASI" : tahap === 4 ? "VERIFIKASI ADMINISTRASI SEKLUR" : "VALIDASI AKHIR LURAH";
+  const checks = tahap === 1 ? ["Data pemohon sesuai", "NIK sesuai", "Dokumen lengkap", "Persyaratan sesuai layanan"] : tahap === 4 ? ["Data benar", "Dokumen lengkap", "Hasil verifikasi lapangan sesuai", "Rekomendasi Kasi sesuai", "Surat siap diajukan kepada Lurah"] : [];
+  const approve = () => {
+    if (tahap === 5 && !window.confirm("Apakah Anda yakin ingin memvalidasi dan menerbitkan surat ini?\n\nSetelah diterbitkan, surat akan menjadi dokumen resmi dan tercatat dalam audit trail.")) return;
+    onApprove({ catatan_petugas: catatan.trim(), hasil_verifikasi: tahap === 2 ? hasil : undefined, dokumentasi_url: dokumentasi.trim() || undefined, checklist });
+  };
+  const rejectOrRevise = (kind: "revisi" | "tolak") => {
+    const trimmed = reason.trim();
+    if (!trimmed) return window.alert("Catatan/alasan wajib diisi untuk revisi atau penolakan.");
+    return kind === "revisi" ? onRevise(trimmed) : onReject(trimmed);
+  };
   return (
     <div className="fixed inset-0 z-[90] grid place-items-center bg-slate-950/55 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-xl rounded-[2rem] border border-white/40 bg-white p-6 shadow-[0_30px_100px_rgba(15,23,42,.35)]">
+      <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-[2rem] border border-white/40 bg-white p-6 shadow-[0_30px_100px_rgba(15,23,42,.35)]">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-black uppercase tracking-[.2em] text-accent-700">Verifikasi Berkas</p>
-            <h3 className="mt-2 text-2xl font-black text-gov-950">{row.nomor_pengajuan ?? "Pengajuan"}</h3>
+            <p className="text-xs font-black uppercase tracking-[.2em] text-accent-700">{roleLabel(stage?.role_petugas)}</p>
+            <h3 className="mt-2 text-2xl font-black text-gov-950">{title}</h3>
             <p className="mt-1 text-sm font-bold text-slate-500">{row.nama_lengkap ?? "Pemohon"} • {serviceName(row)}</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-full bg-slate-100 p-2 text-slate-600 hover:bg-slate-200" aria-label="Tutup dialog"><X size={18} /></button>
         </div>
+        <div className="mt-5"><WorkflowStepper row={row} /></div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><DetailField label="Nomor Pengajuan" value={row.nomor_pengajuan} /><DetailField label="Tanggal Pengajuan" value={formatDate(row.created_at)} /><DetailField label="Nama Pemohon" value={row.nama_lengkap} /><DetailField label="NIK" value={row.nik} /><DetailField label="Nomor HP" value={row.nomor_hp ?? row.no_hp} /><DetailField label="Jenis Layanan" value={serviceName(row)} /><DetailField label="Keperluan" value={row.keperluan ?? row.keterangan} /><DetailField label="Alamat" value={row.alamat} /></div>
+        <div className="mt-5 grid gap-5 lg:grid-cols-2"><DocumentsPanel row={row} /><VerificationHistory row={row} /></div>
+        {tahap === 2 && <div className="mt-5 rounded-2xl bg-slate-50 p-4"><p className="font-black text-gov-950">Hasil Verifikasi Lapangan</p><div className="mt-3 flex flex-wrap gap-3">{["Sesuai", "Tidak Sesuai", "Perlu Perbaikan"].map((item) => <label key={item} className="rounded-xl bg-white px-3 py-2 font-bold"><input type="radio" checked={hasil === item} onChange={() => setHasil(item)} /> {item}</label>)}</div><input value={dokumentasi} onChange={(e) => setDokumentasi(e.target.value)} className="mt-3 w-full rounded-2xl border border-slate-200 bg-white p-3 font-semibold" placeholder="URL dokumentasi/foto lapangan jika ada" /></div>}
+        {checks.length > 0 && <div className="mt-5 rounded-2xl bg-slate-50 p-4"><p className="font-black text-gov-950">Checklist Verifikasi</p><div className="mt-3 grid gap-2 sm:grid-cols-2">{checks.map((item) => <label key={item} className="rounded-xl bg-white px-3 py-2 font-bold"><input type="checkbox" checked={Boolean(checklist[item])} onChange={(e) => setChecklist((prev) => ({ ...prev, [item]: e.target.checked }))} /> {item}</label>)}</div></div>}
+        {tahap === 5 && <div className="mt-5 rounded-2xl border border-emerald-100 bg-emerald-50 p-5"><p className="font-black text-emerald-800">PREVIEW SURAT</p><p className="mt-2 text-sm font-bold text-emerald-700">Surat untuk {row.nama_lengkap ?? "pemohon"} dengan layanan {serviceName(row)} akan diterbitkan, diberi nomor surat, QR Code, token verifikasi, dan PDF resmi.</p></div>}
         <label className="mt-5 block text-sm font-black text-gov-950">
-          Catatan petugas
+          {tahap === 2 ? "Catatan Lapangan" : tahap === 3 ? "Catatan / Rekomendasi Kasi" : tahap === 4 ? "Catatan Seklur" : tahap === 5 ? "Catatan Validasi Lurah" : "Catatan Verifikasi"}
           <textarea
             value={catatan}
             onChange={(event) => setCatatan(event.target.value)}
@@ -809,9 +880,11 @@ function VerificationDialog({
             placeholder="Tambahkan catatan verifikasi..."
           />
         </label>
-        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
-          <button type="button" onClick={onClose} className="rounded-2xl bg-slate-100 px-5 py-3 font-black text-slate-700 hover:bg-slate-200">Batal</button>
-          <button type="button" onClick={() => onSave(catatan.trim() || "Berkas telah diverifikasi petugas.")} className="rounded-2xl bg-accent-400 px-5 py-3 font-black text-gov-950 hover:bg-accent-300"><ShieldCheck className="inline" size={16} /> Simpan Verifikasi</button>
+        <label className="mt-4 block text-sm font-black text-gov-950">Catatan untuk Kembalikan/Tolak<textarea value={reason} onChange={(event) => setReason(event.target.value)} className="mt-2 min-h-20 w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 font-semibold outline-none focus:border-red-400 focus:bg-white" placeholder="Wajib diisi jika memilih revisi atau tolak" /></label>
+        <div className="mt-6 flex flex-col gap-3 lg:flex-row lg:justify-end">
+          <button type="button" onClick={() => rejectOrRevise("revisi")} className="rounded-2xl bg-amber-500 px-5 py-3 font-black text-white hover:bg-amber-600"><RotateCcw className="inline" size={16} /> KEMBALIKAN / REVISI</button>
+          <button type="button" onClick={() => rejectOrRevise("tolak")} className="rounded-2xl bg-red-600 px-5 py-3 font-black text-white hover:bg-red-700"><XCircle className="inline" size={16} /> TOLAK</button>
+          <button type="button" onClick={approve} className={cn("rounded-2xl px-5 py-3 font-black text-white", tahap === 5 ? "bg-emerald-600 hover:bg-emerald-700" : "bg-gov-950 hover:bg-gov-800")}><ShieldCheck className="inline" size={16} /> {tahap === 5 ? "VALIDASI & TERBITKAN SURAT" : tahap === 4 ? "SETUJUI & AJUKAN KE LURAH" : tahap === 2 ? "VERIFIKASI LAPANGAN & LANJUTKAN" : "VERIFIKASI & LANJUTKAN"}</button>
         </div>
       </div>
     </div>
