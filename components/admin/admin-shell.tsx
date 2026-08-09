@@ -326,6 +326,7 @@ export function AdminShell({
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [service, setService] = useState("");
+  const [stageFilter, setStageFilter] = useState("");
   const [dateStart, setDateStart] = useState("");
   const [dateEnd, setDateEnd] = useState("");
   const [selectedSubmission, setSelectedSubmission] = useState<Row | null>(null);
