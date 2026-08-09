@@ -16,10 +16,9 @@ type VerificationRow = {
     created_at: string | null;
     acted_at: string | null;
 };
-type SupabaseRows = AnyRow[];
 
 function jsonError(message: string, status = 400) { return NextResponse.json({ ok: false, error: message }, { status }); }
-function groupBy<T extends AnyRow>(rows: T[] = [], key: string) { const map = new Map<string, T[]>(); for (const row of rows) { const value = String(row[key] ?? ""); if (!map.has(value)) map.set(value, []); map.get(value)?.push(row); } return map; }
+function groupBy<T extends AnyRow>(rows: T[], key: keyof T): Map<string, T[]> { const map = new Map<string, T[]>(); for (const row of rows) { const value = String(row[key] ?? ""); if (!map.has(value)) map.set(value, []); map.get(value)?.push(row); } return map; }
 function activeStatusFromStages(stages: AnyRow[] = []) { return stages.find((stage) => stage.status === "Diproses")?.nama_tahap ?? (stages.every((stage) => stage.status === "Disetujui") ? "Selesai" : "Menunggu"); }
 
 export async function GET(request: NextRequest) {
@@ -68,10 +67,8 @@ export async function GET(request: NextRequest) {
 
     const submissionMap = new Map((submissions ?? []).map((row: AnyRow) => [String(row.id), row]));
     const officerMap = new Map((officersResult.data ?? []).map((row: AnyRow) => [String(row.id), row]));
-    const docsRows: SupabaseRows = (documents ?? []) as SupabaseRows;
-    const trackingRows: SupabaseRows = (tracking ?? []) as SupabaseRows;
-    const docsByPengajuan = groupBy<AnyRow>(docsRows, "pengajuan_id");
-    const trackingByPengajuan = groupBy<AnyRow>(trackingRows, "pengajuan_id");
+    const docsByPengajuan = groupBy(documents ?? [], "pengajuan_id");
+    const trackingByPengajuan = groupBy(tracking ?? [], "pengajuan_id");
     const stagesByPengajuan = groupBy(allStages.map((stage) => ({ ...stage, nama_petugas: stage.petugas_id ? officerMap.get(String(stage.petugas_id))?.nama_lengkap ?? officerMap.get(String(stage.petugas_id))?.username ?? null : null })), "pengajuan_id");
 
     function enrichStage(stage: VerificationRow): AnyRow {
