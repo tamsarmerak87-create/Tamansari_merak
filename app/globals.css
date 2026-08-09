@@ -407,30 +407,48 @@
 @theme {
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --color-gov-50: #fffdf8;
-  --color-gov-100: #f8e8b0;
-  --color-gov-500: #f4b400;
-  --color-gov-700: #b98200;
-  --color-gov-800: #0f2748;
-  --color-gov-900: #091a31;
-  --color-gov-950: #061224;
-  --color-accent-100: #fff8dd;
-  --color-accent-200: #f8e8b0;
-  --color-accent-400: #f4b400;
-  --color-accent-600: #d99a00;
-  --color-accent-700: #a87300;
-  --color-success: #4f8b58;
-  --color-green-50: #f3f8f3;
-  --color-green-100: #e3efe4;
-  --color-green-500: #5d9665;
-  --color-green-600: #4f8b58;
-  --color-green-700: #41764a;
+
+  /* Cream/warm base */
+  --color-cream-50: #FFFDF3;
+  --color-cream-100: #FFF9E8;
+
+  /* Gov navy */
+  --color-gov-50: #f0f4fa;
+  --color-gov-100: #dbe6f6;
+  --color-gov-500: #2d5fa0;
+  --color-gov-700: #1a3e6e;
+  --color-gov-800: #0F2942;
+  --color-gov-900: #082F49;
+  --color-gov-950: #061827;
+
+  /* Gold accent */
+  --color-accent-50: #fefce8;
+  --color-accent-100: #fef9c3;
+  --color-accent-200: #fde68a;
+  --color-accent-400: #FACC15;
+  --color-accent-500: #EAB308;
+  --color-accent-600: #D99A00;
+  --color-accent-700: #a16207;
+
+  /* Green accent */
+  --color-green-50: #ECFDF3;
+  --color-green-100: #DCFCE7;
+  --color-green-200: #bbf7d0;
+  --color-green-500: #22C55E;
+  --color-green-600: #15803D;
+  --color-green-700: #166534;
+
+  /* Functional */
+  --color-success: #15803D;
   --color-danger: #dc2626;
-  --color-border-soft: #ececec;
-  --color-slate-650: #536078;
-  --shadow-glass: 0 30px 90px rgba(15, 39, 72, 0.16);
-  --shadow-soft: 0 18px 45px rgba(15, 39, 72, 0.10);
-  --shadow-gold: 0 24px 70px rgba(244, 180, 0, 0.22);
+  --color-border-soft: #e8e4d8;
+  --color-slate-650: #4a5568;
+
+  /* Shadows */
+  --shadow-glass: 0 24px 72px rgba(8, 47, 73, 0.12);
+  --shadow-soft: 0 12px 36px rgba(8, 47, 73, 0.08);
+  --shadow-gold: 0 18px 54px rgba(234, 179, 8, 0.18);
+  --shadow-green: 0 14px 40px rgba(21, 128, 61, 0.16);
 }
 
 :root {
@@ -445,44 +463,47 @@ body {
   margin: 0;
   min-height: 100vh;
   overflow-x: hidden;
-  background: #fdfcf7;
-  color: #0f2748;
+  background: #FFFDF3;
+  color: #0F2942;
 }
 
+/* Soft cream + very faint gold & green gradients */
 body::before {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -2;
   background:
-    radial-gradient(circle at 12% 20%, rgba(244, 201, 93, 0.13), transparent 25rem),
-    radial-gradient(circle at 88% 16%, rgba(115, 169, 119, 0.11), transparent 29rem),
-    radial-gradient(circle at 78% 68%, rgba(244, 201, 93, 0.06), transparent 22rem),
-    linear-gradient(145deg, #fdfcf7 0%, #fffdf8 48%, #f9fcf8 100%);
+    radial-gradient(ellipse 70% 52% at 8% 18%, rgba(250, 204, 21, 0.09) 0%, transparent 100%),
+    radial-gradient(ellipse 60% 48% at 92% 12%, rgba(21, 128, 61, 0.07) 0%, transparent 100%),
+    radial-gradient(ellipse 80% 60% at 50% 95%, rgba(250, 204, 21, 0.05) 0%, transparent 100%),
+    linear-gradient(160deg, #FFFDF3 0%, #FFFBEB 55%, #F9FDF9 100%);
 }
 
+/* Very subtle dot texture - only top portion */
 body::after {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  opacity: 0.16;
-  background-image: radial-gradient(rgba(180, 139, 35, 0.24) 1px, transparent 1px);
-  background-size: 30px 30px;
-  mask-image: linear-gradient(to bottom, black, transparent 80%);
+  opacity: 0.12;
+  background-image: radial-gradient(rgba(234, 179, 8, 0.5) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: linear-gradient(to bottom, black 0%, transparent 60%);
 }
 
 ::selection {
-  background: #f4b400;
-  color: #0f2748;
+  background: #FACC15;
+  color: #0F2942;
 }
 
+/* Glass utility */
 .glass {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.82), rgba(255, 253, 248, 0.58));
-  border: 1px solid rgba(236, 236, 236, 0.9);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.88) 0%, rgba(255, 253, 243, 0.72) 100%);
+  border: 1px solid rgba(232, 228, 216, 0.85);
   box-shadow: var(--shadow-soft);
-  backdrop-filter: blur(24px) saturate(145%);
+  backdrop-filter: blur(20px) saturate(140%);
 }
 
 .text-balance {

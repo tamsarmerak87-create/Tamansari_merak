@@ -51,7 +51,7 @@ export function Navbar() {
 
     useEffect(() => {
         const onResize = () => {
-            if (window.innerWidth >= 1280) setOpen(false);
+            if (window.innerWidth >= 1380) setOpen(false);
         };
         window.addEventListener("resize", onResize);
         return () => window.removeEventListener("resize", onResize);
@@ -65,31 +65,31 @@ export function Navbar() {
     }, []);
 
     return (
-        <header className="sticky top-0 z-50 px-5 pt-2 sm:px-10 lg:px-20 lg:pt-3">
-            <div className={`glass relative z-50 mx-auto flex min-h-16 w-full max-w-[1440px] items-center gap-3 rounded-[1.4rem] border border-white/80 px-3 py-2 backdrop-blur-2xl transition-all duration-300 sm:rounded-[1.8rem] sm:px-4 sm:py-3 ${scrolled ? "shadow-[0_18px_60px_rgba(15,39,72,.18)]" : "shadow-[0_10px_35px_rgba(15,39,72,.10)]"}`}>
-                <Link href="/" className="flex min-w-0 items-center gap-2 pr-1 sm:gap-3 sm:pr-2">
-                    <div className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white shadow-soft ring-1 ring-border-soft sm:size-12">
-                        <Image src="/assets/logo-cilegon.png" alt="Logo Cilegon" width={28} height={28} className="h-7 w-7 object-contain" />
+        <header className="sticky top-0 z-50 px-3 pt-3 sm:px-6 lg:px-8 lg:pt-5">
+            <div className={`relative z-50 mx-auto flex min-h-[72px] w-full max-w-[1360px] items-center gap-3 rounded-[24px] border border-white/90 bg-white/88 px-3 py-2.5 backdrop-blur-2xl transition-all duration-300 sm:rounded-[28px] sm:px-5 ${scrolled ? "shadow-[0_18px_55px_rgba(8,47,73,.14)]" : "shadow-[0_12px_38px_rgba(8,47,73,.09)]"}`}>
+                <Link href="/" className="flex min-w-0 shrink-0 items-center gap-2.5 whitespace-nowrap min-[1380px]:basis-[220px] sm:gap-3">
+                    <div className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-2xl bg-cream-50 shadow-soft ring-1 ring-accent-200/60 sm:size-12">
+                        <Image src="/assets/logo-cilegon.png" alt="Logo Cilegon" width={30} height={30} className="h-8 w-8 object-contain" />
                     </div>
                     <div className="min-w-0 leading-tight">
-                        <b className="block max-w-[10rem] overflow-hidden text-ellipsis text-wrap text-sm font-black text-gov-950 sm:max-w-none sm:text-base">{site.name}</b>
-                        <span className="hidden text-xs font-medium text-slate-650 sm:block">{site.district}, {site.city}</span>
+                        <b className="block max-w-[10rem] overflow-hidden text-ellipsis text-sm font-extrabold text-green-700 sm:max-w-[13rem] sm:text-base">{site.name}</b>
+                        <span className="hidden text-[11px] font-medium text-slate-650 sm:block">{site.district}, {site.city}</span>
                     </div>
                 </Link>
 
-                <nav className="hidden flex-1 items-center justify-center gap-1 xl:flex">
+                <nav className="hidden min-w-0 flex-1 items-center justify-center gap-0.5 whitespace-nowrap min-[1380px]:flex">
                     {nav.map((item) => item.href === "/#chat" ? (
-                        <button key={item.href} type="button" onClick={openChat} className="rounded-full px-4 py-2 text-sm font-semibold text-gov-900 transition hover:bg-white hover:text-gov-800">
+                        <button key={item.href} type="button" onClick={openChat} className="rounded-full px-2.5 py-2 text-[13px] font-semibold text-gov-900 transition hover:bg-cream-100 hover:text-green-700">
                             {item.label}
                         </button>
                     ) : (
-                        <Link key={item.href} href={item.href} className="rounded-full px-4 py-2 text-sm font-semibold text-gov-900 transition hover:bg-white hover:text-gov-800">
+                        <Link key={item.href} href={item.href} className="rounded-full px-2.5 py-2 text-[13px] font-semibold text-gov-900 transition hover:bg-cream-100 hover:text-green-700">
                             {item.label}
                         </Link>
                     ))}
                 </nav>
 
-                <div className="ml-auto flex items-center gap-2 sm:gap-3">
+                <div className="ml-auto flex shrink-0 items-center gap-2 whitespace-nowrap">
                     <button className="grid size-11 place-items-center rounded-full border border-white/80 bg-white/70 text-gov-900 shadow-soft transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-gov-100" aria-label="Pencarian">
                         <Search size={17} />
                     </button>
@@ -98,7 +98,7 @@ export function Navbar() {
                         <span className="hidden sm:inline">TAMSAR CS</span>
                         <span className="sm:hidden">CS</span>
                     </button>
-                    <div className="relative hidden xl:block">
+                    <div className="relative hidden min-[1380px]:block">
                         <button type="button" onClick={() => setAccountOpen((value) => !value)} className="inline-flex min-h-11 items-center gap-2 rounded-full border border-white/80 bg-white/75 px-4 py-2 text-sm font-black text-gov-950 shadow-soft transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-gov-100" aria-label="Menu Akun Warga">
                             <UserRound size={17} /> Akun Warga <ChevronDown size={15} />
                         </button>
@@ -113,7 +113,7 @@ export function Navbar() {
                             </>}
                         </div> : null}
                     </div>
-                    <div className="xl:hidden">
+                    <div className="min-[1380px]:hidden">
                         <Sheet open={open} onOpenChange={setOpen}>
                             <SheetTrigger
                                 aria-label="Buka menu navigasi"
