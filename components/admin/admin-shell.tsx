@@ -710,7 +710,7 @@ export function AdminShell({
             setToast={setToast}
           />
         ) : view === "tracking" ? (
-          <Placeholder title="Tracking" text="Panel monitoring perjalanan status pengajuan surat warga secara realtime." />
+          <TrackingModule rows={submissions} services={services} query={query} setQuery={setQuery} status={status} setStatus={setStatus} service={service} setService={setService} dateStart={dateStart} setDateStart={setDateStart} dateEnd={dateEnd} setDateEnd={setDateEnd} onRefresh={load} onDetail={(row) => router.push(`/admin/pengajuan/${row.id}`)} />
         ) : view === "posbankum" ? (
           <Placeholder title="POSBANKUM" text="Ruang administrasi bantuan hukum Kelurahan Tamansari." />
         ) : view === "berita" ? (
@@ -731,6 +731,75 @@ export function AdminShell({
         )}
       </section>
     </main>
+  );
+}
+
+function workflowStageKey(row: Row) {
+  if (isIssued(row)) return "Terbit";
+  const current = normalizedWorkflowStatus(row);
+  const labels: Record<string, string> = {
+    MENUNGGU_STAFF: "Staff",
+    MENUNGGU_PETUGAS_LAPANGAN: "Lapangan",
+    MENUNGGU_KASI: "Kasi",
+    MENUNGGU_SEKLUR: "Seklur",
+    MENUNGGU_LURAH: "Lurah",
+  };
+  return labels[current] ?? stageShort(row);
+}
+
+function trackingStatusLabel(row: Row) {
+  const current = normalizedWorkflowStatus(row);
+  if (current === "SELESAI") return "Selesai";
+  if (current === "DITOLAK" || normalizeStatus(row.status) === "Ditolak") return "Ditolak";
+  if (current === "REVISI") return "Revisi";
+  const stage = activeStage(row);
+  if (stage?.status === "Diproses") return "Diproses";
+  if (stage?.status === "Disetujui") return "Disetujui";
+  return "Menunggu";
+}
+
+function TrackingModule({ rows, services, query, setQuery, status, setStatus, service, setService, dateStart, setDateStart, dateEnd, setDateEnd, onRefresh, onDetail }: { rows: Row[]; services: Row[]; query: string; setQuery: (v: string) => void; status: string; setStatus: (v: string) => void; service: string; setService: (v: string) => void; dateStart: string; setDateStart: (v: string) => void; dateEnd: string; setDateEnd: (v: string) => void; onRefresh: () => void; onDetail: (r: Row) => void }) {
+  const filteredRows = rows
+    .filter((r) => [r.nomor_pengajuan, r.nama_lengkap, r.nik, serviceName(r)].join(" ").toLowerCase().includes(query.toLowerCase()))
+    .filter((r) => !status || trackingStatusLabel(r) === status)
+    .filter((r) => !service || r.layanan_id === service)
+    .filter((r) => !dateStart || String(r.created_at).slice(0, 10) >= dateStart)
+    .filter((r) => !dateEnd || String(r.created_at).slice(0, 10) <= dateEnd);
+
+  return (
+    <div className="mx-auto max-w-[1160px] space-y-4">
+      <section className="rounded-[1.5rem] border border-slate-100 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[.2em] text-slate-500">Tracking Pengajuan</p>
+            <h1 className="mt-2 text-2xl font-black text-gov-950">Workflow Pengajuan Surat</h1>
+            <p className="mt-1 text-sm font-bold text-slate-500">Membaca data workflow existing dari Supabase tanpa membuat approval baru.</p>
+          </div>
+          <button onClick={onRefresh} className="rounded-2xl bg-gov-950 px-4 py-3 font-black text-white"><RefreshCw className="inline" size={16} /> Refresh</button>
+        </div>
+      </section>
+
+      <section className="rounded-[1.5rem] border border-slate-100 bg-white p-4 shadow-sm">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+          <div className="rounded-2xl bg-slate-50 px-3 py-2 xl:col-span-2"><Search size={16} className="inline" /> <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Cari nomor / nama / NIK" className="w-[calc(100%-28px)] bg-transparent font-bold outline-none" /></div>
+          <select value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-2xl bg-slate-50 p-3 font-bold"><option value="">Semua Status</option>{["Menunggu", "Diproses", "Disetujui", "Revisi", "Ditolak", "Selesai"].map((x) => <option key={x}>{x}</option>)}</select>
+          <select value={service} onChange={(e) => setService(e.target.value)} className="rounded-2xl bg-slate-50 p-3 font-bold"><option value="">Semua Layanan</option>{services.map((s) => <option key={s.id} value={s.id}>{s.nama}</option>)}</select>
+          <input type="date" value={dateStart} onChange={(e) => setDateStart(e.target.value)} className="rounded-2xl bg-slate-50 p-3 font-bold" aria-label="Tanggal mulai" />
+          <input type="date" value={dateEnd} onChange={(e) => setDateEnd(e.target.value)} className="rounded-2xl bg-slate-50 p-3 font-bold" aria-label="Tanggal akhir" />
+          <button onClick={() => { setQuery(""); setStatus(""); setService(""); setDateStart(""); setDateEnd(""); }} className="rounded-2xl bg-slate-100 p-3 font-black text-slate-700"><RotateCcw className="inline" size={16} /> Reset</button>
+        </div>
+      </section>
+
+      <div className="overflow-x-auto rounded-[1.5rem] border border-slate-100 bg-white shadow-sm">
+        <table className="w-full min-w-[900px] text-sm">
+          <thead className="bg-slate-50 text-left text-xs font-black uppercase tracking-[.14em] text-slate-500"><tr><th className="px-4 py-4">Nomor</th><th className="px-4 py-4">Tanggal</th><th className="px-4 py-4">Pemohon</th><th className="px-4 py-4">Layanan</th><th className="px-4 py-4">Tahap</th><th className="px-4 py-4">Status</th><th className="px-4 py-4">Action</th></tr></thead>
+          <tbody className="divide-y divide-slate-100">
+            {filteredRows.map((r) => <tr key={r.id} className="align-top"><td className="px-4 py-4 font-black text-gov-950">{r.nomor_pengajuan ?? "-"}</td><td className="px-4 py-4 font-bold text-slate-700">{formatDate(r.created_at)}</td><td className="px-4 py-4 font-black text-gov-950">{r.nama_lengkap ?? "-"}</td><td className="px-4 py-4 font-bold text-slate-700">{serviceName(r)}</td><td className="px-4 py-4"><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">{workflowStageKey(r)}</span></td><td className="px-4 py-4"><StatusBadge status={trackingStatusLabel(r)} /></td><td className="px-4 py-4"><button type="button" onClick={() => onDetail(r)} className="rounded-xl bg-slate-100 px-3 py-2 font-black text-slate-700 hover:bg-slate-200"><Eye className="inline" size={14} /> Detail</button></td></tr>)}
+          </tbody>
+        </table>
+        {filteredRows.length === 0 && <p className="py-8 text-center font-bold text-slate-500">Tidak ada pengajuan sesuai filter.</p>}
+      </div>
+    </div>
   );
 }
 
