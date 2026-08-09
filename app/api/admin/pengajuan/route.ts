@@ -12,6 +12,14 @@ type Action = "proses_tahap" | "verifikasi" | "setujui" | "selesai" | "tolak" | 
 type StageRow = { id: string; tahap: number; nama_tahap: string; role_petugas: string; status: string };
 type ActionDecision = { status: "Disetujui" | "Ditolak"; submissionStatus: string; auditLabel: string; trackingLabel: string };
 
+const STAGE_AUDIT_LABEL: Record<number, string> = {
+    1: "STAFF",
+    2: "LAPANGAN",
+    3: "KASI",
+    4: "SEKLUR",
+    5: "LURAH",
+};
+
 function stageShortName(stage: StageRow) {
     return VERIFICATION_STAGES.find((item) => item.tahap === stage.tahap)?.nama_tahap.replace(/^Verifikasi\s+|^Persetujuan\s+/, "") ?? stage.nama_tahap;
 }
@@ -30,6 +38,16 @@ function actionDecision(action: Action, stage: StageRow): ActionDecision {
     if (action === "revisi") return { status: "Ditolak", submissionStatus: "REVISI", auditLabel: "Dikembalikan / Revisi", trackingLabel: "Dikembalikan untuk revisi" };
     if (stage.tahap === 5) return { status: "Disetujui", submissionStatus: "SELESAI", auditLabel: "Validasi Akhir", trackingLabel: "SURAT DITERBITKAN" };
     return { status: "Disetujui", submissionStatus: STAGE_WAITING_STATUS[stage.tahap + 1], auditLabel: stage.tahap === 3 ? "Persetujuan" : "Verifikasi Pengajuan", trackingLabel: "Disetujui" };
+}
+
+function auditActionLabel(action: Action, stage: StageRow) {
+    if (action === "tolak") return "TOLAK";
+    if (action === "revisi") return "KEMBALIKAN";
+    if (stage.tahap === 2) return "VERIFIKASI_LAPANGAN";
+    if (stage.tahap === 3) return "SETUJUI";
+    if (stage.tahap === 4) return "AJUKAN_KE_LURAH";
+    if (stage.tahap === 5) return "VALIDASI_TERBITKAN";
+    return "VERIFIKASI";
 }
 
 export async function PATCH(request: NextRequest) {
@@ -132,8 +150,27 @@ export async function PATCH(request: NextRequest) {
                 { pengajuan_id: body.id, status: activeStage.nama_tahap, keterangan: `Pengajuan diperiksa oleh ${stageShortName(activeStage)}.`, petugas: petugasName, created_at: now },
                 { pengajuan_id: body.id, status: nextStage?.nama_tahap ?? status, keterangan: nextStage ? `Pengajuan diteruskan ke ${stageShortName(nextStage)}.` : "Pengajuan diteruskan.", petugas: petugasName, created_at: now },
             ];
-    await supabase.from("tracking_pengajuan").insert(trackingRows);
-    await supabase.from("audit_pengajuan").insert({ pengajuan_id: body.id, tahap: activeStage.nama_tahap, status: decision.trackingLabel, action: decision.auditLabel, user_id: petugasId, nama_petugas: petugasName, jabatan: session.profile.jabatan ?? stageShortName(activeStage), catatan: catatan ?? null, metadata: { tahap: activeStage.tahap, next_tahap: nextStage?.tahap ?? null, role: workflowRole, checklist: body.checklist ?? null, hasil_verifikasi: body.hasil_verifikasi ?? null, dokumentasi_url: body.dokumentasi_url ?? null } });
+    const { error: trackingError } = await supabase.from("tracking_pengajuan").insert(trackingRows);
+    if (trackingError) return jsonError(trackingError.message, 500);
+
+    const auditPayload = {
+        pengajuan_id: body.id,
+        petugas_id: petugasId,
+        user_id: petugasId,
+        nama_petugas: petugasName,
+        role: workflowRole.toUpperCase(),
+        tahap: STAGE_AUDIT_LABEL[activeStage.tahap] ?? activeStage.nama_tahap,
+        aksi: auditActionLabel(body.action, activeStage),
+        action: decision.auditLabel,
+        status: decision.trackingLabel,
+        status_sebelum: requiredStatus,
+        status_sesudah: status,
+        jabatan: session.profile.jabatan ?? stageShortName(activeStage),
+        catatan: catatan ?? null,
+        metadata: { tahap: activeStage.tahap, next_tahap: nextStage?.tahap ?? null, role: workflowRole, checklist: body.checklist ?? null, hasil_verifikasi: body.hasil_verifikasi ?? null, dokumentasi_url: body.dokumentasi_url ?? null },
+    };
+    const { error: auditError } = await supabase.from("audit_pengajuan").insert(auditPayload);
+    if (auditError) return jsonError(auditError.message, 500);
 
     return NextResponse.json({ ok: true, data });
 }
