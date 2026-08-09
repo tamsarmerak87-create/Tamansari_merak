@@ -110,6 +110,13 @@ function formatDate(value?: string | null) {
   return date.toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
+function formatDateTime(value?: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
 function serviceName(row: Row) {
   return row.layanan?.nama ?? row.jenis_surat ?? row.layanan_nama ?? "-";
 }
@@ -128,6 +135,11 @@ function activeStage(row: Row) {
 
 function officerName(stage?: Row | null) {
   return stage?.petugas?.nama_lengkap ?? stage?.petugas?.username ?? stage?.petugas_nama ?? "Belum diproses";
+}
+
+function tableOfficerName(stage?: Row | null) {
+  if (!stage || !["Disetujui", "Ditolak"].includes(String(stage.status))) return "-";
+  return stage.petugas?.nama_lengkap ?? stage.petugas?.username ?? stage.nama_petugas ?? stage.petugas_nama ?? "-";
 }
 
 const stepDefinitions = [
@@ -196,9 +208,31 @@ function actionLabel(row: Row) {
   if (!stage) return "Verifikasi";
   if (stage.tahap === 1) return "Verifikasi";
   if (stage.tahap === 2) return "Verifikasi Lapangan";
-  if (stage.tahap === 3) return "Verifikasi Kasi";
-  if (stage.tahap === 4) return "Verifikasi Seklur";
+  if (stage.tahap === 3) return "Setujui";
+  if (stage.tahap === 4) return "Ajukan ke Lurah";
   return "Validasi & Terbitkan";
+}
+
+function stageShort(row: Row) {
+  if (isIssued(row)) return "Terbit";
+  const stage = activeStage(row);
+  const step = stepDefinitions.find((item) => item.tahap === Number(stage?.tahap));
+  return step?.short ?? (normalizeStatus(row.status) === "Ditolak" ? "Ditolak" : "-");
+}
+
+function workflowStatusLabel(row: Row) {
+  const current = normalizedWorkflowStatus(row);
+  const labels: Record<string, string> = {
+    MENUNGGU_STAFF: "Menunggu Staff Pelayanan",
+    MENUNGGU_PETUGAS_LAPANGAN: "Menunggu Petugas Lapangan",
+    MENUNGGU_KASI: "Menunggu Kasi",
+    MENUNGGU_SEKLUR: "Menunggu Seklur",
+    MENUNGGU_LURAH: "Menunggu Lurah",
+    REVISI: "Revisi",
+    DITOLAK: "Ditolak",
+    SELESAI: "Selesai",
+  };
+  return labels[current] ?? normalizeStatus(row.status);
 }
 
 function accessLabel(row: Row, profile?: AdminPortalProfile | null) {
@@ -216,6 +250,7 @@ function fileUrl(row: Row) {
 
 function statusBadgeClass(status?: string | null) {
   const normalized = normalizeStatus(status);
+  if (String(status ?? '').startsWith('Menunggu ')) return "bg-amber-100 text-amber-800 ring-amber-200";
   if (normalized === "Selesai") return "bg-emerald-100 text-emerald-800 ring-emerald-200";
   if (normalized === "Disetujui") return "bg-cyan-100 text-cyan-800 ring-cyan-200";
   if (normalized === "Diproses") return "bg-blue-100 text-blue-800 ring-blue-200";
@@ -641,7 +676,6 @@ export function AdminShell({
               rows={filtered}
               onDetail={(row) => router.push(`/admin/pengajuan/${row.id}`)}
               onVerify={setSelectedSubmission}
-              onReject={rejectSubmission}
               adminProfile={adminProfile}
             />
             {selectedSubmission && (
@@ -720,105 +754,33 @@ function Table({
   onDetail,
   onVerify,
   adminProfile,
-  onReject,
 }: {
   rows: Row[];
   onDetail: (r: Row) => void;
   onVerify: (r: Row) => void;
   adminProfile: AdminPortalProfile | null;
-  onReject: (r: Row) => void;
 }) {
   return (
-    <div>
-      <div className="hidden overflow-x-auto rounded-[1.5rem] border border-slate-100 lg:block">
-        <table className="min-w-full text-sm">
-          <thead>
-            <tr className="text-left">
-              <th>Nomor</th>
-              <th>Tanggal</th>
-              <th>Tahap Saat Ini</th>
-              <th>Petugas Saat Ini</th>
-              <th>Nama</th>
-              <th>NIK</th>
-              <th>Layanan</th>
-              <th>Status</th>
-              <th>Aksi</th>
+    <div className="overflow-x-auto rounded-[1.5rem] border border-slate-100 bg-white">
+      <table className="min-w-[860px] w-full text-sm">
+        <thead className="bg-slate-50 text-left text-xs font-black uppercase tracking-[.14em] text-slate-500">
+          <tr><th className="px-4 py-4">Nomor</th><th className="px-4 py-4">Tanggal</th><th className="px-4 py-4">Pemohon</th><th className="px-4 py-4">Layanan</th><th className="px-4 py-4">Tahap</th><th className="px-4 py-4">Status</th><th className="px-4 py-4">Action</th></tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.id} className="border-t border-slate-100 align-top">
+              <td className="px-4 py-4 font-black text-gov-950">{r.nomor_pengajuan ?? "-"}</td>
+              <td className="px-4 py-4 font-bold text-slate-700">{formatDate(r.created_at)}</td>
+              <td className="px-4 py-4"><p className="font-black text-gov-950">{r.nama_lengkap ?? "-"}</p></td>
+              <td className="px-4 py-4 font-bold text-slate-700">{serviceName(r)}</td>
+              <td className="px-4 py-4"><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">{stageShort(r)}</span></td>
+              <td className="px-4 py-4"><StatusBadge status={workflowStatusLabel(r)} /></td>
+              <td className="px-4 py-4"><div className="flex flex-wrap gap-2"><button type="button" onClick={() => onDetail(r)} className="rounded-xl bg-slate-100 px-3 py-2 font-black text-slate-700 hover:bg-slate-200"><Eye className="inline" size={14} /> Detail</button>{canProcessStage(r, adminProfile) && <button type="button" onClick={() => onVerify(r)} className="rounded-xl bg-gov-950 px-3 py-2 font-black text-white hover:bg-gov-800"><ShieldCheck className="inline" size={14} /> Verifikasi</button>}</div></td>
             </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.id} className="border-t">
-                <td>
-                  <Link
-                    className="font-black text-gov-950"
-                    href={`/admin/pengajuan/${r.id}`}
-                  >
-                    {r.nomor_pengajuan}
-                  </Link>
-                </td>
-                <td>{formatDate(r.created_at)}</td>
-                <td className="min-w-52">
-                  <p className="font-black text-gov-950">{activeStage(r)?.nama_tahap ?? (normalizeStatus(r.status) === "Selesai" ? "Selesai" : "Tidak ada tahap aktif")}</p>
-                  <p className="mt-1 text-xs font-bold text-slate-500">{roleLabel(activeStage(r)?.role_petugas)}</p>
-                  <div className="mt-2"><WorkflowMini row={r} /></div>
-                </td>
-                <td>{officerName(activeStage(r))}</td>
-                <td>{r.nama_lengkap}</td>
-                <td>{r.nik}</td>
-                <td>{serviceName(r)}</td>
-                <td>
-                  <StatusBadge status={r.status} />
-                </td>
-                <td>
-                  <div className="flex flex-wrap gap-2">
-                    <button type="button" onClick={() => onDetail(r)} className="rounded-xl bg-slate-100 px-3 py-2 font-black text-slate-700 hover:bg-slate-200"><Eye className="inline" size={14} /> Detail</button>
-                    {canProcessStage(r, adminProfile) ? (
-                      <>
-                        <button type="button" onClick={() => onVerify(r)} className="rounded-xl bg-gov-950 px-3 py-2 font-black text-white hover:bg-gov-800"><ShieldCheck className="inline" size={14} /> {activeStage(r)?.tahap === 5 ? "Setujui" : "Proses Tahap Ini"}</button>
-                        <button type="button" onClick={() => onReject(r)} className="rounded-xl bg-red-600 px-3 py-2 font-black text-white hover:bg-red-700"><XCircle className="inline" size={14} /> Tolak</button>
-                      </>
-                    ) : (
-                      <span className={cn("rounded-xl px-3 py-2 text-xs font-black", adminProfile?.role === "admin" ? "bg-blue-50 text-blue-700" : "bg-amber-50 text-amber-700")}>{accessLabel(r, adminProfile)}</span>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="grid gap-3 lg:hidden">
-        {rows.map((r) => (
-          <div key={r.id} className="rounded-[1.5rem] border border-slate-100 bg-slate-50 p-4 shadow-sm">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="truncate font-black text-gov-950">{r.nomor_pengajuan}</p>
-                <p className="mt-1 text-sm font-bold text-slate-500">{formatDate(r.created_at)} - {r.nama_lengkap}</p>
-              </div>
-              <StatusBadge status={r.status} />
-            </div>
-            <div className="mt-4 grid gap-2 text-sm font-bold text-slate-600">
-              <p><b className="text-gov-950">Tahap:</b> {activeStage(r)?.nama_tahap ?? (normalizeStatus(r.status) === "Selesai" ? "Selesai" : "Tidak ada tahap aktif")}</p>
-              <WorkflowMini row={r} />
-              <p><b className="text-gov-950">Petugas:</b> {officerName(activeStage(r))}</p>
-              <p><b className="text-gov-950">NIK:</b> {r.nik}</p>
-              <p><b className="text-gov-950">Layanan:</b> {serviceName(r)}</p>
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button type="button" onClick={() => onDetail(r)} className="rounded-xl bg-white px-3 py-2 font-black text-slate-700 shadow-sm"><Eye className="inline" size={14} /> Detail</button>
-              {canProcessStage(r, adminProfile) ? (
-                <>
-                  <button type="button" onClick={() => onVerify(r)} className="rounded-xl bg-gov-950 px-3 py-2 font-black text-white"><ShieldCheck className="inline" size={14} /> {activeStage(r)?.tahap === 5 ? "Setujui" : "Proses"}</button>
-                  <button type="button" onClick={() => onReject(r)} className="rounded-xl bg-red-600 px-3 py-2 font-black text-white"><XCircle className="inline" size={14} /> Tolak</button>
-                </>
-              ) : (
-                <span className={cn("rounded-xl px-3 py-2 text-xs font-black", adminProfile?.role === "admin" ? "bg-blue-50 text-blue-700" : "bg-amber-50 text-amber-700")}>{accessLabel(r, adminProfile)}</span>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-      {rows.length === 0 && <p className="py-8 text-center">Belum ada data.</p>}
+          ))}
+        </tbody>
+      </table>
+      {rows.length === 0 && <p className="py-8 text-center font-bold text-slate-500">Belum ada data.</p>}
     </div>
   );
 }
@@ -1075,6 +1037,27 @@ function DocumentsPanel({ row }: { row: Row }) {
   );
 }
 
+
+function SectionBox({ title, children }: { title: string; children: React.ReactNode }) {
+  return <section className="rounded-[1.5rem] border border-slate-100 bg-white p-4 shadow-sm"><h2 className="mb-3 text-sm font-black uppercase tracking-[.16em] text-gov-950">{title}</h2>{children}</section>;
+}
+
+function SimpleTable({ children, minWidth = "620px" }: { children: React.ReactNode; minWidth?: string }) {
+  return <div className="overflow-x-auto rounded-2xl border border-slate-100"><table className="w-full text-sm" style={{ minWidth }}><tbody className="divide-y divide-slate-100">{children}</tbody></table></div>;
+}
+
+function Td({ children, strong = false }: { children: React.ReactNode; strong?: boolean }) {
+  return <td className={cn("px-4 py-3 align-top", strong ? "w-48 bg-slate-50 font-black text-gov-950" : "font-bold text-slate-700")}>{children}</td>;
+}
+
+function stageTableStatus(row: Row, tahap: number) {
+  const state = stepState(row, tahap);
+  if (state === "done") return "✓ Disetujui";
+  if (state === "active") return "Menunggu";
+  if (state === "rejected") return "Ditolak";
+  return "○ Belum";
+}
+
 function SubmissionDetail({
   row,
   onVerify,
@@ -1093,87 +1076,156 @@ function SubmissionDetail({
   adminProfile: AdminPortalProfile | null;
 }) {
   const current = normalizeStatus(row.status);
-  const trackingRows = Array.isArray(row.tracking_pengajuan) ? row.tracking_pengajuan : [];
-  const outputDoc = (Array.isArray(row.dokumen_pengajuan) ? row.dokumen_pengajuan : []).find((doc: Row) => String(doc.jenis ?? "").toLowerCase().includes("hasil") || String(doc.nama_file ?? "").toLowerCase().includes("surat"));
+  const docs = Array.isArray(row.dokumen_pengajuan) ? row.dokumen_pengajuan : [];
   const generatedPdfUrl = row.verification_token ? `/api/surat/${row.verification_token}/pdf` : "";
   const verifyUrl = row.verification_token ? `/verifikasi/${row.verification_token}` : "";
-  const outputUrl = generatedPdfUrl || (outputDoc ? fileUrl(outputDoc) : "");
-  const mayProcessStage = canProcessStage(row, adminProfile);
-  const mayComplete = current === "Disetujui";
+  const active = activeStage(row);
+  const stageRows = stepDefinitions.slice(0, 5).map((step) => {
+    const stage = stageByNumber(row, step.tahap);
+    return { step, stage };
+  });
+  const notes = stageRows.filter(({ stage }) => stage?.catatan);
+  const canAct = canProcessStage(row, adminProfile);
+
+  const primaryLabel = active?.tahap === 5 ? "✓ VALIDASI & TERBITKAN" : active?.role_petugas === "kasi" ? "✓ SETUJUI" : active?.role_petugas === "seklur" ? "✓ AJUKAN KE LURAH" : active?.role_petugas === "lurah" ? "✓ VALIDASI & TERBITKAN" : active?.role_petugas === "lapangan" ? "✓ VERIFIKASI LAPANGAN" : "✓ VERIFIKASI";
+  const stagePill = active ? roleLabel(active.role_petugas) : "-";
+
   return (
-    <div className="space-y-6">
-      <section className="overflow-hidden rounded-[2rem] bg-[linear-gradient(135deg,#071a33,#0B2C6A)] text-white shadow-[0_24px_80px_rgba(7,26,51,.25)]">
-        <div className="grid gap-6 p-6 lg:grid-cols-[1fr_auto] lg:p-8">
+    <div className="mx-auto max-w-[1160px] space-y-4">
+      <section className="rounded-[1.5rem] border border-slate-100 bg-white p-5 shadow-sm">
+        <p className="text-xs font-black uppercase tracking-[.2em] text-slate-500">Pengajuan Surat</p>
+        <h1 className="mt-2 text-2xl font-black text-gov-950">{row.nomor_pengajuan ?? "-"}</h1>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
           <div>
-            <p className="text-xs font-black uppercase tracking-[.25em] text-accent-200">Detail Pengajuan Surat</p>
-            <h1 className="mt-3 text-3xl font-black md:text-4xl">{row.nomor_pengajuan ?? "Nomor Pengajuan"}</h1>
-            <p className="mt-2 max-w-2xl font-bold text-white/70">{serviceName(row)} • {row.nama_lengkap ?? "Pemohon"}</p>
-            <div className="mt-5 flex flex-wrap gap-3">
-              <StatusBadge status={row.status} />
-              <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black ring-1 ring-white/15">Diajukan {formatDate(row.created_at)}</span>
-              <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black ring-1 ring-white/15">Petugas {petugasName(row)}</span>
-            </div>
+            <p className="text-[11px] font-black uppercase tracking-[.16em] text-slate-400">Jenis layanan</p>
+            <p className="mt-1 font-black text-gov-950">{serviceName(row)}</p>
           </div>
-          <div className="grid gap-2 sm:grid-cols-2 lg:w-80 lg:grid-cols-1">
-            {mayProcessStage ? <button onClick={() => onVerify(row)} className="rounded-2xl bg-white px-5 py-3 font-black text-gov-950 shadow-lg transition hover:-translate-y-0.5"><ShieldCheck className="inline" size={17} /> {activeStage(row)?.tahap === 5 ? "Setujui" : "Proses Tahap Ini"}</button> : <p className="rounded-2xl bg-white/10 p-4 text-sm font-black text-white ring-1 ring-white/15">{accessLabel(row, adminProfile)}</p>}
-            {mayComplete && <button onClick={() => onComplete(row)} className="rounded-2xl bg-emerald-500 px-5 py-3 font-black text-white shadow-lg transition hover:-translate-y-0.5"><CheckCircle2 className="inline" size={17} /> Selesai</button>}
-            {mayProcessStage && <button onClick={() => onReject(row)} className="rounded-2xl bg-red-600 px-5 py-3 font-black text-white shadow-lg transition hover:-translate-y-0.5"><XCircle className="inline" size={17} /> Tolak</button>}
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[.16em] text-slate-400">Status</p>
+            <div className="mt-1"><StatusBadge status={workflowStatusLabel(row)} /></div>
+          </div>
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[.16em] text-slate-400">Tahap aktif</p>
+            <p className="mt-1 inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">{stagePill}</p>
           </div>
         </div>
       </section>
 
-      <div className="grid gap-6 xl:grid-cols-[1.35fr_.65fr]">
-        <div className="space-y-6">
-          <WorkflowStepper row={row} />
-          <SubmissionTimeline row={row} />
-          <div className="grid gap-6 lg:grid-cols-2">
-            <DetailCard icon={UserRound} title="Identitas Pemohon">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <DetailField label="Nama Lengkap" value={row.nama_lengkap} />
-                <DetailField label="NIK" value={row.nik} />
-                <DetailField label="No HP" value={row.nomor_hp ?? row.no_hp} />
-                <DetailField label="Email" value={row.email} />
-                <DetailField label="Alamat" value={row.alamat} />
-                <DetailField label="RT/RW" value={[row.rt, row.rw].filter(Boolean).join("/") || row.rt_rw} />
-              </div>
-            </DetailCard>
-            <DetailCard icon={ClipboardList} title="Data Permohonan">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <DetailField label="Nomor Pengajuan" value={row.nomor_pengajuan} />
-                <DetailField label="Jenis Layanan" value={serviceName(row)} />
-                <DetailField label="Tanggal Pengajuan" value={formatDate(row.created_at)} />
-                <DetailField label="Status" value={current} />
-                <DetailField label="Keperluan" value={row.keperluan ?? row.keterangan} />
-                <DetailField label="Catatan Admin" value={row.catatan_admin} />
-              </div>
-              {row.alasan_penolakan && <p className="mt-3 rounded-2xl bg-red-50 p-4 text-sm font-bold text-red-700"><AlertTriangle className="inline" size={16} /> {row.alasan_penolakan}</p>}
-            </DetailCard>
-          </div>
-          <DocumentsPanel row={row} />
-          <VerificationHistory row={row} />
+      <WorkflowStepper row={row} />
+
+      <SectionBox title="DATA PEMOHON">
+        <SimpleTable minWidth="640px">
+          <tr><Td strong>Nama</Td><Td>{row.nama_lengkap ?? "-"}</Td></tr>
+          <tr><Td strong>NIK</Td><Td>{row.nik ?? "-"}</Td></tr>
+          <tr><Td strong>No. HP</Td><Td>{row.nomor_hp ?? row.no_hp ?? "-"}</Td></tr>
+          <tr><Td strong>Alamat</Td><Td>{row.alamat ?? "-"}</Td></tr>
+          <tr><Td strong>Layanan</Td><Td>{serviceName(row)}</Td></tr>
+          <tr><Td strong>Tanggal Pengajuan</Td><Td>{formatDate(row.created_at)}</Td></tr>
+        </SimpleTable>
+      </SectionBox>
+
+      <SectionBox title="DOKUMEN PERSYARATAN">
+        <div className="overflow-x-auto rounded-2xl border border-slate-100">
+          <table className="w-full min-w-[560px] text-sm">
+            <thead className="bg-slate-50 text-left text-xs font-black uppercase tracking-[.14em] text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Dokumen</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Aksi</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {docs.map((doc: Row, index: number) => {
+                const url = fileUrl(doc);
+                return (
+                  <tr key={doc.id ?? index}>
+                    <td className="px-4 py-3 font-black text-gov-950">{doc.nama_file ?? doc.nama_dokumen ?? doc.jenis ?? `Dokumen ${index + 1}`}</td>
+                    <td className="px-4 py-3 font-bold text-emerald-700">✓ Ada</td>
+                    <td className="px-4 py-3">
+                      <a href={url || "#"} target="_blank" rel="noreferrer" className={cn("rounded-xl px-3 py-2 text-sm font-black", url ? "bg-slate-100 text-gov-950 hover:bg-slate-200" : "pointer-events-none bg-slate-100 text-slate-400")}>Lihat</a>
+                    </td>
+                  </tr>
+                );
+              })}
+              {docs.length === 0 && <tr><td className="px-4 py-3 font-bold text-slate-500" colSpan={3}>Belum ada dokumen.</td></tr>}
+            </tbody>
+          </table>
         </div>
-        <aside className="space-y-6">
-          <DetailCard icon={FileDown} title="Output Surat">
-            {current === "Selesai" ? (
-              <div className="space-y-3">
-                <p className="rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-800">✓ Surat Terbit. Dokumen final terkunci dan dapat diverifikasi melalui QR publik.</p>
-                <a href={outputUrl || "#"} target="_blank" rel="noreferrer" className={cn("flex items-center justify-center gap-2 rounded-2xl px-5 py-3 font-black", outputUrl ? "bg-gov-950 text-white hover:bg-gov-800" : "pointer-events-none bg-slate-200 text-slate-400")}><Eye size={17} /> Lihat Surat</a>
-                <a href={outputUrl || "#"} target="_blank" rel="noreferrer" className={cn("flex items-center justify-center gap-2 rounded-2xl px-5 py-3 font-black", outputUrl ? "bg-white text-gov-950 ring-1 ring-slate-200 hover:bg-slate-50" : "pointer-events-none bg-slate-200 text-slate-400")}><Printer size={17} /> Cetak</a>
-                <a href={outputUrl || "#"} download className={cn("flex items-center justify-center gap-2 rounded-2xl px-5 py-3 font-black", outputUrl ? "bg-accent-400 text-gov-950 hover:bg-accent-300" : "pointer-events-none bg-slate-200 text-slate-400")}><FileDown size={17} /> Download PDF</a>
-                <a href={verifyUrl || "#"} target="_blank" rel="noreferrer" className={cn("flex items-center justify-center gap-2 rounded-2xl px-5 py-3 font-black", verifyUrl ? "bg-emerald-600 text-white hover:bg-emerald-700" : "pointer-events-none bg-slate-200 text-slate-400")}><ExternalLink size={17} /> Verifikasi QR</a>
-                {!outputUrl && <p className="text-xs font-bold text-slate-500">Token surat belum tersedia. Jalankan validasi final Lurah agar PDF otomatis diterbitkan.</p>}
-              </div>
-            ) : (
-              <p className="rounded-2xl bg-slate-50 p-4 font-bold text-slate-500">Tombol Cetak Surat dan Download PDF akan aktif setelah status pengajuan menjadi Selesai.</p>
-            )}
-            <Upload id={row.id} setToast={setToast} />
-          </DetailCard>
-          <ActivityHistory rows={trackingRows} />
-          <DetailCard icon={ExternalLink} title="Akses Cepat">
-            <Link href="/admin/pengajuan" className="block rounded-2xl bg-slate-50 p-4 text-sm font-black text-gov-950 hover:bg-accent-50">← Kembali ke daftar pengajuan</Link>
-          </DetailCard>
-        </aside>
-      </div>
+      </SectionBox>
+
+      <SectionBox title="VERIFIKASI BERJENJANG">
+        <div className="overflow-x-auto rounded-2xl border border-slate-100">
+          <table className="w-full min-w-[720px] text-sm">
+            <thead className="bg-slate-50 text-left text-xs font-black uppercase tracking-[.14em] text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Tahap</th>
+                <th className="px-4 py-3">Petugas</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Tanggal</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {stageRows.map(({ step, stage }) => {
+                const time = stage?.approved_at ?? stage?.acted_at ?? stage?.updated_at;
+                return (
+                  <tr key={step.tahap}>
+                    <td className="px-4 py-3 font-black text-gov-950">{step.label}</td>
+                    <td className="px-4 py-3 font-bold text-slate-700">{tableOfficerName(stage)}</td>
+                    <td className="px-4 py-3 font-bold text-slate-700">{stageTableStatus(row, step.tahap)}</td>
+                    <td className="px-4 py-3 font-bold text-slate-700">{formatDateTime(time)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </SectionBox>
+
+      {notes.length > 0 && (
+        <SectionBox title="CATATAN">
+          <div className="overflow-x-auto rounded-2xl border border-slate-100">
+            <table className="w-full min-w-[620px] text-sm">
+              <thead className="bg-slate-50 text-left text-xs font-black uppercase tracking-[.14em] text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">Tahap</th>
+                  <th className="px-4 py-3">Petugas</th>
+                  <th className="px-4 py-3">Catatan</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {notes.map(({ step, stage }) => (
+                  <tr key={step.tahap}>
+                    <td className="px-4 py-3 font-black text-gov-950">{step.short}</td>
+                    <td className="px-4 py-3 font-bold text-slate-700">{tableOfficerName(stage)}</td>
+                    <td className="px-4 py-3 font-bold text-slate-700">{stage?.catatan}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </SectionBox>
+      )}
+
+      <SectionBox title="ACTION">
+        <div className="grid gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap lg:justify-end">
+          {isIssued(row) ? (
+            <>
+              <a href={generatedPdfUrl || "#"} target="_blank" rel="noreferrer" className={cn("rounded-2xl px-5 py-3 text-center font-black", generatedPdfUrl ? "bg-gov-950 text-white" : "pointer-events-none bg-slate-200 text-slate-400")}>📄 LIHAT SURAT</a>
+              <a href={generatedPdfUrl || "#"} download className={cn("rounded-2xl px-5 py-3 text-center font-black", generatedPdfUrl ? "bg-accent-400 text-gov-950" : "pointer-events-none bg-slate-200 text-slate-400")}>⬇ DOWNLOAD PDF</a>
+              <a href={verifyUrl || "#"} target="_blank" rel="noreferrer" className={cn("rounded-2xl px-5 py-3 text-center font-black", verifyUrl ? "bg-emerald-600 text-white" : "pointer-events-none bg-slate-200 text-slate-400")}>🔳 VERIFIKASI QR</a>
+            </>
+          ) : canAct ? (
+            <>
+              <button type="button" onClick={() => onProcess(row)} className="rounded-2xl bg-amber-500 px-5 py-3 font-black text-white">KEMBALIKAN</button>
+              <button type="button" onClick={() => onReject(row)} className="rounded-2xl bg-red-600 px-5 py-3 font-black text-white">TOLAK</button>
+              <button type="button" onClick={() => onVerify(row)} className="rounded-2xl bg-gov-950 px-5 py-3 font-black text-white">{primaryLabel}</button>
+            </>
+          ) : (
+            <p className="rounded-2xl bg-slate-50 p-4 font-black text-slate-600">{accessLabel(row, adminProfile)}</p>
+          )}
+          <Upload id={row.id} setToast={setToast} />
+        </div>
+      </SectionBox>
     </div>
   );
 }
