@@ -11,8 +11,9 @@ import { Navbar } from "@/components/layout/navbar";
 export function PortalChrome({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const isAdminPortal = pathname === "/admin" || pathname.startsWith("/admin/");
+    const isPetugasPortal = pathname === "/petugas" || pathname.startsWith("/petugas/");
 
-    if (isAdminPortal) return <>{children}</>;
+    if (isAdminPortal || isPetugasPortal) return <>{children}</>;
 
     return (
         <WargaAuthProvider>

@@ -19,12 +19,12 @@ const nav = [
     { label: "Agenda", href: "/agenda" },
     { label: "POSBANKUM", href: "/posbankum" },
     { label: "FAQ", href: "/faq" },
+    { label: "TAMSAR", href: "/#chat" },
 ] as const;
 
 const mobileNav: { label: string; href: Route; }[] = [
     ...nav,
     { label: "Kontak", href: "/kontak" },
-    { label: "TAMSAR CS", href: "/#chat" },
 ];
 
 export function Navbar() {
@@ -78,7 +78,11 @@ export function Navbar() {
                 </Link>
 
                 <nav className="hidden flex-1 items-center justify-center gap-1 xl:flex">
-                    {nav.map((item) => (
+                    {nav.map((item) => item.href === "/#chat" ? (
+                        <button key={item.href} type="button" onClick={openChat} className="rounded-full px-4 py-2 text-sm font-semibold text-gov-900 transition hover:bg-white hover:text-gov-800">
+                            {item.label}
+                        </button>
+                    ) : (
                         <Link key={item.href} href={item.href} className="rounded-full px-4 py-2 text-sm font-semibold text-gov-900 transition hover:bg-white hover:text-gov-800">
                             {item.label}
                         </Link>
