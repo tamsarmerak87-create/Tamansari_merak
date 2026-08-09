@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server";
-import crypto from "node:crypto";
 import { getAdminSession } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
 import { ROLE_STAGE_STATUS, STAGE_WAITING_STATUS, VERIFICATION_STAGES, getActiveStage, isFinalSubmissionStatus, normalizeSubmissionStatus, normalizeWorkflowRole } from "@/services/verification-workflow";
@@ -24,20 +23,11 @@ function stageShortName(stage: StageRow) {
     return VERIFICATION_STAGES.find((item) => item.tahap === stage.tahap)?.nama_tahap.replace(/^Verifikasi\s+|^Persetujuan\s+/, "") ?? stage.nama_tahap;
 }
 
-function createNomorSurat(sequence: number, date = new Date()) {
-    const roman = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"][date.getMonth()];
-    return `${String(sequence).padStart(3, "0")}/KEL.TMS/${roman}/${date.getFullYear()}`;
-}
-
-function publicBaseUrl(request: NextRequest) {
-    return process.env.NEXT_PUBLIC_SITE_URL ?? `${request.nextUrl.protocol}//${request.nextUrl.host}`;
-}
-
 function actionDecision(action: Action, stage: StageRow): ActionDecision {
-    if (action === "tolak") return { status: "Ditolak", submissionStatus: "DITOLAK", auditLabel: stage.tahap === 5 ? "Validasi Akhir" : "Penolakan", trackingLabel: "Ditolak" };
-    if (action === "revisi") return { status: "Ditolak", submissionStatus: "REVISI", auditLabel: "Dikembalikan / Revisi", trackingLabel: "Dikembalikan untuk revisi" };
-    if (stage.tahap === 5) return { status: "Disetujui", submissionStatus: "SELESAI", auditLabel: "Validasi Akhir", trackingLabel: "SURAT DITERBITKAN" };
-    return { status: "Disetujui", submissionStatus: STAGE_WAITING_STATUS[stage.tahap + 1], auditLabel: stage.tahap === 3 ? "Persetujuan" : "Verifikasi Pengajuan", trackingLabel: "Disetujui" };
+    if (action === "tolak") return { status: "Ditolak", submissionStatus: "DITOLAK", auditLabel: "TOLAK", trackingLabel: "Ditolak" };
+    if (action === "revisi") return { status: "Ditolak", submissionStatus: "REVISI", auditLabel: "KEMBALIKAN", trackingLabel: "Dikembalikan untuk revisi" };
+    if (stage.tahap === 5) return { status: "Disetujui", submissionStatus: "SELESAI", auditLabel: "VALIDASI_TERBITKAN", trackingLabel: "Surat Terbit" };
+    return { status: "Disetujui", submissionStatus: STAGE_WAITING_STATUS[stage.tahap + 1], auditLabel: auditActionLabel(action, stage), trackingLabel: "Diproses" };
 }
 
 function auditActionLabel(action: Action, stage: StageRow) {
@@ -87,7 +77,7 @@ export async function PATCH(request: NextRequest) {
     if (activeStage.role_petugas !== workflowRole) return jsonError(`Tahap aktif hanya dapat diproses oleh ${activeStage.nama_tahap}.`, 403);
     if (!["Menunggu", "Diproses"].includes(activeStage.status)) return jsonError("Tahap aktif sudah tidak bisa diproses.", 409);
 
-    const { data: pengajuanAktif, error: pengajuanError } = await supabase.from("pengajuan_surat").select("id,status,workflow_status,nomor_surat").eq("id", body.id).maybeSingle();
+    const { data: pengajuanAktif, error: pengajuanError } = await supabase.from("pengajuan_surat").select("id,status,workflow_status").eq("id", body.id).maybeSingle();
     if (pengajuanError) return jsonError(pengajuanError.message, 500);
     if (!pengajuanAktif) return jsonError("Pengajuan tidak ditemukan.", 404);
     if (isFinalSubmissionStatus(String(pengajuanAktif.status))) return jsonError("Pengajuan sudah final dan tidak bisa diproses ulang tanpa pembatalan/revisi resmi.", 409);
@@ -102,37 +92,21 @@ export async function PATCH(request: NextRequest) {
     if (!isReject && activeStage.tahap === 5 && body.action !== "selesai") return jsonError("Tahap Lurah wajib diproses dengan aksi VALIDASI & TERBITKAN SURAT.", 400);
     const decision = actionDecision(body.action, activeStage);
 
-    const { error: verificationError } = await supabase.from("verifikasi_pengajuan").update({ status: decision.status, petugas_id: petugasId, user_id: petugasId, nama_petugas: petugasName, jabatan: session.profile.jabatan ?? stageShortName(activeStage), acted_at: now, approved_at: isReject ? null : now, updated_at: now, catatan: catatan ?? null, hasil_verifikasi: body.hasil_verifikasi?.trim() || null, dokumentasi_url: body.dokumentasi_url?.trim() || null }).eq("id", activeStage.id).in("status", ["Menunggu", "Diproses"]);
+    const { error: verificationError } = await supabase.from("verifikasi_pengajuan").update({ status: decision.status, petugas_id: petugasId, acted_at: now, catatan: catatan ?? null }).eq("id", activeStage.id).in("status", ["Menunggu", "Diproses"]);
     if (verificationError) return jsonError(verificationError.message, 500);
 
     const nextStage = orderedStages.find((stage) => stage.tahap === activeStage.tahap + 1) ?? null;
     const status = decision.submissionStatus;
-    const pengajuanUpdate: Record<string, string | number | null> = { status, workflow_status: status, updated_at: now, catatan_admin: catatan ?? null };
-    if (isReject) pengajuanUpdate.alasan_penolakan = catatan ?? "Ditolak";
+    const pengajuanUpdate: Record<string, string | number | null> = { workflow_status: status, status: isReject ? status : activeStage.tahap === 5 ? "Selesai" : "Diproses", updated_at: now, catatan_admin: catatan ?? null };
     if (!isReject && activeStage.tahap === 5) {
-        const { count } = await supabase.from("pengajuan_surat").select("id", { count: "exact", head: true }).not("nomor_surat", "is", null);
-        const token = crypto.randomBytes(24).toString("hex");
-        const nomorSurat = pengajuanAktif.nomor_surat || createNomorSurat((count ?? 0) + 1);
-        pengajuanUpdate.verified_at = now;
-        pengajuanUpdate.verified_by = petugasId;
-        pengajuanUpdate.alasan_penolakan = null;
-        pengajuanUpdate.validated_by = petugasId;
-        pengajuanUpdate.validated_at = now;
-        pengajuanUpdate.lurah_id = petugasId;
-        pengajuanUpdate.lurah_name = petugasName;
-        pengajuanUpdate.nomor_surat = nomorSurat;
-        pengajuanUpdate.tanggal_surat = now.slice(0, 10);
-        pengajuanUpdate.verification_token = token;
-        pengajuanUpdate.verification_url = `${publicBaseUrl(request)}/verifikasi/${token}`;
-        pengajuanUpdate.final_pdf_url = `/api/surat/${token}/pdf`;
+        pengajuanUpdate.selesai_at = now;
+        pengajuanUpdate.selesai_by = petugasId;
     }
     if (!isReject && activeStage.tahap !== 5) {
         pengajuanUpdate.verified_at = now;
         pengajuanUpdate.verified_by = petugasId;
-        pengajuanUpdate.verified_name = petugasName;
-        pengajuanUpdate.verified_role = workflowRole;
-        pengajuanUpdate.verification_note = catatan ?? null;
-        pengajuanUpdate.alasan_penolakan = null;
+        pengajuanUpdate.diproses_at = now;
+        pengajuanUpdate.diproses_by = petugasId;
     }
 
     const { data, error } = await supabase.from("pengajuan_surat").update(pengajuanUpdate).eq("id", body.id).select("*").single();
@@ -147,27 +121,19 @@ export async function PATCH(request: NextRequest) {
         : activeStage.tahap === 5
             ? [{ pengajuan_id: body.id, status: "SELESAI", keterangan: "Surat divalidasi dan diterbitkan oleh Lurah.", petugas: petugasName, created_at: now }]
             : [
-                { pengajuan_id: body.id, status: activeStage.nama_tahap, keterangan: `Pengajuan diperiksa oleh ${stageShortName(activeStage)}.`, petugas: petugasName, created_at: now },
-                { pengajuan_id: body.id, status: nextStage?.nama_tahap ?? status, keterangan: nextStage ? `Pengajuan diteruskan ke ${stageShortName(nextStage)}.` : "Pengajuan diteruskan.", petugas: petugasName, created_at: now },
+                { pengajuan_id: body.id, status: "Diproses", keterangan: nextStage ? `Pengajuan diteruskan ke ${stageShortName(nextStage)}.` : "Pengajuan diteruskan.", petugas: petugasName, created_at: now },
             ];
     const { error: trackingError } = await supabase.from("tracking_pengajuan").insert(trackingRows);
     if (trackingError) return jsonError(trackingError.message, 500);
 
     const auditPayload = {
         pengajuan_id: body.id,
-        petugas_id: petugasId,
         user_id: petugasId,
-        nama_petugas: petugasName,
-        role: workflowRole.toUpperCase(),
         tahap: STAGE_AUDIT_LABEL[activeStage.tahap] ?? activeStage.nama_tahap,
-        aksi: auditActionLabel(body.action, activeStage),
         action: decision.auditLabel,
         status: decision.trackingLabel,
-        status_sebelum: requiredStatus,
-        status_sesudah: status,
-        jabatan: session.profile.jabatan ?? stageShortName(activeStage),
         catatan: catatan ?? null,
-        metadata: { tahap: activeStage.tahap, next_tahap: nextStage?.tahap ?? null, role: workflowRole, checklist: body.checklist ?? null, hasil_verifikasi: body.hasil_verifikasi ?? null, dokumentasi_url: body.dokumentasi_url ?? null },
+        metadata: { status_sebelum: requiredStatus, status_sesudah: status, tahap: activeStage.tahap, next_tahap: nextStage?.tahap ?? null, role: workflowRole, checklist: body.checklist ?? null, hasil_verifikasi: body.hasil_verifikasi ?? null, dokumentasi_url: body.dokumentasi_url ?? null },
     };
     const { error: auditError } = await supabase.from("audit_pengajuan").insert(auditPayload);
     if (auditError) return jsonError(auditError.message, 500);

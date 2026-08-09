@@ -28,10 +28,19 @@ export async function GET(request: NextRequest) {
     if (docError) return jsonError(docError.message, 500);
     if (verError) return jsonError(verError.message, 500);
     if (trackingError) return jsonError(trackingError.message, 500);
+    const { data: officers, error: officersError } = await supabase.from("petugas").select("id,username,nama_lengkap,jabatan,role,is_active").eq("is_active", true);
+    if (officersError) return jsonError(officersError.message, 500);
+    const officerMap = new Map((officers ?? []).map((officer) => [String(officer.id), officer]));
+
     const docMap = new Map<string, unknown[]>();
     for (const doc of documents ?? []) { const key = String(doc.pengajuan_id ?? ""); if (!docMap.has(key)) docMap.set(key, []); docMap.get(key)?.push(doc); }
     const verMap = new Map<string, unknown[]>();
-    for (const row of verification ?? []) { const key = String(row.pengajuan_id ?? ""); if (!verMap.has(key)) verMap.set(key, []); verMap.get(key)?.push(row); }
+    for (const row of verification ?? []) {
+        const key = String(row.pengajuan_id ?? "");
+        const officer = row.petugas_id ? officerMap.get(String(row.petugas_id)) : null;
+        if (!verMap.has(key)) verMap.set(key, []);
+        verMap.get(key)?.push({ ...row, nama_petugas: officer?.nama_lengkap ?? officer?.username ?? null, petugas_detail: officer ?? null });
+    }
     const trackingMap = new Map<string, unknown[]>();
     for (const row of tracking ?? []) { const key = String(row.pengajuan_id ?? ""); if (!trackingMap.has(key)) trackingMap.set(key, []); trackingMap.get(key)?.push(row); }
     const enrichedTasks = (tasks ?? []).map((item) => ({ ...item, workflow_status: normalizeSubmissionStatus(item.workflow_status ?? item.status), dokumen_pengajuan: docMap.get(String(item.id)) ?? [], verifikasi_pengajuan: verMap.get(String(item.id)) ?? [], tracking_pengajuan: trackingMap.get(String(item.id)) ?? [] }));
@@ -45,7 +54,5 @@ export async function GET(request: NextRequest) {
         if (error) return jsonError(error.message, 500);
         detail = row ? { ...row, workflow_status: normalizeSubmissionStatus(row.workflow_status ?? row.status), dokumen_pengajuan: docMap.get(detailId) ?? [], verifikasi_pengajuan: verMap.get(detailId) ?? [], tracking_pengajuan: trackingMap.get(detailId) ?? [] } : null;
     }
-    const { data: officers, error: officersError } = await supabase.from("petugas").select("id,username,nama_lengkap,jabatan,role,is_active").eq("is_active", true);
-    if (officersError) return jsonError(officersError.message, 500);
     return NextResponse.json({ ok: true, data: { tasks: enrichedTasks, history: audits ?? [], detail, officers: officers ?? [] } });
 }
