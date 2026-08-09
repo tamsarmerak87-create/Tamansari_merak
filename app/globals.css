@@ -419,7 +419,12 @@
   --color-accent-400: #f4b400;
   --color-accent-600: #d99a00;
   --color-accent-700: #a87300;
-  --color-success: #16a34a;
+  --color-success: #4f8b58;
+  --color-green-50: #f3f8f3;
+  --color-green-100: #e3efe4;
+  --color-green-500: #5d9665;
+  --color-green-600: #4f8b58;
+  --color-green-700: #41764a;
   --color-danger: #dc2626;
   --color-border-soft: #ececec;
   --color-slate-650: #536078;
@@ -440,7 +445,7 @@ body {
   margin: 0;
   min-height: 100vh;
   overflow-x: hidden;
-  background: #fffdf8;
+  background: #fdfcf7;
   color: #0f2748;
 }
 
@@ -450,10 +455,10 @@ body::before {
   inset: 0;
   z-index: -2;
   background:
-    radial-gradient(circle at 18% 22%, rgba(248, 232, 176, 0.72), transparent 24rem),
-    radial-gradient(circle at 78% 14%, rgba(244, 180, 0, 0.34), transparent 30rem),
-    radial-gradient(circle at 88% 48%, rgba(15, 39, 72, 0.08), transparent 22rem),
-    linear-gradient(135deg, #fffdf8 0%, #fff8df 52%, #ffffff 100%);
+    radial-gradient(circle at 12% 20%, rgba(244, 201, 93, 0.13), transparent 25rem),
+    radial-gradient(circle at 88% 16%, rgba(115, 169, 119, 0.11), transparent 29rem),
+    radial-gradient(circle at 78% 68%, rgba(244, 201, 93, 0.06), transparent 22rem),
+    linear-gradient(145deg, #fdfcf7 0%, #fffdf8 48%, #f9fcf8 100%);
 }
 
 body::after {
@@ -462,9 +467,9 @@ body::after {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  opacity: 0.36;
-  background-image: radial-gradient(rgba(244, 180, 0, 0.34) 1px, transparent 1px), linear-gradient(rgba(15, 39, 72, 0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(15, 39, 72, 0.045) 1px, transparent 1px);
-  background-size: 22px 22px, 96px 96px, 96px 96px;
+  opacity: 0.16;
+  background-image: radial-gradient(rgba(180, 139, 35, 0.24) 1px, transparent 1px);
+  background-size: 30px 30px;
   mask-image: linear-gradient(to bottom, black, transparent 80%);
 }
 

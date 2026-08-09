@@ -93,7 +93,7 @@ export function Navbar() {
                     <button className="grid size-11 place-items-center rounded-full border border-white/80 bg-white/70 text-gov-900 shadow-soft transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-gov-100" aria-label="Pencarian">
                         <Search size={17} />
                     </button>
-                    <button type="button" onClick={openChat} className="hidden min-h-11 items-center gap-2 rounded-full bg-gov-800 px-5 py-3 text-sm font-black text-white shadow-soft transition hover:-translate-y-0.5 hover:bg-gov-900 focus:outline-none focus:ring-4 focus:ring-gov-100 sm:inline-flex">
+                    <button type="button" onClick={openChat} className="hidden min-h-11 items-center gap-2 rounded-full bg-[#4f8b58] px-5 py-3 text-sm font-black text-white shadow-[0_14px_30px_rgba(79,139,88,.18)] transition hover:-translate-y-0.5 hover:bg-[#41764a] focus:outline-none focus:ring-4 focus:ring-[#d9eadb] sm:inline-flex">
                         <Headset size={16} />
                         <span className="hidden sm:inline">TAMSAR CS</span>
                         <span className="sm:hidden">CS</span>

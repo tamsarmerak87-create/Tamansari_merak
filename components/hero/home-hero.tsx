@@ -1,95 +1,110 @@
 import Image from "next/image";
-import { ArrowRight, BadgeCheck, Clock3, Grid3X3, Headset, MapPin, Send, Sparkles } from "lucide-react";
-import { site } from "@/constants/site";
+import {
+    ArrowRight,
+    CheckCircle2,
+    Eye,
+    HeartHandshake,
+    Leaf,
+    Lightbulb,
+    MonitorSmartphone,
+    Send,
+    ShieldCheck,
+    Sparkles,
+    TimerReset,
+    Users,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MotionShell } from "@/components/common/motion-shell";
-import { HeroStats } from "@/components/stats/hero-stats";
 
 const badges = ["Modern", "Cepat", "Transparan", "Terpercaya"];
 
-const heroInfoCards = [
-    {
-        icon: Clock3,
-        label: "Jam Pelayanan",
-        title: "Senin-Jumat",
-        description: "08.00-16.00 WIB",
-    },
-    {
-        icon: BadgeCheck,
-        label: "Pelayanan Terpadu",
-        title: "33 Layanan",
-        description: "Administrasi, konsultasi, dan pengaduan.",
-    },
-    {
-        icon: MapPin,
-        label: "Kota Cilegon",
-        title: site.city,
-        description: "Portal resmi Kelurahan Tamansari.",
-    },
+const advantages = [
+    { icon: TimerReset, title: "Layanan Cepat", description: "Proses layanan lebih cepat dengan sistem digital.", tone: "gold" },
+    { icon: Eye, title: "Transparan", description: "Informasi jelas dan terbuka untuk semua warga.", tone: "green" },
+    { icon: MonitorSmartphone, title: "Mudah Diakses", description: "Akses layanan kapan saja dan di mana saja.", tone: "gold" },
+    { icon: Leaf, title: "Ramah Lingkungan", description: "Dukung lingkungan hijau dengan layanan digital.", tone: "green" },
+];
+
+const serviceValues = [
+    { icon: HeartHandshake, top: "Melayani dengan", bottom: "Sepenuh Hati" },
+    { icon: ShieldCheck, top: "Bekerja dengan", bottom: "Integritas" },
+    { icon: Users, top: "Berkomitmen untuk", bottom: "Masyarakat" },
+    { icon: Lightbulb, top: "Terdepan dalam", bottom: "Pelayanan" },
 ];
 
 export function HomeHero() {
     return (
-        <section className="relative overflow-hidden px-5 pb-[60px] pt-6 sm:px-10 sm:pb-20 sm:pt-8 lg:px-20 lg:pt-10 xl:pb-[120px]">
-            <div className="pointer-events-none absolute inset-x-0 top-0 -z-20 hidden h-[44rem] bg-[radial-gradient(circle_at_22%_28%,rgba(244,180,0,.26),transparent_24rem),radial-gradient(circle_at_82%_26%,rgba(15,39,72,.18),transparent_28rem)] md:block" />
-            <div className="pointer-events-none absolute inset-0 -z-20 hidden bg-[linear-gradient(rgba(15,39,72,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(15,39,72,0.045)_1px,transparent_1px)] bg-[size:76px_76px] [mask-image:linear-gradient(to_bottom,black,transparent_86%)] md:block" />
-            <div className="pointer-events-none absolute left-[46%] top-16 -z-20 hidden h-72 w-72 rounded-full border-[18px] border-accent-400/24 lg:block" />
-            <div className="pointer-events-none absolute right-10 top-56 -z-20 hidden size-28 rounded-full bg-white/80 shadow-gold lg:block" />
+        <section className="relative overflow-hidden px-5 pb-16 pt-10 sm:px-10 sm:pb-20 sm:pt-14 lg:px-20 lg:pt-16">
+            <div className="pointer-events-none absolute -left-28 top-28 -z-10 size-80 rounded-full bg-[#f4c95d]/10 blur-3xl" />
+            <div className="pointer-events-none absolute -right-20 top-10 -z-10 size-96 rounded-full bg-[#8fbc8f]/10 blur-3xl" />
+            <div className="pointer-events-none absolute right-[7%] top-[38%] -z-10 hidden text-[#71a675]/10 lg:block"><Leaf size={180} strokeWidth={0.7} /></div>
 
-            <div className="relative z-10 mx-auto grid w-full max-w-[1440px] items-center gap-12 md:grid-cols-2 lg:grid-cols-[52fr_48fr] xl:gap-16">
-                <MotionShell className="relative z-10 min-w-0 pt-4 lg:pt-0">
-                    <div className="inline-flex max-w-full flex-wrap items-center gap-2 rounded-full border border-white/80 bg-white/88 px-4 py-2 text-[11px] font-black uppercase tracking-[0.16em] text-gov-800 shadow-soft backdrop-blur-xl sm:text-sm">
-                        <Sparkles size={16} className="text-accent-700" />
-                        {badges.map((badge, index) => <span key={badge}>{index > 0 ? <span className="mx-1 text-accent-600">•</span> : null}{badge}</span>)}
-                    </div>
+            <div className="mx-auto w-full max-w-[1440px]">
+                <div className="grid items-center gap-12 lg:grid-cols-[.9fr_1.1fr] lg:gap-16 xl:gap-24">
+                    <MotionShell className="relative z-10 min-w-0">
+                        <div className="inline-flex max-w-full flex-wrap items-center gap-1.5 rounded-full border border-[#eadcae] bg-white/80 px-4 py-2 text-[10px] font-extrabold uppercase tracking-[0.15em] text-gov-800 shadow-[0_8px_24px_rgba(15,39,72,.06)] backdrop-blur-xl sm:text-xs">
+                            <Sparkles size={15} className="mr-1 text-[#b88a20]" />
+                            {badges.map((badge, index) => <span key={badge}>{index > 0 && <span className="mr-1.5 text-[#6fa273]">•</span>}{badge}</span>)}
+                        </div>
 
-                    <h1 className="mt-5 max-w-[820px] text-balance font-black leading-[1.04] tracking-normal text-gov-950 [font-size:clamp(36px,6vw,72px)]">
-                        Portal Pelayanan Digital <span className="block bg-gradient-to-r from-gov-800 via-accent-700 to-accent-400 bg-clip-text text-transparent">Kelurahan Tamansari</span>
-                    </h1>
+                        <h1 className="mt-6 max-w-2xl text-balance font-black leading-[1.02] tracking-[-0.045em] text-gov-950 [font-size:clamp(42px,5.4vw,76px)]">
+                            Portal<br />Pelayanan Digital<br />
+                            <span className="text-[#c49325]">Kelurahan Tamansari</span>
+                        </h1>
 
-                    <p className="mt-5 w-full max-w-[680px] font-semibold leading-[1.5] text-gov-900/76 [font-size:clamp(18px,2vw,24px)]">
-                        Menghadirkan 33 pelayanan administrasi resmi, pengajuan surat online, pelacakan status permohonan, POSBANKUM, pengaduan masyarakat, dan TAMSAR CS dalam satu platform digital yang cepat, aman, transparan, dan mudah diakses.
-                    </p>
+                        <p className="mt-6 max-w-xl text-base font-medium leading-8 text-slate-650 sm:text-lg">
+                            Sederhanakan layanan, permudah akses informasi,<br className="hidden sm:block" /> untuk warga Tamansari yang lebih baik.
+                        </p>
 
-                    <div className="mt-7 flex flex-col gap-4 sm:flex-row sm:flex-wrap">
-                        <Button href="/surat-online" className="group" aria-label="Ajukan layanan online"><Send size={20} /> Ajukan Layanan <ArrowRight size={17} className="transition group-hover:translate-x-1" /></Button>
-                        <Button href="#layanan" variant="gold" aria-label="Lihat 33 pelayanan"><Grid3X3 size={20} /> Lihat 33 Pelayanan</Button>
-                        <Button href="#chat" variant="glass" aria-label="Chat TAMSAR CS"><Headset size={20} /> Chat TAMSAR CS</Button>
-                    </div>
+                        <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                            <Button href="#layanan" className="group bg-[#4f8b58] shadow-[0_14px_30px_rgba(79,139,88,.20)] hover:bg-[#41764a] focus:ring-[#d9eadb]" aria-label="Lihat layanan">
+                                Lihat Layanan <ArrowRight size={17} className="transition group-hover:translate-x-1" />
+                            </Button>
+                            <Button href="/surat-online" variant="glass" className="border-[#d9c77f] bg-white/85 text-gov-950 hover:border-[#75a77a]" aria-label="Ajukan surat online">
+                                <Send size={18} className="text-[#4f8b58]" /> Ajukan Surat Online
+                            </Button>
+                        </div>
+                    </MotionShell>
 
-                    <HeroStats />
-                </MotionShell>
+                    <MotionShell delay={0.12} className="relative min-w-0">
+                        <div className="pointer-events-none absolute -right-5 -top-5 hidden size-28 rounded-full border border-[#d8be69]/35 lg:block" />
+                        <div className="pointer-events-none absolute -bottom-7 -left-7 hidden size-40 rounded-full bg-[#a9cba9]/20 blur-2xl lg:block" />
+                        <div className="relative aspect-[4/3] w-full overflow-hidden rounded-[2rem] border-[7px] border-white bg-white shadow-[0_28px_70px_rgba(15,39,72,.14)] sm:aspect-[16/11] sm:rounded-[2.5rem]">
+                            <Image src="/assets/kantor-tamansari.jpg" alt="Gedung Kantor Kelurahan Tamansari" fill priority sizes="(min-width: 1024px) 52vw, 100vw" className="object-cover object-center" />
+                            <div className="absolute inset-0 bg-gradient-to-t from-gov-950/10 to-transparent" />
+                        </div>
+                        <div className="absolute -bottom-5 left-4 flex items-center gap-3 rounded-2xl border border-white bg-white/95 px-4 py-3 shadow-[0_16px_40px_rgba(15,39,72,.14)] backdrop-blur-xl sm:bottom-5 sm:left-5 sm:px-5">
+                            <span className="relative flex size-10 items-center justify-center rounded-xl bg-[#e7f2e8] text-[#4f8b58]">
+                                <CheckCircle2 size={21} />
+                                <span className="absolute -right-0.5 -top-0.5 size-2.5 rounded-full border-2 border-white bg-[#4f9d5d]" />
+                            </span>
+                            <span><b className="block text-sm text-gov-950">Layanan Online</b><small className="text-xs font-medium text-slate-650">Kami siap melayani Anda</small></span>
+                        </div>
+                    </MotionShell>
+                </div>
 
-                <MotionShell delay={0.12} className="relative z-10 w-full min-w-0 self-start md:mt-6 lg:mt-0">
-                    <div className="pointer-events-none absolute -left-5 top-10 hidden h-[76%] w-[58%] rounded-[999px] border-[16px] border-accent-400/24 bg-accent-100/20 lg:block" />
-                    <div className="pointer-events-none absolute -right-4 -top-4 hidden size-28 rounded-[2.25rem] bg-accent-400/65 shadow-gold lg:block" />
-                    <div className="pointer-events-none absolute -bottom-5 right-12 hidden size-32 rounded-full bg-white/80 shadow-gold backdrop-blur-2xl lg:block" />
+                <div className="mt-20 grid gap-4 sm:grid-cols-2 lg:mt-24 lg:grid-cols-4">
+                    {advantages.map((item, index) => {
+                        const Icon = item.icon;
+                        const green = item.tone === "green";
+                        return <MotionShell key={item.title} delay={index * 0.06}>
+                            <article className="group h-full rounded-[1.6rem] border border-[#ece8dc] bg-white/90 p-6 shadow-[0_14px_40px_rgba(15,39,72,.06)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_20px_45px_rgba(15,39,72,.10)]">
+                                <div className={`grid size-12 place-items-center rounded-2xl ${green ? "bg-[#e8f2e8] text-[#4f8b58]" : "bg-[#fff5d8] text-[#b4851e]"}`}><Icon size={23} /></div>
+                                <h2 className="mt-5 text-lg font-extrabold text-gov-950">{item.title}</h2>
+                                <p className="mt-2 text-sm leading-6 text-slate-650">{item.description}</p>
+                            </article>
+                        </MotionShell>;
+                    })}
+                </div>
 
-                    <div className="relative aspect-[4/3] w-full overflow-hidden rounded-[32px] border border-white bg-white shadow-[0_28px_80px_rgba(15,39,72,.18)] ring-1 ring-border-soft/80 sm:aspect-[16/11] lg:border-[10px]">
-                        <Image
-                            src="/assets/kantor-tamansari.jpg"
-                            alt="Gedung Kantor Kelurahan Tamansari"
-                            fill
-                            loading="lazy"
-                            sizes="(min-width: 1280px) 45vw, (min-width: 640px) 50vw, 100vw"
-                            className="h-auto max-w-full object-cover object-center"
-                        />
-                    </div>
-
-                    <div className="mt-6 grid gap-3 sm:grid-cols-3 lg:gap-4">
-                        {heroInfoCards.map((card) => {
-                            const Icon = card.icon;
-
-                            return (
-                                <div key={card.label} className="rounded-[18px] border border-white/85 bg-white/92 p-[18px] text-gov-950 shadow-[0_14px_34px_rgba(15,39,72,.09)] backdrop-blur-xl sm:p-5 xl:p-[22px]">
-                                    <div className="mb-4 flex size-10 items-center justify-center rounded-2xl bg-accent-100 text-accent-700 ring-1 ring-accent-400/20">
-                                        <Icon size={20} />
-                                    </div>
-                                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-accent-700 sm:text-[11px]">{card.label}</p>
-                                    <h2 className="mt-2 text-base font-black leading-tight text-gov-950">{card.title}</h2>
-                                    <p className="mt-2 text-sm font-semibold leading-6 text-slate-650">{card.description}</p>
-                                </div>
-                            );
+                <MotionShell delay={0.1} className="mt-7">
+                    <div className="grid overflow-hidden rounded-[1.6rem] border border-[#e8e4d8] bg-white/70 shadow-[0_12px_35px_rgba(15,39,72,.05)] backdrop-blur-xl sm:grid-cols-2 lg:grid-cols-4">
+                        {serviceValues.map((item, index) => {
+                            const Icon = item.icon;
+                            return <div key={item.bottom} className={`flex items-center gap-4 px-6 py-5 ${index > 0 ? "border-t border-[#e8e4d8] sm:border-t-0 sm:[&:nth-child(odd)]:border-l lg:border-l" : ""} ${index === 2 ? "sm:border-t lg:border-t-0" : ""}`}>
+                                <Icon size={24} className={index % 2 ? "text-[#b4851e]" : "text-[#4f8b58]"} />
+                                <p className="text-sm leading-5 text-slate-650">{item.top}<strong className="block font-extrabold text-gov-950">{item.bottom}</strong></p>
+                            </div>;
                         })}
                     </div>
                 </MotionShell>
