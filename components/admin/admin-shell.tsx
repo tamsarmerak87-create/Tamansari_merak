@@ -102,6 +102,57 @@ function officerName(stage?: Row | null) {
   return stage?.petugas?.nama_lengkap ?? stage?.petugas?.username ?? stage?.petugas_nama ?? "Belum diproses";
 }
 
+const stepDefinitions = [
+  { tahap: 1, short: "Staff", label: "Staff Pelayanan" },
+  { tahap: 2, short: "Lapangan", label: "Petugas Lapangan" },
+  { tahap: 3, short: "Kasi", label: "Kasi" },
+  { tahap: 4, short: "Seklur", label: "Seklur" },
+  { tahap: 5, short: "Lurah", label: "Lurah" },
+  { tahap: 6, short: "Terbit", label: "Surat Terbit" },
+] as const;
+
+function stageByNumber(row: Row, tahap: number) {
+  return verificationStages(row).find((stage: Row) => Number(stage.tahap) === tahap);
+}
+
+function stepState(row: Row, tahap: number) {
+  const current = normalizeStatus(row.status);
+  if (tahap === 6) return current === "Selesai" ? "done" : "pending";
+  const stage = stageByNumber(row, tahap);
+  if (stage?.status === "Ditolak") return "rejected";
+  if (stage?.status === "Disetujui") return "done";
+  if (["Menunggu", "Diproses"].includes(String(stage?.status)) && current !== "Ditolak") return "active";
+  return "pending";
+}
+
+function WorkflowMini({ row }: { row: Row }) {
+  return <div className="flex min-w-[210px] flex-wrap gap-1.5">
+    {stepDefinitions.map((step) => {
+      const state = stepState(row, step.tahap);
+      return <span key={step.tahap} className={cn("rounded-full px-2 py-1 text-[11px] font-black", state === "done" ? "bg-emerald-100 text-emerald-800" : state === "active" ? "bg-accent-200 text-gov-950 ring-1 ring-accent-300" : state === "rejected" ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-500")}>
+        {state === "done" ? "✓" : state === "active" ? "●" : state === "rejected" ? "×" : "○"} {step.short}
+      </span>;
+    })}
+  </div>;
+}
+
+function WorkflowStepper({ row }: { row: Row }) {
+  return <div className="overflow-x-auto rounded-[1.5rem] border border-slate-100 bg-white p-4">
+    <div className="flex min-w-[720px] items-center gap-2">
+      {stepDefinitions.map((step, index) => {
+        const state = stepState(row, step.tahap);
+        return <div key={step.tahap} className="flex flex-1 items-center gap-2">
+          <div className={cn("flex min-w-0 flex-1 items-center gap-3 rounded-2xl px-3 py-3", state === "done" ? "bg-emerald-50 text-emerald-800" : state === "active" ? "bg-accent-100 text-gov-950 ring-1 ring-accent-300" : state === "rejected" ? "bg-red-50 text-red-700" : "bg-slate-50 text-slate-500")}>
+            <span className={cn("grid size-8 shrink-0 place-items-center rounded-full text-sm font-black", state === "done" ? "bg-emerald-500 text-white" : state === "active" ? "bg-accent-400 text-gov-950" : state === "rejected" ? "bg-red-600 text-white" : "bg-white text-slate-400")}>{state === "done" ? "✓" : state === "active" ? "●" : state === "rejected" ? "×" : "○"}</span>
+            <span className="truncate text-sm font-black">{step.short}</span>
+          </div>
+          {index < stepDefinitions.length - 1 && <span className="text-slate-300">→</span>}
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+
 function canProcessStage(row: Row, profile?: AdminPortalProfile | null) {
   const stage = activeStage(row);
   const role = profile?.role;
@@ -665,6 +716,7 @@ function Table({
                 <td className="min-w-52">
                   <p className="font-black text-gov-950">{activeStage(r)?.nama_tahap ?? (normalizeStatus(r.status) === "Selesai" ? "Selesai" : "Tidak ada tahap aktif")}</p>
                   <p className="mt-1 text-xs font-bold text-slate-500">{roleLabel(activeStage(r)?.role_petugas)}</p>
+                  <div className="mt-2"><WorkflowMini row={r} /></div>
                 </td>
                 <td>{officerName(activeStage(r))}</td>
                 <td>{r.nama_lengkap}</td>
@@ -703,6 +755,7 @@ function Table({
             </div>
             <div className="mt-4 grid gap-2 text-sm font-bold text-slate-600">
               <p><b className="text-gov-950">Tahap:</b> {activeStage(r)?.nama_tahap ?? (normalizeStatus(r.status) === "Selesai" ? "Selesai" : "Tidak ada tahap aktif")}</p>
+              <WorkflowMini row={r} />
               <p><b className="text-gov-950">Petugas:</b> {officerName(activeStage(r))}</p>
               <p><b className="text-gov-950">NIK:</b> {r.nik}</p>
               <p><b className="text-gov-950">Layanan:</b> {serviceName(r)}</p>
@@ -900,6 +953,29 @@ function ActivityHistory({ rows }: { rows: Row[] }) {
   );
 }
 
+function VerificationHistory({ row }: { row: Row }) {
+  return (
+    <DetailCard icon={History} title="RIWAYAT VERIFIKASI">
+      <div className="space-y-3">
+        {stepDefinitions.slice(0, 5).map((step) => {
+          const stage = stageByNumber(row, step.tahap);
+          const state = stepState(row, step.tahap);
+          const time = stage?.approved_at ?? stage?.acted_at ?? stage?.updated_at;
+          return (
+            <div key={step.tahap} className={cn("rounded-2xl border p-4", state === "done" ? "border-emerald-100 bg-emerald-50" : state === "active" ? "border-accent-200 bg-accent-50" : state === "rejected" ? "border-red-100 bg-red-50" : "border-slate-100 bg-slate-50")}>
+              <p className="font-black text-gov-950">{state === "done" ? "✓" : state === "active" ? "●" : state === "rejected" ? "×" : "○"} {step.label}</p>
+              <p className="mt-1 text-sm font-black text-slate-700">{state === "active" ? "Menunggu validasi" : officerName(stage)}</p>
+              <p className="mt-1 text-xs font-bold text-slate-500">{time ? new Date(time).toLocaleString("id-ID") : "Belum ada tindakan"}</p>
+              <p className="mt-1 text-sm font-bold text-slate-600">{stage?.status ?? (state === "active" ? "Menunggu" : "Belum diproses")}</p>
+              {stage?.catatan && <p className="mt-2 rounded-xl bg-white/80 p-3 text-sm font-bold text-slate-700">Catatan: {stage.catatan}</p>}
+            </div>
+          );
+        })}
+      </div>
+    </DetailCard>
+  );
+}
+
 function DocumentsPanel({ row }: { row: Row }) {
   const docs = Array.isArray(row.dokumen_pengajuan) ? row.dokumen_pengajuan : [];
   return (
@@ -946,7 +1022,9 @@ function SubmissionDetail({
   const current = normalizeStatus(row.status);
   const trackingRows = Array.isArray(row.tracking_pengajuan) ? row.tracking_pengajuan : [];
   const outputDoc = (Array.isArray(row.dokumen_pengajuan) ? row.dokumen_pengajuan : []).find((doc: Row) => String(doc.jenis ?? "").toLowerCase().includes("hasil") || String(doc.nama_file ?? "").toLowerCase().includes("surat"));
-  const outputUrl = outputDoc ? fileUrl(outputDoc) : "";
+  const generatedPdfUrl = row.verification_token ? `/api/surat/${row.verification_token}/pdf` : "";
+  const verifyUrl = row.verification_token ? `/verifikasi/${row.verification_token}` : "";
+  const outputUrl = generatedPdfUrl || (outputDoc ? fileUrl(outputDoc) : "");
   const mayProcessStage = canProcessStage(row, adminProfile);
   const mayComplete = current === "Disetujui";
   return (
@@ -973,6 +1051,7 @@ function SubmissionDetail({
 
       <div className="grid gap-6 xl:grid-cols-[1.35fr_.65fr]">
         <div className="space-y-6">
+          <WorkflowStepper row={row} />
           <SubmissionTimeline row={row} />
           <div className="grid gap-6 lg:grid-cols-2">
             <DetailCard icon={UserRound} title="Identitas Pemohon">
@@ -998,15 +1077,18 @@ function SubmissionDetail({
             </DetailCard>
           </div>
           <DocumentsPanel row={row} />
+          <VerificationHistory row={row} />
         </div>
         <aside className="space-y-6">
           <DetailCard icon={FileDown} title="Output Surat">
             {current === "Selesai" ? (
               <div className="space-y-3">
-                <p className="rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-800">Status sudah Selesai. Surat dapat dicetak atau diunduh dalam format PDF jika file hasil tersedia.</p>
-                <a href={outputUrl || "#"} target="_blank" rel="noreferrer" className={cn("flex items-center justify-center gap-2 rounded-2xl px-5 py-3 font-black", outputUrl ? "bg-gov-950 text-white hover:bg-gov-800" : "pointer-events-none bg-slate-200 text-slate-400")}><Printer size={17} /> Cetak Surat</a>
+                <p className="rounded-2xl bg-emerald-50 p-4 text-sm font-bold text-emerald-800">✓ Surat Terbit. Dokumen final terkunci dan dapat diverifikasi melalui QR publik.</p>
+                <a href={outputUrl || "#"} target="_blank" rel="noreferrer" className={cn("flex items-center justify-center gap-2 rounded-2xl px-5 py-3 font-black", outputUrl ? "bg-gov-950 text-white hover:bg-gov-800" : "pointer-events-none bg-slate-200 text-slate-400")}><Eye size={17} /> Lihat Surat</a>
+                <a href={outputUrl || "#"} target="_blank" rel="noreferrer" className={cn("flex items-center justify-center gap-2 rounded-2xl px-5 py-3 font-black", outputUrl ? "bg-white text-gov-950 ring-1 ring-slate-200 hover:bg-slate-50" : "pointer-events-none bg-slate-200 text-slate-400")}><Printer size={17} /> Cetak</a>
                 <a href={outputUrl || "#"} download className={cn("flex items-center justify-center gap-2 rounded-2xl px-5 py-3 font-black", outputUrl ? "bg-accent-400 text-gov-950 hover:bg-accent-300" : "pointer-events-none bg-slate-200 text-slate-400")}><FileDown size={17} /> Download PDF</a>
-                {!outputUrl && <p className="text-xs font-bold text-slate-500">Upload dokumen hasil surat terlebih dahulu melalui panel Dokumen Pendukung.</p>}
+                <a href={verifyUrl || "#"} target="_blank" rel="noreferrer" className={cn("flex items-center justify-center gap-2 rounded-2xl px-5 py-3 font-black", verifyUrl ? "bg-emerald-600 text-white hover:bg-emerald-700" : "pointer-events-none bg-slate-200 text-slate-400")}><ExternalLink size={17} /> Verifikasi QR</a>
+                {!outputUrl && <p className="text-xs font-bold text-slate-500">Token surat belum tersedia. Jalankan validasi final Lurah agar PDF otomatis diterbitkan.</p>}
               </div>
             ) : (
               <p className="rounded-2xl bg-slate-50 p-4 font-bold text-slate-500">Tombol Cetak Surat dan Download PDF akan aktif setelah status pengajuan menjadi Selesai.</p>

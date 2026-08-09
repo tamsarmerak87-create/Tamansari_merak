@@ -1,4 +1,5 @@
 export type WorkflowRole = "staff_pelayanan" | "petugas_lapangan" | "kepala_seksi" | "seklur" | "lurah";
+export type WorkflowStatus = "MENUNGGU_STAFF" | "MENUNGGU_PETUGAS_LAPANGAN" | "MENUNGGU_KASI" | "MENUNGGU_SEKLUR" | "MENUNGGU_LURAH" | "REVISI" | "DITOLAK" | "SELESAI" | "DIBATALKAN";
 
 export type VerificationStage = {
     tahap: number;
@@ -7,6 +8,7 @@ export type VerificationStage = {
 };
 
 export const VERIFICATION_STATUS = ["Menunggu", "Diproses", "Disetujui", "Ditolak"] as const;
+export const FINAL_STATUSES = ["SELESAI", "DIBATALKAN", "DITOLAK", "Selesai", "Ditolak", "Disetujui"] as const;
 
 export const VERIFICATION_STAGES: VerificationStage[] = [
     { tahap: 1, nama_tahap: "Verifikasi Staff Pelayanan", role_petugas: "staff_pelayanan" },
@@ -15,6 +17,14 @@ export const VERIFICATION_STAGES: VerificationStage[] = [
     { tahap: 4, nama_tahap: "Verifikasi Seklur", role_petugas: "seklur" },
     { tahap: 5, nama_tahap: "Persetujuan Lurah", role_petugas: "lurah" },
 ];
+
+export const STAGE_WAITING_STATUS: Record<number, WorkflowStatus> = {
+    1: "MENUNGGU_STAFF",
+    2: "MENUNGGU_PETUGAS_LAPANGAN",
+    3: "MENUNGGU_KASI",
+    4: "MENUNGGU_SEKLUR",
+    5: "MENUNGGU_LURAH",
+};
 
 export function isWorkflowRole(role?: string | null): role is WorkflowRole {
     return VERIFICATION_STAGES.some((stage) => stage.role_petugas === role);
@@ -28,6 +38,19 @@ export function createVerificationRows(pengajuanId: string) {
         role_petugas: stage.role_petugas,
         status: stage.tahap === 1 ? "Diproses" : "Menunggu",
     }));
+}
+
+export function normalizeSubmissionStatus(status?: string | null): WorkflowStatus | string {
+    if (!status) return "MENUNGGU_STAFF";
+    const normalized = status.toUpperCase().replace(/\s+/g, "_");
+    if (normalized === "MENUNGGU_VERIFIKASI") return "MENUNGGU_STAFF";
+    if (normalized === "DISETUJUI" || normalized === "SELESAI") return "SELESAI";
+    if (normalized === "DITOLAK") return "DITOLAK";
+    return normalized;
+}
+
+export function isFinalSubmissionStatus(status?: string | null) {
+    return FINAL_STATUSES.includes(String(status ?? "") as never) || ["SELESAI", "DIBATALKAN", "DITOLAK"].includes(String(normalizeSubmissionStatus(status)));
 }
 
 export function getActiveStage<T extends { tahap?: number | null; status?: string | null }>(stages?: T[] | null) {
