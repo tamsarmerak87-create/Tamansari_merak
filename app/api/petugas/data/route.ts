@@ -15,10 +15,14 @@ export async function GET(request: NextRequest) {
     const requiredStatus = ROLE_STAGE_STATUS[workflowRole];
     const detailId = request.nextUrl.searchParams.get("id");
 
-    const isLurah = workflowRole === "lurah";
-    const taskQuery = supabase.from("pengajuan_surat").select("*, layanan(*)").order("created_at", { ascending: false });
-    const { data: tasks, error: tasksError } = isLurah ? await taskQuery : await taskQuery.eq("workflow_status", requiredStatus);
+    const taskQuery = supabase.from("pengajuan_surat").select("*, layanan(*)").eq("workflow_status", requiredStatus).order("created_at", { ascending: false });
+    const { data: tasks, error: tasksError } = await taskQuery;
     if (tasksError) return jsonError(tasksError.message, 500);
+    const isLurah = workflowRole === "lurah";
+    const { data: monitoringRows, error: monitoringError } = isLurah
+        ? await supabase.from("pengajuan_surat").select("id,workflow_status,status").order("created_at", { ascending: false })
+        : { data: [], error: null };
+    if (monitoringError) return jsonError(monitoringError.message, 500);
     const ids = Array.from(new Set([...(tasks ?? []).map((item) => item.id), detailId].filter(Boolean)));
     const [{ data: documents, error: docError }, { data: verification, error: verError }, { data: tracking, error: trackingError }] = await Promise.all([
         ids.length ? supabase.from("dokumen_pengajuan").select("*").in("pengajuan_id", ids) : Promise.resolve({ data: [], error: null }),
@@ -45,7 +49,7 @@ export async function GET(request: NextRequest) {
     for (const row of tracking ?? []) { const key = String(row.pengajuan_id ?? ""); if (!trackingMap.has(key)) trackingMap.set(key, []); trackingMap.get(key)?.push(row); }
     const enrichedTasks = (tasks ?? []).map((item) => ({ ...item, workflow_status: normalizeSubmissionStatus(item.workflow_status ?? item.status), dokumen_pengajuan: docMap.get(String(item.id)) ?? [], verifikasi_pengajuan: verMap.get(String(item.id)) ?? [], tracking_pengajuan: trackingMap.get(String(item.id)) ?? [] }));
 
-    const { data: audits, error: auditError } = await supabase.from("audit_pengajuan").select("*, pengajuan:pengajuan_surat(*)").eq("user_id", session.profile.id).order("created_at", { ascending: false });
+    const { data: audits, error: auditError } = await supabase.from("audit_pengajuan").select("*").eq("user_id", session.profile.id).order("created_at", { ascending: false });
     if (auditError) return jsonError(auditError.message, 500);
     let detail = detailId ? enrichedTasks.find((item) => item.id === detailId) ?? null : null;
     if (detailId && !detail) {
@@ -54,5 +58,6 @@ export async function GET(request: NextRequest) {
         if (error) return jsonError(error.message, 500);
         detail = row ? { ...row, workflow_status: normalizeSubmissionStatus(row.workflow_status ?? row.status), dokumen_pengajuan: docMap.get(detailId) ?? [], verifikasi_pengajuan: verMap.get(detailId) ?? [], tracking_pengajuan: trackingMap.get(detailId) ?? [] } : null;
     }
-    return NextResponse.json({ ok: true, data: { tasks: enrichedTasks, history: audits ?? [], detail, officers: officers ?? [] } });
+    const stats = { menunggu: enrichedTasks.length, diproses: 0, dikembalikan: (audits ?? []).filter((item) => /revisi|kembali/i.test(String(item.action ?? item.status ?? ""))).length };
+    return NextResponse.json({ ok: true, petugas: session.profile, stats, tugas: enrichedTasks, data: { tasks: enrichedTasks, history: audits ?? [], detail, officers: officers ?? [], monitoring: monitoringRows ?? [] } });
 }

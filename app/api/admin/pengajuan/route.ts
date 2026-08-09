@@ -129,9 +129,14 @@ export async function PATCH(request: NextRequest) {
     const auditPayload = {
         pengajuan_id: body.id,
         user_id: petugasId,
+        nama_petugas: petugasName,
+        role: workflowRole,
         tahap: STAGE_AUDIT_LABEL[activeStage.tahap] ?? activeStage.nama_tahap,
+        aksi: decision.auditLabel,
         action: decision.auditLabel,
         status: decision.trackingLabel,
+        status_sebelum: requiredStatus,
+        status_sesudah: status,
         catatan: catatan ?? null,
         metadata: { status_sebelum: requiredStatus, status_sesudah: status, tahap: activeStage.tahap, next_tahap: nextStage?.tahap ?? null, role: workflowRole, checklist: body.checklist ?? null, hasil_verifikasi: body.hasil_verifikasi ?? null, dokumentasi_url: body.dokumentasi_url ?? null },
     };

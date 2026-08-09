@@ -27,7 +27,7 @@ export function isPetugasRole(role?: string | null): role is PetugasRole {
 }
 
 export async function getAdminSession(request: NextRequest) {
-    const petugasId = request.cookies.get("tamsar_admin_session")?.value;
+    const petugasId = request.cookies.get("tamsar_petugas_session")?.value ?? request.cookies.get("tamsar_admin_session")?.value;
     if (!petugasId) return { error: "UNAUTHENTICATED" as const, profile: null };
 
     const supabase = createSupabaseAdminClient();
