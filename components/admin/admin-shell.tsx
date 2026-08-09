@@ -235,6 +235,21 @@ function workflowStatusLabel(row: Row) {
   return labels[current] ?? normalizeStatus(row.status);
 }
 
+function workflowStatusDisplay(row: Row) {
+  const current = normalizedWorkflowStatus(row);
+  const labels: Record<string, string> = {
+    MENUNGGU_STAFF: "MENUNGGU STAFF PELAYANAN",
+    MENUNGGU_PETUGAS_LAPANGAN: "MENUNGGU PETUGAS LAPANGAN",
+    MENUNGGU_KASI: "MENUNGGU KASI",
+    MENUNGGU_SEKLUR: "MENUNGGU SEKLUR",
+    MENUNGGU_LURAH: "MENUNGGU LURAH",
+    REVISI: "REVISI",
+    DITOLAK: "DITOLAK",
+    SELESAI: "SELESAI",
+  };
+  return labels[current] ?? String(normalizeStatus(row.status)).toUpperCase();
+}
+
 function accessLabel(row: Row, profile?: AdminPortalProfile | null) {
   const stage = activeStage(row);
   if (profile?.role === "admin") return "Administrator - Monitoring";
@@ -250,7 +265,8 @@ function fileUrl(row: Row) {
 
 function statusBadgeClass(status?: string | null) {
   const normalized = normalizeStatus(status);
-  if (String(status ?? '').startsWith('Menunggu ')) return "bg-amber-100 text-amber-800 ring-amber-200";
+  const raw = String(status ?? "").toUpperCase();
+  if (raw.includes("MENUNGGU") || normalized === "Menunggu") return "bg-amber-100 text-amber-800 ring-amber-200";
   if (normalized === "Selesai") return "bg-emerald-100 text-emerald-800 ring-emerald-200";
   if (normalized === "Disetujui") return "bg-cyan-100 text-cyan-800 ring-cyan-200";
   if (normalized === "Diproses") return "bg-blue-100 text-blue-800 ring-blue-200";
@@ -462,17 +478,15 @@ export function AdminShell({
   };
   const exportCsv = () => {
     const csv = [
-      "Nomor Pengajuan,Tanggal,Nama Pemohon,NIK,Jenis Layanan,Status,Tahap Saat Ini,Petugas Saat Ini",
+      "Nomor,Tanggal,Pemohon,Layanan,Tahap,Status",
       ...filtered.map((r) =>
         [
           r.nomor_pengajuan,
           formatDate(r.created_at),
           r.nama_lengkap,
-          r.nik,
           serviceName(r),
-          normalizeStatus(r.status),
-          activeStage(r)?.nama_tahap ?? (normalizeStatus(r.status) === "Selesai" ? "Selesai" : "-"),
-          officerName(activeStage(r)),
+          workflowStageKey(r),
+          trackingStatusLabel(r),
         ].map(csvCell).join(","),
       ),
     ].join("\n");
@@ -631,7 +645,7 @@ export function AdminShell({
             <WargaVerificationTable rows={pendingWarga} onVerify={verifyWarga} onReject={rejectWarga} />
           </Panel>
         ) : view === "pengajuan" ? (
-          <Panel title="Data Pengajuan">
+          <Panel title="Pengajuan Surat">
             <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-7">
               <div className="rounded-2xl bg-slate-50 px-3 py-2 xl:col-span-2">
                 <Search size={16} className="inline" />{" "}
@@ -832,7 +846,7 @@ function Table({
 }) {
   return (
     <div className="overflow-x-auto rounded-[1.5rem] border border-slate-100 bg-white">
-      <table className="min-w-[860px] w-full text-sm">
+      <table className="w-full min-w-[820px] text-sm">
         <thead className="bg-slate-50 text-left text-xs font-black uppercase tracking-[.14em] text-slate-500">
           <tr><th className="px-4 py-4">Nomor</th><th className="px-4 py-4">Tanggal</th><th className="px-4 py-4">Pemohon</th><th className="px-4 py-4">Layanan</th><th className="px-4 py-4">Tahap</th><th className="px-4 py-4">Status</th><th className="px-4 py-4">Action</th></tr>
         </thead>
@@ -843,8 +857,8 @@ function Table({
               <td className="px-4 py-4 font-bold text-slate-700">{formatDate(r.created_at)}</td>
               <td className="px-4 py-4"><p className="font-black text-gov-950">{r.nama_lengkap ?? "-"}</p></td>
               <td className="px-4 py-4 font-bold text-slate-700">{serviceName(r)}</td>
-              <td className="px-4 py-4"><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">{stageShort(r)}</span></td>
-              <td className="px-4 py-4"><StatusBadge status={workflowStatusLabel(r)} /></td>
+              <td className="px-4 py-4"><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">{workflowStageKey(r)}</span></td>
+              <td className="px-4 py-4"><StatusBadge status={trackingStatusLabel(r)} /></td>
               <td className="px-4 py-4"><div className="flex flex-wrap gap-2"><button type="button" onClick={() => onDetail(r)} className="rounded-xl bg-slate-100 px-3 py-2 font-black text-slate-700 hover:bg-slate-200"><Eye className="inline" size={14} /> Detail</button>{canProcessStage(r, adminProfile) && <button type="button" onClick={() => onVerify(r)} className="rounded-xl bg-gov-950 px-3 py-2 font-black text-white hover:bg-gov-800"><ShieldCheck className="inline" size={14} /> Verifikasi</button>}</div></td>
             </tr>
           ))}
@@ -1123,8 +1137,8 @@ function Td({ children, strong = false }: { children: React.ReactNode; strong?: 
 function stageTableStatus(row: Row, tahap: number) {
   const state = stepState(row, tahap);
   if (state === "done") return "✓ Disetujui";
-  if (state === "active") return "Menunggu";
-  if (state === "rejected") return "Ditolak";
+  if (state === "active") return "● Menunggu";
+  if (state === "rejected") return "× Ditolak";
   return "○ Belum";
 }
 
@@ -1145,7 +1159,6 @@ function SubmissionDetail({
   setToast: (t: Toast) => void;
   adminProfile: AdminPortalProfile | null;
 }) {
-  const current = normalizeStatus(row.status);
   const docs = Array.isArray(row.dokumen_pengajuan) ? row.dokumen_pengajuan : [];
   const generatedPdfUrl = row.verification_token ? `/api/surat/${row.verification_token}/pdf` : "";
   const verifyUrl = row.verification_token ? `/verifikasi/${row.verification_token}` : "";
@@ -1157,26 +1170,21 @@ function SubmissionDetail({
   const notes = stageRows.filter(({ stage }) => stage?.catatan);
   const canAct = canProcessStage(row, adminProfile);
 
-  const primaryLabel = active?.tahap === 5 ? "✓ VALIDASI & TERBITKAN" : active?.role_petugas === "kasi" ? "✓ SETUJUI" : active?.role_petugas === "seklur" ? "✓ AJUKAN KE LURAH" : active?.role_petugas === "lurah" ? "✓ VALIDASI & TERBITKAN" : active?.role_petugas === "lapangan" ? "✓ VERIFIKASI LAPANGAN" : "✓ VERIFIKASI";
-  const stagePill = active ? roleLabel(active.role_petugas) : "-";
+  const primaryLabel = active?.role_petugas === "lurah" ? "✓ VALIDASI & TERBITKAN" : active?.role_petugas === "seklur" ? "✓ AJUKAN KE LURAH" : active?.role_petugas === "kepala_seksi" ? "✓ SETUJUI" : active?.role_petugas === "petugas_lapangan" ? "✓ VERIFIKASI LAPANGAN" : "✓ VERIFIKASI";
 
   return (
     <div className="mx-auto max-w-[1160px] space-y-4">
       <section className="rounded-[1.5rem] border border-slate-100 bg-white p-5 shadow-sm">
-        <p className="text-xs font-black uppercase tracking-[.2em] text-slate-500">Pengajuan Surat</p>
+        <p className="text-xs font-black uppercase tracking-[.2em] text-slate-500">PENGAJUAN SURAT</p>
         <h1 className="mt-2 text-2xl font-black text-gov-950">{row.nomor_pengajuan ?? "-"}</h1>
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
           <div>
             <p className="text-[11px] font-black uppercase tracking-[.16em] text-slate-400">Jenis layanan</p>
             <p className="mt-1 font-black text-gov-950">{serviceName(row)}</p>
           </div>
           <div>
             <p className="text-[11px] font-black uppercase tracking-[.16em] text-slate-400">Status</p>
-            <div className="mt-1"><StatusBadge status={workflowStatusLabel(row)} /></div>
-          </div>
-          <div>
-            <p className="text-[11px] font-black uppercase tracking-[.16em] text-slate-400">Tahap aktif</p>
-            <p className="mt-1 inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">{stagePill}</p>
+            <p className={cn("mt-1 inline-flex rounded-full px-3 py-1 text-xs font-black ring-1", statusBadgeClass(workflowStatusDisplay(row)))}>{workflowStatusDisplay(row)}</p>
           </div>
         </div>
       </section>
@@ -1293,7 +1301,6 @@ function SubmissionDetail({
           ) : (
             <p className="rounded-2xl bg-slate-50 p-4 font-black text-slate-600">{accessLabel(row, adminProfile)}</p>
           )}
-          <Upload id={row.id} setToast={setToast} />
         </div>
       </SectionBox>
     </div>
