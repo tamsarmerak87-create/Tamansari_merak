@@ -20,8 +20,15 @@ export function middleware(request: NextRequest) {
     const { pathname } = request.nextUrl;
     if (isAdminProtectedPath(pathname)) {
         const adminSessionToken = request.cookies.has("tamsar_admin_session");
+        const petugasSessionToken = request.cookies.has("tamsar_petugas_session");
         const response = NextResponse.next();
         response.headers.set("x-tamsar-admin-role-required", "admin");
+        if (!adminSessionToken && petugasSessionToken) {
+            const url = request.nextUrl.clone();
+            url.pathname = "/petugas/dashboard";
+            url.searchParams.set("error", "forbidden");
+            return NextResponse.redirect(url);
+        }
         if (!adminSessionToken) {
             const url = request.nextUrl.clone();
             url.pathname = "/admin/login";

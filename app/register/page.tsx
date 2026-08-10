@@ -6,6 +6,7 @@ import { CheckCircle2, Loader2, UserPlus, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AuthField, AuthShell, authInputClass } from "@/components/auth/auth-ui";
 import { registerWarga, wargaRegisterSchema, type WargaRegisterInput } from "@/services/warga-auth.service";
+import { getFriendlyMessage } from "@/lib/messages";
 
 const empty: WargaRegisterInput = { nama_lengkap: "", nik: "", nomor_kk: "", email: "", nomor_whatsapp: "", tempat_lahir: "", tanggal_lahir: "", jenis_kelamin: "", alamat: "", rt: "", rw: "", kelurahan: "Tamansari", kecamatan: "Pulomerak", password: "", confirmPassword: "", terms: false };
 type Toast = { type: "success" | "error" | "loading"; message: string } | null;
@@ -30,38 +31,28 @@ export default function RegisterPage() {
     async function submit(event: FormEvent) {
         event.preventDefault();
         try {
-            console.log("[RegisterPage] Tombol Daftar Sekarang ditekan");
             setLoading(true);
             setErrors({});
             setToast({ type: "loading", message: "Memvalidasi data pendaftaran..." });
             const manualErrors = validateBeforeSubmit();
-            console.log("[RegisterPage] Validasi manual selesai", manualErrors);
             if (Object.keys(manualErrors).length > 0) {
                 setErrors(manualErrors);
                 setToast({ type: "error", message: Object.values(manualErrors)[0] ?? "Periksa kembali data pendaftaran." });
                 return;
             }
             const parsed = wargaRegisterSchema.safeParse(form);
-            console.log("[RegisterPage] Zod validation response", parsed);
-            console.log("[RegisterPage] Zod validation data", parsed.success ? parsed.data : null);
             if (!parsed.success) {
                 const fieldErrors = Object.fromEntries(parsed.error.issues.map((item) => [String(item.path[0]), item.message]));
-                console.error("[RegisterPage] Zod validation error", parsed.error);
                 setErrors(fieldErrors);
                 setToast({ type: "error", message: parsed.error.issues[0]?.message ?? "Validasi pendaftaran gagal." });
                 return;
             }
-            setToast({ type: "loading", message: "Membuat akun Supabase Auth..." });
-            console.log("[RegisterPage] Memanggil registerWarga() - service akan memanggil supabase.auth.signUp() terlebih dahulu");
-            const response = await registerWarga(parsed.data);
-            console.log("[RegisterPage] registerWarga response", response);
-            console.log("[RegisterPage] registerWarga data", response);
+            setToast({ type: "loading", message: "Membuat akun warga..." });
+            await registerWarga(parsed.data);
             setToast({ type: "success", message: "Akun berhasil dibuat. Mengalihkan ke halaman verifikasi..." });
-            console.log("[RegisterPage] Redirect ke /verify dijadwalkan");
             window.setTimeout(() => router.push("/verify"), 700);
         } catch (error) {
-            console.error("[RegisterPage] Registrasi gagal", error);
-            const message = error instanceof Error ? error.message : "Terjadi kesalahan tidak dikenal saat mendaftar.";
+            const message = getFriendlyMessage(error, "Registrasi belum berhasil. Silakan periksa data dan coba lagi.");
             setToast({ type: "error", message });
         } finally {
             setLoading(false);

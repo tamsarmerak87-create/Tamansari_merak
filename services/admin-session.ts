@@ -1,7 +1,7 @@
 import { type NextRequest } from "next/server";
 import { createSupabaseAdminClient } from "@/services/supabase";
 
-export const allowedRoles = [
+export const workflowRoles = [
     "admin",
     "staff_pelayanan",
     "petugas_lapangan",
@@ -10,7 +10,11 @@ export const allowedRoles = [
     "lurah",
 ] as const;
 
-export type PetugasRole = (typeof allowedRoles)[number];
+export type WorkflowRole = (typeof workflowRoles)[number];
+
+export type AdminRole = "admin";
+
+export type PetugasRole = Exclude<WorkflowRole, "admin">;
 
 export type PetugasProfile = {
     id: string;
@@ -18,20 +22,24 @@ export type PetugasProfile = {
     nama_lengkap?: string | null;
     nip?: string | null;
     jabatan?: string | null;
-    role: PetugasRole;
+    role: WorkflowRole;
     is_active: boolean;
 };
 
+export function isAdminRole(role?: string | null): role is AdminRole {
+    return role === "admin";
+}
+
 export function isPetugasRole(role?: string | null): role is PetugasRole {
-    return allowedRoles.includes(role as PetugasRole);
+    return workflowRoles.includes(role as WorkflowRole) && role !== "admin";
 }
 
 export function isAdmin(user?: { role?: string | null } | null) {
-    return user?.role === "admin";
+    return isAdminRole(user?.role);
 }
 
 export function isPetugas(user?: { role?: string | null } | null) {
-    return Boolean(user?.role && isPetugasRole(user.role) && user.role !== "admin");
+    return Boolean(user?.role && isPetugasRole(user.role));
 }
 
 export function requireAdmin(user?: { role?: string | null } | null) {
@@ -68,7 +76,11 @@ export async function getAdminSession(request: NextRequest, options: { cookie?: 
         .eq("is_active", true)
         .maybeSingle();
 
-    if (error || !data || !isPetugasRole(data.role)) return { error: "FORBIDDEN" as const, profile: null };
+    if (error || !data || (!isAdminRole(data.role) && !isPetugasRole(data.role))) return { error: "FORBIDDEN" as const, profile: null };
 
     return { error: null, profile: data as PetugasProfile };
+}
+
+export function requirePetugas(user?: { role?: string | null } | null) {
+    return isPetugas(user) ? null : "FORBIDDEN" as const;
 }

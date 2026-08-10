@@ -1,6 +1,6 @@
-import { allowedRoles, type PetugasRole } from "@/services/admin-session";
+import { isAdmin, isPetugas, type WorkflowRole } from "@/services/admin-session";
 
-export type AdminPortalRole = PetugasRole;
+export type AdminPortalRole = WorkflowRole;
 
 export type AdminPortalUser = {
     id: string;
@@ -32,11 +32,11 @@ type PetugasRow = {
 };
 
 export function isAdminPortalRole(role?: string | null): role is AdminPortalRole {
-    return allowedRoles.includes(role as AdminPortalRole);
+    return isAdmin(role ? { role } : null) || isPetugas(role ? { role } : null);
 }
 
 function mapPetugasToAdminProfile(row: PetugasRow): AdminPortalProfile {
-    const normalizedRole: AdminPortalRole = isAdminPortalRole(row.role) ? row.role : "staff_pelayanan";
+    const normalizedRole: AdminPortalRole = isAdminPortalRole(row.role) ? (row.role as AdminPortalRole) : "staff_pelayanan";
     return {
         id: row.id,
         user_id: row.id,

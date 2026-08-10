@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { NextResponse, type NextRequest } from "next/server";
-import { isAdmin, isPetugasRole } from "@/services/admin-session";
+import { isAdmin } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
 
 type PetugasRow = {
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
 
         const row = petugas as PetugasRow | null;
         if (!row?.password_hash) return failedResponse();
-        if (!isPetugasRole(row.role) || !isAdmin(row) || row.is_active !== true) return failedResponse();
+        if (!isAdmin(row) || row.is_active !== true) return failedResponse();
 
         const isBcryptHash = /^\$2[aby]\$\d{2}\$/.test(row.password_hash);
         const passwordValid = isBcryptHash
