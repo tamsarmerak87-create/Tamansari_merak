@@ -177,24 +177,6 @@ export function Navbar() {
                                 </div>
 
                                 <div className="mt-8 space-y-2">
-                                    <div className="rounded-2xl border border-border-soft bg-gov-50/50 p-3">
-                                        <p className="flex items-center gap-2 px-2 pb-2 text-xs font-black uppercase tracking-[.18em] text-accent-600"><UserRound size={14} /> Akun Warga</p>
-                                        {user ? (
-                                            <>
-                                                <p className="rounded-2xl bg-white px-4 py-3 text-sm font-black text-gov-950">{profile?.nama_lengkap ?? "Akun Warga"}</p>
-                                                {!isVerified(profile) ? <p className="mt-2 rounded-2xl bg-amber-50 px-4 py-3 text-xs font-bold leading-5 text-amber-700">Akun Anda sedang menunggu verifikasi.</p> : null}
-                                                <div className="my-2 h-px bg-gov-100" />
-                                                {wargaMenu.map(({ label, href, icon: Icon }) => <Link key={href} href={href as Route} onClick={() => setOpen(false)} className="flex items-center justify-between rounded-2xl px-4 py-3 text-base font-bold text-gov-950 transition hover:bg-white"><span className="flex items-center gap-3"><Icon size={18} className="text-gov-800" />{label}</span><ChevronRight size={18} className="text-slate-400" /></Link>)}
-                                                <button type="button" onClick={signOut} className="flex w-full items-center justify-between rounded-2xl px-4 py-3 text-base font-bold text-red-600 transition hover:bg-white">Keluar<LogOut size={18} /></button>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Link href="/login" onClick={() => setOpen(false)} className="flex items-center justify-between rounded-2xl px-4 py-3 text-base font-bold text-gov-950 transition hover:bg-white"><span className="flex items-center gap-3"><LogIn size={18} className="text-gov-800" />Masuk</span><ChevronRight size={18} className="text-slate-400" /></Link>
-                                                <Link href="/register" onClick={() => setOpen(false)} className="flex items-center justify-between rounded-2xl px-4 py-3 text-base font-bold text-gov-950 transition hover:bg-white"><span className="flex items-center gap-3"><UserPlus size={18} className="text-gov-800" />Daftar Akun</span><ChevronRight size={18} className="text-slate-400" /></Link>
-                                                <Link href="/login?mode=forgot" onClick={() => setOpen(false)} className="flex items-center justify-between rounded-2xl px-4 py-3 text-base font-bold text-gov-950 transition hover:bg-white"><span className="flex items-center gap-3"><KeyRound size={18} className="text-gov-800" />Lupa Password</span><ChevronRight size={18} className="text-slate-400" /></Link>
-                                            </>
-                                        )}
-                                    </div>
                                     {mobileNav.map((item) => (
                                         <Link
                                             key={item.href}
@@ -229,6 +211,7 @@ export function Navbar() {
         </header>
     );
 }
+
 
 
 
