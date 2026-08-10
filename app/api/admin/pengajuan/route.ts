@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getAdminSession, isAdmin } from "@/services/admin-session";
+import { getAdminSession, isAdmin, requireAdmin } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
 import { ROLE_STAGE_STATUS, STAGE_WAITING_STATUS, VERIFICATION_STAGES, getActiveStage, isFinalSubmissionStatus, normalizeSubmissionStatus, normalizeWorkflowRole } from "@/services/verification-workflow";
 
@@ -41,8 +41,9 @@ function auditActionLabel(action: Action, stage: StageRow) {
 }
 
 export async function PATCH(request: NextRequest) {
-    const session = await getAdminSession(request);
+    const session = await getAdminSession(request, { cookie: "admin" });
     if (session.error || !session.profile) return jsonError("Session admin tidak valid.", 401);
+    if (requireAdmin(session.profile)) return jsonError("Akses khusus admin.", 403);
 
     const supabase = createSupabaseAdminClient();
     if (!supabase) return jsonError("Supabase service role belum dikonfigurasi.", 500);

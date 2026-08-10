@@ -47,8 +47,15 @@ export function requireActiveAdmin(user?: { role?: string | null; is_active?: bo
     return requireAdmin(user);
 }
 
-export async function getAdminSession(request: NextRequest) {
-    const petugasId = request.cookies.get("tamsar_admin_session")?.value ?? request.cookies.get("tamsar_petugas_session")?.value;
+type SessionCookieScope = "admin" | "petugas" | "any";
+
+export async function getAdminSession(request: NextRequest, options: { cookie?: SessionCookieScope } = {}) {
+    const cookie = options.cookie ?? "any";
+    const petugasId = cookie === "admin"
+        ? request.cookies.get("tamsar_admin_session")?.value
+        : cookie === "petugas"
+            ? request.cookies.get("tamsar_petugas_session")?.value
+            : request.cookies.get("tamsar_admin_session")?.value ?? request.cookies.get("tamsar_petugas_session")?.value;
     if (!petugasId) return { error: "UNAUTHENTICATED" as const, profile: null };
 
     const supabase = createSupabaseAdminClient();

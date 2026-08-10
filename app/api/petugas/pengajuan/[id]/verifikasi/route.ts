@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getAdminSession } from "@/services/admin-session";
+import { getAdminSession, isPetugas } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
 import { normalizeWorkflowRole } from "@/services/verification-workflow";
 
@@ -13,8 +13,9 @@ function trackingMessage(stage: StageRow) { return stage.tahap === 5 ? "Pengajua
 
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
     const { id } = await context.params;
-    const session = await getAdminSession(request);
+    const session = await getAdminSession(request, { cookie: "petugas" });
     if (session.error || !session.profile) return jsonError("Session petugas tidak valid.", 401);
+    if (!isPetugas(session.profile)) return jsonError("Akses khusus petugas.", 403);
     if (session.profile.is_active === false) return jsonError("Akun petugas tidak aktif.", 403);
 
     const workflowRole = normalizeWorkflowRole(session.profile.role);

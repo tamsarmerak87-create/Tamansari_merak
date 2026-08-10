@@ -1,10 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getAdminSession } from "@/services/admin-session";
+import { getAdminSession, requireAdmin } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
 
 export async function GET(request: NextRequest) {
-    const session = await getAdminSession(request);
+    const session = await getAdminSession(request, { cookie: "admin" });
     if (session.error || !session.profile) return NextResponse.json({ ok: false }, { status: 401 });
+    if (requireAdmin(session.profile)) return NextResponse.json({ ok: false }, { status: 403 });
 
     const petugasId = session.profile.id;
 

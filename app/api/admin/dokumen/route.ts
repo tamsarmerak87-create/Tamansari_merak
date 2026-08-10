@@ -7,7 +7,7 @@ function jsonError(message: string, status = 400) {
 }
 
 export async function POST(request: NextRequest) {
-    const session = await getAdminSession(request);
+    const session = await getAdminSession(request, { cookie: "admin" });
     if (session.error) return jsonError("Session admin tidak valid.", 401);
     const adminOnlyError = requireAdmin(session.profile);
     if (adminOnlyError) return jsonError("Hanya admin yang dapat mengunggah dokumen admin.", 403);

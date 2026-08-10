@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getAdminSession } from "@/services/admin-session";
+import { getAdminSession, requireAdmin } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
 import { updateSubmissionStatus } from "@/services/surat-online.service";
 
@@ -45,10 +45,9 @@ export async function GET() {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const session = await getAdminSession(request);
-    if (session.error || !session.profile) {
-      return NextResponse.json({ ok: false, error: "Session admin tidak valid." }, { status: 401 });
-    }
+    const session = await getAdminSession(request, { cookie: "admin" });
+    if (session.error || !session.profile) return NextResponse.json({ ok: false, error: "Session admin tidak valid." }, { status: 401 });
+    if (requireAdmin(session.profile)) return NextResponse.json({ ok: false, error: "Akses khusus admin." }, { status: 403 });
 
     const body = await request.json() as { id?: string; status?: string; catatan?: string; file_surat_url?: string };
     if (!body.id || !body.status) {

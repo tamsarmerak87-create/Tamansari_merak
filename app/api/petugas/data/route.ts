@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getAdminSession } from "@/services/admin-session";
+import { getAdminSession, isPetugas } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
 import { normalizeWorkflowRole } from "@/services/verification-workflow";
 
@@ -22,8 +22,9 @@ function groupBy<T extends AnyRow>(rows: T[], key: keyof T): Map<string, T[]> { 
 function activeStatusFromStages(stages: AnyRow[] = []) { return stages.find((stage) => stage.status === "Diproses")?.nama_tahap ?? (stages.every((stage) => stage.status === "Disetujui") ? "Selesai" : "Menunggu"); }
 
 export async function GET(request: NextRequest) {
-    const session = await getAdminSession(request);
+    const session = await getAdminSession(request, { cookie: "petugas" });
     if (session.error || !session.profile) return jsonError("Session petugas tidak valid.", 401);
+    if (!isPetugas(session.profile)) return jsonError("Akses khusus petugas.", 403);
     const workflowRole = normalizeWorkflowRole(session.profile.role);
     if (!workflowRole) return jsonError("Role petugas tidak memiliki kewenangan workflow.", 403);
 

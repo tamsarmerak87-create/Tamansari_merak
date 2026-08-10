@@ -16,7 +16,7 @@ function jsonError(message: string, status = 400) {
 }
 
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
-    const session = await getAdminSession(request);
+    const session = await getAdminSession(request, { cookie: "admin" });
     if (session.error) return jsonError("Session admin tidak valid.", 401);
     const adminOnlyError = requireAdmin(session.profile);
     if (adminOnlyError) return jsonError("Hanya Administrator yang dapat melihat detail petugas.", 403);
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
 }
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
-    const session = await getAdminSession(request);
+    const session = await getAdminSession(request, { cookie: "admin" });
     if (session.error) return jsonError("Session admin tidak valid.", 401);
     const adminOnlyError = requireAdmin(session.profile);
     if (adminOnlyError) return jsonError("Hanya Administrator yang dapat mengubah petugas.", 403);
@@ -69,7 +69,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 }
 
 export async function DELETE(request: NextRequest, context: { params: Promise<{ id: string }> }) {
-    const session = await getAdminSession(request);
+    const session = await getAdminSession(request, { cookie: "admin" });
     if (session.error) return jsonError("Session admin tidak valid.", 401);
     const adminOnlyError = requireAdmin(session.profile);
     if (adminOnlyError) return jsonError("Hanya Administrator yang dapat menghapus petugas.", 403);

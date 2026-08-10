@@ -11,7 +11,7 @@ type VerificationRequestBody = {
 
 export async function PATCH(request: NextRequest) {
     try {
-        const session = await getAdminSession(request);
+        const session = await getAdminSession(request, { cookie: "admin" });
         if (session.error || !session.profile) {
             return NextResponse.json({ ok: false, error: "Sesi admin/petugas tidak valid." }, { status: 401 });
         }
