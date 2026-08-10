@@ -59,6 +59,17 @@ export async function getCurrentAdminPortalUser(): Promise<{ user: AdminPortalUs
     };
 }
 
+export async function getCurrentPetugasPortalUser(): Promise<{ user: AdminPortalUser | null; profile: AdminPortalProfile | null }> {
+    const response = await fetch("/api/petugas/auth/me", { credentials: "include", cache: "no-store" });
+    if (response.status === 401 || response.status === 403) return { user: null, profile: null };
+    if (!response.ok) throw new Error("Gagal memeriksa sesi petugas.");
+    const data = (await response.json()) as { user: AdminPortalUser | null; profile: PetugasRow | null };
+    return {
+        user: data.user,
+        profile: data.profile ? mapPetugasToAdminProfile(data.profile) : null,
+    };
+}
+
 export async function loginAdminPortal(username: string, password: string) {
     const response = await fetch("/api/admin/auth/login", {
         method: "POST",
@@ -73,6 +84,26 @@ export async function loginAdminPortal(username: string, password: string) {
 
     const data = (await response.json()) as { user: AdminPortalUser; profile: PetugasRow };
     return { user: data.user, profile: mapPetugasToAdminProfile(data.profile) };
+}
+
+export async function loginPetugasPortal(username: string, password: string) {
+    const response = await fetch("/api/petugas/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ username, password }),
+    });
+
+    if (!response.ok) {
+        throw new Error("Username atau password salah.");
+    }
+
+    const data = (await response.json()) as { user: AdminPortalUser; profile: PetugasRow };
+    return { user: data.user, profile: mapPetugasToAdminProfile(data.profile) };
+}
+
+export async function logoutPetugasPortal() {
+    await fetch("/api/petugas/auth/logout", { method: "POST", credentials: "include" });
 }
 
 export async function logoutAdminPortal() {

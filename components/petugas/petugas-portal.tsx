@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Menu, X } from "lucide-react";
-import { getCurrentAdminPortalUser, loginAdminPortal, logoutAdminPortal, type AdminPortalProfile } from "@/services/admin-auth.service";
+import { AdminPortalProfile, getCurrentPetugasPortalUser, loginPetugasPortal, logoutPetugasPortal } from "@/services/admin-auth.service";
 import { subscribeToTable } from "@/services/supabase";
 import { cn } from "@/utils/cn";
 
@@ -30,7 +30,7 @@ export function PetugasLogin() {
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
-    async function submit(e: React.FormEvent) { e.preventDefault(); setLoading(true); setError(""); try { await loginAdminPortal(username, password); router.replace("/petugas/dashboard"); } catch { setError("Username atau password salah."); } finally { setLoading(false); } }
+    async function submit(e: React.FormEvent) { e.preventDefault(); setLoading(true); setError(""); try { await loginPetugasPortal(username, password); router.replace("/petugas/dashboard"); } catch { setError("Username atau password salah."); } finally { setLoading(false); } }
     return <main className="grid min-h-screen place-items-center bg-gov-950 px-4"><form onSubmit={submit} className="w-full max-w-md rounded-[2rem] bg-white p-8 shadow-2xl"><p className="text-xs font-black uppercase tracking-[0.35em] text-accent-500">Portal Petugas</p><h1 className="mt-2 text-3xl font-black text-gov-950">Kelurahan Tamansari</h1><label className="mt-8 block text-sm font-bold text-slate-700">Username<input className="mt-2 w-full rounded-2xl border px-4 py-3" value={username} onChange={(e) => setUsername(e.target.value)} /></label><label className="mt-4 block text-sm font-bold text-slate-700">Password<input className="mt-2 w-full rounded-2xl border px-4 py-3" type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>{error && <p className="mt-3 text-sm font-bold text-red-600">{error}</p>}<button disabled={loading} className="mt-6 w-full rounded-2xl bg-accent-400 px-5 py-3 font-black text-gov-950">{loading ? "MEMERIKSA..." : "MASUK"}</button></form></main>;
 }
 
@@ -38,9 +38,9 @@ export function PetugasPortal({ view, id }: { view: View; id?: string }) {
     const pathname = usePathname(); const router = useRouter();
     const [profile, setProfile] = useState<AdminPortalProfile | null>(null); const [rows, setRows] = useState<Row[]>([]); const [monitoring, setMonitoring] = useState<Row[]>([]); const [history, setHistory] = useState<Row[]>([]); const [detail, setDetail] = useState<Row | null>(null); const [officers, setOfficers] = useState<Row[]>([]); const [open, setOpen] = useState(false); const [loading, setLoading] = useState(true);
     const load = useCallback(async () => { const res = await fetch(`/api/petugas/data${id ? `?id=${id}` : ""}`, { cache: "no-store", credentials: "include" }); const json = await res.json(); if (!res.ok || !json.ok) throw new Error(json.error ?? "Gagal memuat data petugas."); setRows(json.data?.tasks ?? json.tugas ?? []); setMonitoring(json.data?.monitoring ?? []); setHistory(json.data?.history ?? []); setDetail(json.data?.detail ?? null); setOfficers(json.data?.officers ?? []); setLoading(false); }, [id]);
-    useEffect(() => { (async () => { const me = await getCurrentAdminPortalUser(); if (!me.profile) { router.replace(`/petugas/login?next=${pathname}`); return; } setProfile(me.profile); await load().catch(() => setLoading(false)); })(); }, [load, pathname, router]);
+    useEffect(() => { (async () => { const me = await getCurrentPetugasPortalUser(); if (!me.profile) { router.replace(`/petugas/login?next=${pathname}`); return; } setProfile(me.profile); await load().catch(() => setLoading(false)); })(); }, [load, pathname, router]);
     useEffect(() => { if (!profile) return; const a = subscribeToTable("pengajuan_surat", () => void load()); const b = subscribeToTable("verifikasi_pengajuan", () => void load()); const t = setInterval(() => void load(), 30000); return () => { void a.unsubscribe(); void b.unsubscribe(); clearInterval(t); }; }, [profile, load]);
-    async function logout() { await logoutAdminPortal(); router.replace("/petugas/login"); }
+    async function logout() { await logoutPetugasPortal(); router.replace("/petugas/login"); }
     if (loading || !profile) return <main className="grid min-h-screen place-items-center bg-slate-50 font-bold text-gov-950">Memuat portal petugas...</main>;
     const isLurah = profile.role === "lurah"; const myRows = isLurah ? rows : rows.filter((r) => r.active_stage?.role_petugas === profile.role); const latest = myRows.slice(0, 5); const processed = history.length; const returned = history.filter((h) => /revisi|kembali/i.test(String(h.action ?? h.status ?? h.aksi ?? ""))).length;
     const nav = [["Dashboard", "/petugas/dashboard"], [isLurah ? "Monitoring Pengajuan" : "Tugas Saya", "/petugas/tugas"], ["Riwayat Saya", "/petugas/riwayat"], ["Profil", "/petugas/profil"]];

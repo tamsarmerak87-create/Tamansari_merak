@@ -118,10 +118,6 @@ export function sanitizeWargaProfileUpdatePayload(profile: Partial<WargaProfile>
 
 function client() {
     const supabase = createSupabaseBrowserClient();
-    console.log("Supabase env check", {
-        hasUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
-        hasAnonKey: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
-    });
     if (!supabase) throw new Error("Supabase env belum dikonfigurasi. Periksa NEXT_PUBLIC_SUPABASE_URL dan NEXT_PUBLIC_SUPABASE_ANON_KEY.");
     return supabase;
 }
@@ -162,16 +158,9 @@ export async function getCurrentWarga() {
 
 export async function registerWarga(input: WargaRegisterInput) {
     try {
-        console.log("[registerWarga] Step 1 - Validasi input dimulai");
         const payload = wargaRegisterSchema.parse(input);
         const supabase = client();
-        console.log("[registerWarga] Step 1 - Validasi input berhasil", {
-            email: payload.email,
-            nik: payload.nik,
-            nama_lengkap: payload.nama_lengkap,
-        });
 
-        console.log("[registerWarga] Step 2 - Memanggil API registrasi atomik", { email: payload.email, nik: payload.nik });
         const response = await fetch("/api/warga/register", {
             method: "POST",
             headers: { "content-type": "application/json" },
@@ -182,14 +171,12 @@ export async function registerWarga(input: WargaRegisterInput) {
             throw new Error(result?.error || "Registrasi gagal. Akun Auth tidak dibuat atau sudah dibersihkan karena profil gagal dibuat.");
         }
 
-        console.log("[registerWarga] Step 3 - API registrasi sukses, membuat session browser", { user_id: result.user.id });
         const signInResponse = await supabase.auth.signInWithPassword({ email: payload.email, password: payload.password });
         if (signInResponse.error) {
             throw new Error(`Akun dan profil berhasil dibuat, tetapi login otomatis gagal: ${signInResponse.error.message}. Silakan login manual.`);
         }
         return { user: signInResponse.data.user ?? result.user, profile: result.profile };
     } catch (error) {
-        console.error("[registerWarga] Registrasi gagal", error);
         throw error;
     }
 }
@@ -225,10 +212,17 @@ export async function logoutWarga() {
 export async function updateWargaProfile(profile: Partial<WargaProfile>) {
     const { user } = await getCurrentWarga();
     if (!user) throw new Error("Silakan login terlebih dahulu.");
-    const profileData = sanitizeWargaProfileUpdatePayload(profile);
+    const blocked = new Set(["id", "role", "status_verifikasi", "user_id", "nik", "nomor_kk", "email", "alasan_penolakan", "created_at", "updated_at"]);
+    const profileData = Object.fromEntries(Object.entries(sanitizeWargaProfileUpdatePayload(profile)).filter(([key]) => !blocked.has(key)));
     const { data, error } = await client().from("warga_profiles").update(profileData).eq("id", user.id).select("*").single();
     if (error) throw error;
     return data as WargaProfile;
+}
+
+export async function updateWargaPassword(password: string) {
+    if (password.length < 8) throw new Error("Password minimal 8 karakter.");
+    const { error } = await client().auth.updateUser({ password });
+    if (error) throw error;
 }
 
 export async function getWargaSubmissions(profile?: WargaProfile | null) {

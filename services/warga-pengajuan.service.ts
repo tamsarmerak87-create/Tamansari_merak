@@ -21,6 +21,25 @@ export type DokumenPengajuan = {
     status?: string | null;
 };
 
+export type WargaNotification = {
+    id: string;
+    title: string;
+    message: string;
+    type: "pengajuan" | "dokumen" | "profil" | "system";
+    read: boolean;
+    created_at?: string | null;
+    pengajuan_id?: string | null;
+};
+
+export type WargaDashboardData = {
+    profile: WargaProfile | null;
+    pengajuan: WargaPengajuan[];
+    notifikasi: WargaNotification[];
+    dokumen: DokumenPengajuan[];
+    favorit: WargaFavorit[];
+    fitur: { favoritAvailable: boolean; notifikasiAvailable: boolean };
+};
+
 export type WargaPengajuan = {
     id: string;
     nomor_pengajuan?: string | null;
@@ -74,6 +93,7 @@ const PENGAJUAN_COLUMNS = "id,nomor_pengajuan,nik,nomor_kk,nama_lengkap,tempat_l
 const TRACKING_COLUMNS = "id,pengajuan_id,status,keterangan,petugas,created_at";
 const DOKUMEN_COLUMNS = "id,pengajuan_id,nama_file,jenis,url_file,created_at";
 let favoritTableAvailable: boolean | null = null;
+let notifikasiTableAvailable: boolean | null = null;
 
 function normalizeRows(rows: WargaPengajuan[] | null | undefined, layananById = new Map<string, { id?: string; nama?: string | null; deskripsi?: string | null }>(), trackingByPengajuanId = new Map<string, TrackingPengajuan[]>(), dokumenByPengajuanId = new Map<string, DokumenPengajuan[]>()) {
     return (rows ?? []).map((row) => ({
@@ -93,28 +113,22 @@ async function hydrateRows(rows: WargaPengajuan[], profile?: WargaProfile | null
     const trackingByPengajuanId = new Map<string, TrackingPengajuan[]>();
     const dokumenByPengajuanId = new Map<string, DokumenPengajuan[]>();
 
-    if (profile !== undefined) console.log("[DASHBOARD WARGA] profile:", profile);
-    console.log("[DASHBOARD WARGA] pengajuan:", rows);
-    console.log("[DASHBOARD WARGA] pengajuanIds:", pengajuanIds);
-
     if (layananIds.length > 0) {
         const { data, error } = await supabase.from("layanan").select("id,nama,deskripsi").in("id", layananIds);
-        if (error) console.error("[DASHBOARD WARGA]", error);
+        if (error) throw error;
         (data ?? []).forEach((item) => layananById.set(item.id, item));
     }
 
     if (pengajuanIds.length > 0) {
         const { data, error } = await supabase.from("tracking_pengajuan").select(TRACKING_COLUMNS).in("pengajuan_id", pengajuanIds).order("created_at", { ascending: true });
-        if (error) console.error("[DASHBOARD WARGA]", error);
+        if (error) throw error;
         ((data ?? []) as TrackingPengajuan[]).forEach((track) => {
             const key = track.pengajuan_id ?? "";
             trackingByPengajuanId.set(key, [...(trackingByPengajuanId.get(key) ?? []), track]);
         });
 
         const { data: dokumen, error: dokumenError } = await supabase.from("dokumen_pengajuan").select(DOKUMEN_COLUMNS).in("pengajuan_id", pengajuanIds).order("created_at", { ascending: false });
-        console.log("[DASHBOARD WARGA] dokumen:", dokumen);
-        console.log("[DASHBOARD WARGA] dokumenError:", dokumenError);
-        if (dokumenError) console.error("[DASHBOARD WARGA] dokumenError:", dokumenError);
+        if (dokumenError) throw dokumenError;
         ((dokumen ?? []) as DokumenPengajuan[]).map((doc) => ({
             ...doc,
             nomor_pengajuan: pengajuanMap.get(doc.pengajuan_id ?? "")?.nomor_pengajuan ?? "-",
@@ -123,9 +137,6 @@ async function hydrateRows(rows: WargaPengajuan[], profile?: WargaProfile | null
             const key = doc.pengajuan_id ?? "";
             dokumenByPengajuanId.set(key, [...(dokumenByPengajuanId.get(key) ?? []), doc]);
         });
-    } else {
-        console.log("[DASHBOARD WARGA] dokumen:", []);
-        console.log("[DASHBOARD WARGA] dokumenError:", null);
     }
 
     return normalizeRows(rows, layananById, trackingByPengajuanId, dokumenByPengajuanId);
@@ -154,7 +165,6 @@ export async function getMyPengajuan() {
         .order("created_at", { ascending: false });
 
     if (error) throw error;
-    console.log("[PENGAJUAN WARGA]", data);
     return hydrateRows(data as WargaPengajuan[], profile);
 }
 
@@ -188,10 +198,126 @@ export async function getMyFavorit() {
     return (data ?? []) as unknown as WargaFavorit[];
 }
 
+export function isFavoritAvailable() {
+    return favoritTableAvailable !== false;
+}
+
+export function isNotifikasiAvailable() {
+    return notifikasiTableAvailable !== false;
+}
+
+export async function addMyFavorit(layananId: string) {
+    if (favoritTableAvailable === false) return { available: false };
+    const { user } = await getCurrentWargaProfile();
+    if (!user) throw new Error("Silakan login terlebih dahulu.");
+    const { error } = await client().from("warga_favorit").insert({ warga_id: user.id, layanan_id: layananId });
+    if (error?.code === "42P01" || error?.message?.toLowerCase().includes("could not find the table")) {
+        favoritTableAvailable = false;
+        return { available: false };
+    }
+    if (error) throw error;
+    favoritTableAvailable = true;
+    return { available: true };
+}
+
 export async function removeMyFavorit(id: string) {
     if (favoritTableAvailable === false) return;
     const { user } = await getCurrentWargaProfile();
     if (!user) throw new Error("Silakan login terlebih dahulu.");
     const { error } = await client().from("warga_favorit").delete().eq("id", id).eq("warga_id", user.id);
     if (error) throw error;
+}
+
+function statusMessage(status?: string | null) {
+    const value = (status ?? "").toLowerCase();
+    if (value.includes("tolak")) return "Pengajuan Anda ditolak. Periksa keterangan terbaru.";
+    if (value.includes("setuju")) return "Pengajuan Anda telah disetujui.";
+    if (value.includes("verifikasi")) return "Pengajuan Anda sedang diverifikasi.";
+    if (value.includes("selesai")) return "Pengajuan Anda telah selesai.";
+    return "Pengajuan Anda sedang diproses.";
+}
+
+export function buildTrackingNotifications(items: WargaPengajuan[]) {
+    return items.flatMap((item) => (item.tracking_pengajuan ?? []).map((track) => ({
+        id: `tracking-${track.id ?? item.id}-${track.created_at ?? ""}`,
+        title: track.status ? `Status ${track.status}` : "Update Pengajuan",
+        message: track.keterangan || statusMessage(track.status || item.status),
+        type: "pengajuan" as const,
+        read: true,
+        created_at: track.created_at,
+        pengajuan_id: item.id,
+    }))).sort((a, b) => new Date(b.created_at ?? "").getTime() - new Date(a.created_at ?? "").getTime());
+}
+
+export async function getMyNotifikasi(pengajuan?: WargaPengajuan[]) {
+    if (notifikasiTableAvailable === false) return buildTrackingNotifications(pengajuan ?? []);
+    const { user } = await getCurrentWargaProfile();
+    if (!user) return [];
+    const { data, error } = await client().from("warga_notifikasi").select("id,judul,pesan,jenis,is_read,created_at,pengajuan_id").eq("warga_id", user.id).order("created_at", { ascending: false });
+    if (error?.code === "42P01" || error?.message?.toLowerCase().includes("could not find the table")) {
+        notifikasiTableAvailable = false;
+        return buildTrackingNotifications(pengajuan ?? []);
+    }
+    if (error) throw error;
+    notifikasiTableAvailable = true;
+    return (data ?? []).map((item) => ({ id: item.id, title: item.judul ?? "Notifikasi", message: item.pesan ?? "Ada pembaruan data.", type: item.jenis ?? "system", read: Boolean(item.is_read), created_at: item.created_at, pengajuan_id: item.pengajuan_id })) as WargaNotification[];
+}
+
+export async function markNotificationRead(id: string) {
+    if (notifikasiTableAvailable === false || id.startsWith("tracking-")) return;
+    const { user } = await getCurrentWargaProfile();
+    if (!user) throw new Error("Silakan login terlebih dahulu.");
+    const { error } = await client().from("warga_notifikasi").update({ is_read: true }).eq("id", id).eq("warga_id", user.id);
+    if (error) throw error;
+}
+
+export async function markAllNotificationsRead() {
+    if (notifikasiTableAvailable === false) return;
+    const { user } = await getCurrentWargaProfile();
+    if (!user) throw new Error("Silakan login terlebih dahulu.");
+    const { error } = await client().from("warga_notifikasi").update({ is_read: true }).eq("warga_id", user.id).eq("is_read", false);
+    if (error) throw error;
+}
+
+export async function deleteNotification(id: string) {
+    if (notifikasiTableAvailable === false || id.startsWith("tracking-")) return;
+    const { user } = await getCurrentWargaProfile();
+    if (!user) throw new Error("Silakan login terlebih dahulu.");
+    const { error } = await client().from("warga_notifikasi").delete().eq("id", id).eq("warga_id", user.id);
+    if (error) throw error;
+}
+
+export function getMyDocumentsFromPengajuan(items: WargaPengajuan[]) {
+    return items.flatMap((item) => (item.dokumen_pengajuan ?? []).filter((doc) => Boolean(doc.url_file)).map((doc) => ({
+        ...doc,
+        nomor_pengajuan: doc.nomor_pengajuan ?? item.nomor_pengajuan ?? "-",
+        status: doc.status ?? item.status ?? "-",
+        created_at: doc.created_at ?? item.created_at,
+    })));
+}
+
+export async function uploadMyDokumen(file: File, jenis = "Dokumen Pendukung") {
+    if (!file || file.size === 0) throw new Error("File kosong.");
+    if (file.size > 5 * 1024 * 1024) throw new Error("Ukuran file terlalu besar.");
+    const allowed = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
+    if (!allowed.includes(file.type)) throw new Error("Format file belum didukung.");
+    const { user, profile } = await getCurrentWargaProfile();
+    if (!user || !profile?.nik) throw new Error("Silakan login terlebih dahulu.");
+    const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 80);
+    const path = `warga/${user.id}/${Date.now()}-${safeName || `dokumen.${ext}`}`;
+    const supabase = client();
+    const upload = await supabase.storage.from("surat").upload(path, file, { upsert: false, contentType: file.type });
+    if (upload.error) throw upload.error;
+    return { url_file: supabase.storage.from("surat").getPublicUrl(path).data.publicUrl, nama_file: file.name, jenis };
+}
+
+export async function getWargaDashboardData(): Promise<WargaDashboardData> {
+    const { profile } = await getCurrentWargaProfile();
+    const pengajuan = await getMyPengajuan();
+    const [favorit, notifikasi] = await Promise.all([
+        getMyFavorit().catch(() => []),
+        getMyNotifikasi(pengajuan).catch(() => buildTrackingNotifications(pengajuan)),
+    ]);
+    return { profile, pengajuan, notifikasi, dokumen: getMyDocumentsFromPengajuan(pengajuan), favorit, fitur: { favoritAvailable: isFavoritAvailable(), notifikasiAvailable: isNotifikasiAvailable() } };
 }
