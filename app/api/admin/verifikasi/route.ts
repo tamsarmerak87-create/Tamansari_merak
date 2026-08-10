@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getAdminSession } from "@/services/admin-session";
+import { getAdminSession, requireAdmin } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
 
 type VerificationRequestBody = {
@@ -14,6 +14,10 @@ export async function PATCH(request: NextRequest) {
         const session = await getAdminSession(request);
         if (session.error || !session.profile) {
             return NextResponse.json({ ok: false, error: "Sesi admin/petugas tidak valid." }, { status: 401 });
+        }
+        const adminOnlyError = requireAdmin(session.profile);
+        if (adminOnlyError) {
+            return NextResponse.json({ ok: false, error: "Hanya admin yang dapat memverifikasi akun warga." }, { status: 403 });
         }
 
         const body = (await request.json()) as VerificationRequestBody;

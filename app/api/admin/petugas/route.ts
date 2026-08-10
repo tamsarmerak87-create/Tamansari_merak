@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { NextResponse, type NextRequest } from "next/server";
-import { getAdminSession, isPetugasRole } from "@/services/admin-session";
+import { getAdminSession, isPetugasRole, requireAdmin } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
 
 type PetugasPayload = {
@@ -20,7 +20,8 @@ function jsonError(message: string, status = 400) {
 export async function GET(request: NextRequest) {
     const session = await getAdminSession(request);
     if (session.error) return jsonError("Session admin tidak valid.", 401);
-    if (session.profile?.role !== "admin") return jsonError("Hanya Administrator yang dapat mengelola petugas.", 403);
+    const adminOnlyError = requireAdmin(session.profile);
+    if (adminOnlyError) return jsonError("Hanya Administrator yang dapat mengelola petugas.", 403);
     const supabase = createSupabaseAdminClient();
     if (!supabase) return jsonError("Supabase service role belum dikonfigurasi.", 500);
 
@@ -36,7 +37,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
     const session = await getAdminSession(request);
     if (session.error) return jsonError("Session admin tidak valid.", 401);
-    if (session.profile?.role !== "admin") return jsonError("Hanya Administrator yang dapat menambah petugas.", 403);
+    const adminOnlyError = requireAdmin(session.profile);
+    if (adminOnlyError) return jsonError("Hanya Administrator yang dapat menambah petugas.", 403);
     const supabase = createSupabaseAdminClient();
     if (!supabase) return jsonError("Supabase service role belum dikonfigurasi.", 500);
 

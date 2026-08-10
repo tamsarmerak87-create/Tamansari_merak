@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { NextResponse, type NextRequest } from "next/server";
-import { isPetugasRole } from "@/services/admin-session";
+import { isPetugas } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
 
 const failedResponse = () => NextResponse.json({ ok: false, message: "Username atau password salah." }, { status: 401 });
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
             .eq("is_active", true)
             .maybeSingle();
 
-        if (error || !petugas?.password_hash || !isPetugasRole(petugas.role)) return failedResponse();
+        if (error || !petugas?.password_hash || !isPetugas(petugas)) return failedResponse();
         const isBcryptHash = /^\$2[aby]\$\d{2}\$/.test(petugas.password_hash);
         const valid = isBcryptHash ? await bcrypt.compare(password, petugas.password_hash) : false;
         if (!valid) return failedResponse();

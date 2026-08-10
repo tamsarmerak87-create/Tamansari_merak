@@ -26,8 +26,29 @@ export function isPetugasRole(role?: string | null): role is PetugasRole {
     return allowedRoles.includes(role as PetugasRole);
 }
 
+export function isAdmin(user?: { role?: string | null } | null) {
+    return user?.role === "admin";
+}
+
+export function isPetugas(user?: { role?: string | null } | null) {
+    return Boolean(user?.role && isPetugasRole(user.role) && user.role !== "admin");
+}
+
+export function requireAdmin(user?: { role?: string | null } | null) {
+    return isAdmin(user) ? null : "FORBIDDEN" as const;
+}
+
+export function hasFullAdminAccess(user?: { role?: string | null } | null) {
+    return isAdmin(user);
+}
+
+export function requireActiveAdmin(user?: { role?: string | null; is_active?: boolean | null } | null) {
+    if (!user || user.is_active === false) return "UNAUTHENTICATED" as const;
+    return requireAdmin(user);
+}
+
 export async function getAdminSession(request: NextRequest) {
-    const petugasId = request.cookies.get("tamsar_petugas_session")?.value ?? request.cookies.get("tamsar_admin_session")?.value;
+    const petugasId = request.cookies.get("tamsar_admin_session")?.value ?? request.cookies.get("tamsar_petugas_session")?.value;
     if (!petugasId) return { error: "UNAUTHENTICATED" as const, profile: null };
 
     const supabase = createSupabaseAdminClient();

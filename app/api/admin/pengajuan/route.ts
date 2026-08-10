@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getAdminSession } from "@/services/admin-session";
+import { getAdminSession, isAdmin } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
 import { ROLE_STAGE_STATUS, STAGE_WAITING_STATUS, VERIFICATION_STAGES, getActiveStage, isFinalSubmissionStatus, normalizeSubmissionStatus, normalizeWorkflowRole } from "@/services/verification-workflow";
 
@@ -66,15 +66,16 @@ export async function PATCH(request: NextRequest) {
 
     if (session.profile.is_active === false) return jsonError("Akun petugas tidak aktif.", 403);
 
+    const adminHasFullAccess = isAdmin(session.profile);
     const workflowRole = normalizeWorkflowRole(session.profile.role);
-    if (!workflowRole) return jsonError("Role petugas tidak memiliki kewenangan workflow verifikasi.", 403);
+    if (!adminHasFullAccess && !workflowRole) return jsonError("Role petugas tidak memiliki kewenangan workflow verifikasi.", 403);
 
     const { data: stages, error: stageError } = await supabase.from("verifikasi_pengajuan").select("id,tahap,nama_tahap,role_petugas,status").eq("pengajuan_id", body.id).order("tahap", { ascending: true });
     if (stageError) return jsonError(stageError.message, 500);
     const orderedStages = (stages ?? []) as StageRow[];
     const activeStage = getActiveStage(orderedStages);
     if (!activeStage) return jsonError("Tidak ada tahap aktif yang dapat diproses.", 409);
-    if (activeStage.role_petugas !== workflowRole) return jsonError(`Tahap aktif hanya dapat diproses oleh ${activeStage.nama_tahap}.`, 403);
+    if (!adminHasFullAccess && activeStage.role_petugas !== workflowRole) return jsonError(`Tahap aktif hanya dapat diproses oleh ${activeStage.nama_tahap}.`, 403);
     if (!["Menunggu", "Diproses"].includes(activeStage.status)) return jsonError("Tahap aktif sudah tidak bisa diproses.", 409);
 
     const { data: pengajuanAktif, error: pengajuanError } = await supabase.from("pengajuan_surat").select("id,status,workflow_status").eq("id", body.id).maybeSingle();
@@ -82,8 +83,8 @@ export async function PATCH(request: NextRequest) {
     if (!pengajuanAktif) return jsonError("Pengajuan tidak ditemukan.", 404);
     if (isFinalSubmissionStatus(String(pengajuanAktif.status))) return jsonError("Pengajuan sudah final dan tidak bisa diproses ulang tanpa pembatalan/revisi resmi.", 409);
     const normalizedSubmissionStatus = normalizeSubmissionStatus(String(pengajuanAktif.workflow_status ?? pengajuanAktif.status));
-    const requiredStatus = ROLE_STAGE_STATUS[workflowRole];
-    if (normalizedSubmissionStatus !== requiredStatus) return jsonError(`${roleLabelForError(workflowRole)} hanya boleh memproses status ${requiredStatus}.`, 403);
+    const requiredStatus = adminHasFullAccess ? STAGE_WAITING_STATUS[activeStage.tahap] : ROLE_STAGE_STATUS[workflowRole!];
+    if (normalizedSubmissionStatus !== requiredStatus) return jsonError(`${adminHasFullAccess ? "Administrator" : roleLabelForError(workflowRole!)} hanya boleh memproses status ${requiredStatus}.`, 403);
     if (STAGE_WAITING_STATUS[activeStage.tahap] !== requiredStatus) return jsonError("Tahap workflow aktif tidak sesuai dengan status pengajuan.", 409);
 
     const isReject = body.action === "tolak" || body.action === "revisi";
@@ -130,7 +131,7 @@ export async function PATCH(request: NextRequest) {
         pengajuan_id: body.id,
         user_id: petugasId,
         nama_petugas: petugasName,
-        role: workflowRole,
+        role: adminHasFullAccess ? "admin" : workflowRole!,
         tahap: STAGE_AUDIT_LABEL[activeStage.tahap] ?? activeStage.nama_tahap,
         aksi: decision.auditLabel,
         action: decision.auditLabel,
@@ -138,7 +139,7 @@ export async function PATCH(request: NextRequest) {
         status_sebelum: requiredStatus,
         status_sesudah: status,
         catatan: catatan ?? null,
-        metadata: { status_sebelum: requiredStatus, status_sesudah: status, tahap: activeStage.tahap, next_tahap: nextStage?.tahap ?? null, role: workflowRole, checklist: body.checklist ?? null, hasil_verifikasi: body.hasil_verifikasi ?? null, dokumentasi_url: body.dokumentasi_url ?? null },
+        metadata: { status_sebelum: requiredStatus, status_sesudah: status, tahap: activeStage.tahap, next_tahap: nextStage?.tahap ?? null, role: adminHasFullAccess ? "admin" : workflowRole!, checklist: body.checklist ?? null, hasil_verifikasi: body.hasil_verifikasi ?? null, dokumentasi_url: body.dokumentasi_url ?? null },
     };
     const { error: auditError } = await supabase.from("audit_pengajuan").insert(auditPayload);
     if (auditError) return jsonError(auditError.message, 500);

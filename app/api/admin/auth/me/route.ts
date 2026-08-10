@@ -1,10 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { isPetugasRole } from "@/services/admin-session";
+import { getAdminSession } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
 
 export async function GET(request: NextRequest) {
-    const petugasId = request.cookies.get("tamsar_admin_session")?.value;
-    if (!petugasId) return NextResponse.json({ ok: false }, { status: 401 });
+    const session = await getAdminSession(request);
+    if (session.error || !session.profile) return NextResponse.json({ ok: false }, { status: 401 });
+
+    const petugasId = session.profile.id;
 
     const supabase = createSupabaseAdminClient();
     if (!supabase) return NextResponse.json({ ok: false, message: "Supabase service role belum dikonfigurasi." }, { status: 500 });
@@ -21,10 +23,6 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ ok: false }, { status: 401 });
     }
     if (!petugas) return NextResponse.json({ ok: false }, { status: 401 });
-
-    if (!isPetugasRole((petugas as { role?: string | null }).role)) {
-        return NextResponse.json({ ok: false }, { status: 403 });
-    }
 
     const safeProfile = petugas as { id: string; username: string };
     return NextResponse.json({

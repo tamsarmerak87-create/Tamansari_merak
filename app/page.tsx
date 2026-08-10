@@ -62,7 +62,7 @@ export default async function HomePage() {
             <section id="galeri-kegiatan" className="mx-auto max-w-[1320px] px-4 pb-16 sm:px-8 sm:pb-20 lg:px-12 lg:pb-24">
                 <MotionShell>
                     <div className="relative overflow-hidden rounded-[28px] border border-accent-200/50 bg-white/80 p-5 shadow-soft backdrop-blur-xl sm:rounded-[32px] sm:p-7">
-                        <div className="absolute -right-14 -top-14 h-56 w-56 rounded-full bg-green-200/25 blur-3xl" />
+                        <div className="absolute -right-14 -top-14 h-56 w-56 rounded-full bg-gov-100/25 blur-3xl" />
                         <div className="relative mb-7 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                             <div>
                                 <Badge><Images className="h-4 w-4" /> Galeri Kegiatan</Badge>
@@ -86,9 +86,9 @@ export default async function HomePage() {
             {/* TAMSAR CS */}
             <section id="chat" className="mx-auto max-w-[1320px] px-4 pb-16 sm:px-8 sm:pb-20 lg:px-12 lg:pb-24">
                 <MotionShell>
-                    <div className="relative overflow-hidden rounded-[28px] bg-green-700 p-7 text-white shadow-glass sm:rounded-[32px] sm:p-10 lg:p-12">
+                    <div className="relative overflow-hidden rounded-[28px] bg-gov-900 p-7 text-white shadow-glass sm:rounded-[32px] sm:p-10 lg:p-12">
                         <div className="absolute right-0 top-0 h-72 w-72 translate-x-1/3 -translate-y-1/3 rounded-full bg-accent-400/20 blur-3xl" />
-                        <div className="absolute bottom-0 left-0 h-60 w-60 -translate-x-1/4 translate-y-1/4 rounded-full bg-green-500/15 blur-3xl" />
+                        <div className="absolute bottom-0 left-0 h-60 w-60 -translate-x-1/4 translate-y-1/4 rounded-full bg-gov-500/15 blur-3xl" />
                         <div className="relative grid gap-8 lg:grid-cols-[1fr_auto] lg:items-center">
                             <div>
                                 <span className="inline-flex items-center gap-2 rounded-full bg-white/12 px-4 py-2 text-sm font-bold text-accent-200 ring-1 ring-white/15"><Star size={16} /> TAMSAR CS</span>

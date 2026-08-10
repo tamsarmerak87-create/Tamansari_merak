@@ -408,9 +408,9 @@
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 
-  /* Cream/warm base */
-  --color-cream-50: #FFFDF3;
-  --color-cream-100: #FFF9E8;
+  /* Dashboard-aligned neutral base */
+  --color-cream-50: #F7F9FC;
+  --color-cream-100: #EEF4FB;
 
   /* Gov navy */
   --color-gov-50: #f0f4fa;
@@ -441,7 +441,7 @@
   /* Functional */
   --color-success: #15803D;
   --color-danger: #dc2626;
-  --color-border-soft: #e8e4d8;
+  --color-border-soft: #DDE7F3;
   --color-slate-650: #4a5568;
 
   /* Shadows */
@@ -453,31 +453,96 @@
 
 :root {
   color-scheme: light;
+  --color-primary: #0F2942;
+  --color-primary-dark: #061827;
+  --color-primary-light: #2d5fa0;
+  --color-secondary: #dbe6f6;
+  --color-accent: #FACC15;
+  --color-background: #F7F9FC;
+  --color-surface: #FFFFFF;
+  --color-text: #0F2942;
+  --color-text-muted: #4a5568;
+  --color-border: #DDE7F3;
+  --color-success: #15803D;
+  --color-warning: #D99A00;
+  --color-danger: #dc2626;
+  --color-info: #2d5fa0;
+  --radius-card: 1.5rem;
 }
 
 html {
   scroll-behavior: smooth;
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
 }
 
 body {
   margin: 0;
+  width: 100%;
+  max-width: 100vw;
   min-height: 100vh;
   overflow-x: hidden;
-  background: #FFFDF3;
-  color: #0F2942;
+  background: var(--color-background);
+  color: var(--color-text);
 }
 
-/* Soft cream + very faint gold & green gradients */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+main,
+section,
+header,
+footer,
+nav,
+article,
+aside {
+  max-width: 100vw;
+}
+
+img,
+svg,
+video,
+canvas,
+iframe {
+  max-width: 100%;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  min-width: 0;
+}
+
+@media (max-width: 480px) {
+  body::before {
+    background:
+      radial-gradient(ellipse 80% 42% at 10% 6%, rgba(45, 95, 160, 0.08) 0%, transparent 68%),
+      radial-gradient(ellipse 70% 36% at 94% 8%, rgba(250, 204, 21, 0.07) 0%, transparent 72%),
+      linear-gradient(160deg, #F7F9FC 0%, #EEF4FB 52%, #F7F9FC 100%);
+  }
+
+  body::after {
+    background-size: 22px 22px;
+    opacity: 0.08;
+  }
+}
+
+/* Calm dashboard background shared by public, warga, and admin pages. */
 body::before {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -2;
   background:
-    radial-gradient(ellipse 70% 52% at 8% 18%, rgba(250, 204, 21, 0.09) 0%, transparent 100%),
-    radial-gradient(ellipse 60% 48% at 92% 12%, rgba(21, 128, 61, 0.07) 0%, transparent 100%),
-    radial-gradient(ellipse 80% 60% at 50% 95%, rgba(250, 204, 21, 0.05) 0%, transparent 100%),
-    linear-gradient(160deg, #FFFDF3 0%, #FFFBEB 55%, #F9FDF9 100%);
+    radial-gradient(ellipse 72% 52% at 8% 12%, rgba(45, 95, 160, 0.10) 0%, transparent 68%),
+    radial-gradient(ellipse 58% 46% at 92% 10%, rgba(250, 204, 21, 0.08) 0%, transparent 72%),
+    linear-gradient(160deg, #F7F9FC 0%, #EEF4FB 52%, #F7F9FC 100%);
 }
 
 /* Very subtle dot texture - only top portion */
@@ -488,7 +553,7 @@ body::after {
   z-index: -1;
   pointer-events: none;
   opacity: 0.12;
-  background-image: radial-gradient(rgba(234, 179, 8, 0.5) 1px, transparent 1px);
+  background-image: radial-gradient(rgba(45, 95, 160, 0.34) 1px, transparent 1px);
   background-size: 28px 28px;
   mask-image: linear-gradient(to bottom, black 0%, transparent 60%);
 }
@@ -500,8 +565,8 @@ body::after {
 
 /* Glass utility */
 .glass {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.88) 0%, rgba(255, 253, 243, 0.72) 100%);
-  border: 1px solid rgba(232, 228, 216, 0.85);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.92) 0%, rgba(240, 244, 250, 0.76) 100%);
+  border: 1px solid rgba(221, 231, 243, 0.92);
   box-shadow: var(--shadow-soft);
   backdrop-filter: blur(20px) saturate(140%);
 }

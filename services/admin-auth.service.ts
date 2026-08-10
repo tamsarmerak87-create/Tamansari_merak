@@ -49,7 +49,7 @@ function mapPetugasToAdminProfile(row: PetugasRow): AdminPortalProfile {
 }
 
 export async function getCurrentAdminPortalUser(): Promise<{ user: AdminPortalUser | null; profile: AdminPortalProfile | null }> {
-    const response = await fetch("/api/petugas/auth/me", { credentials: "include", cache: "no-store" });
+    const response = await fetch("/api/admin/auth/me", { credentials: "include", cache: "no-store" });
     if (response.status === 401) return { user: null, profile: null };
     if (!response.ok) throw new Error("Gagal memeriksa sesi petugas.");
     const data = (await response.json()) as { user: AdminPortalUser | null; profile: PetugasRow | null };
@@ -60,7 +60,7 @@ export async function getCurrentAdminPortalUser(): Promise<{ user: AdminPortalUs
 }
 
 export async function loginAdminPortal(username: string, password: string) {
-    const response = await fetch("/api/petugas/auth/login", {
+    const response = await fetch("/api/admin/auth/login", {
         method: "POST",
         headers: { "content-type": "application/json" },
         credentials: "include",
@@ -76,5 +76,5 @@ export async function loginAdminPortal(username: string, password: string) {
 }
 
 export async function logoutAdminPortal() {
-    await fetch("/api/petugas/auth/logout", { method: "POST", credentials: "include" });
+    await fetch("/api/admin/auth/logout", { method: "POST", credentials: "include" });
 }

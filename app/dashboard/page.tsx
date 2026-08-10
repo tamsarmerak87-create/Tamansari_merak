@@ -29,7 +29,7 @@ export default function DashboardPage() {
 function formatStatus(status?: string | null) { return status || "Menunggu Verifikasi"; }
 function latestStage(item: WargaPengajuan) { const latest = item.tracking_pengajuan?.at(-1); return latest?.petugas || latest?.status || latest?.keterangan || "Pengajuan Diterima"; }
 function formatDate(value?: string | null) { return value ? new Date(value).toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" }) : "-"; }
-function statusClass(status?: string | null) { const s = (status || "").toLowerCase(); if (s.includes("selesai") || s.includes("disetujui")) return "bg-emerald-100 text-emerald-700"; if (s.includes("tolak")) return "bg-red-100 text-red-700"; if (s.includes("proses")) return "bg-blue-100 text-blue-700"; if (s.includes("menunggu")) return "bg-amber-100 text-amber-700"; return "bg-slate-100 text-slate-600"; }
+function statusClass(status?: string | null) { const s = (status || "").toLowerCase(); if (s.includes("selesai") || s.includes("disetujui")) return "bg-emerald-100 text-emerald-700"; if (s.includes("tolak")) return "bg-red-100 text-red-700"; if (s.includes("proses")) return "bg-gov-100 text-gov-800"; if (s.includes("menunggu")) return "bg-amber-100 text-amber-700"; return "bg-slate-100 text-slate-600"; }
 function docUrl(url?: string | null) { if (!url) return "#"; return url; }
 function docLabel(jenis?: string | null, namaFile?: string | null) { const value = jenis || namaFile || "Dokumen"; return value.toLowerCase().includes("pendukung") ? "Pendukung" : value; }
 

@@ -19,7 +19,7 @@ export default function AdminLoginPage() {
       setError("");
       setLoading(true);
       await loginAdminPortal(username, password);
-      router.replace("/admin/dashboard");
+      router.replace("/admin");
     } catch (authError) {
       setError(authError instanceof Error ? authError.message : "Username atau password salah.");
     } finally {

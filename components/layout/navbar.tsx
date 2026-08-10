@@ -92,61 +92,61 @@ export function Navbar() {
     }, []);
 
     return (
-        <header className="sticky top-0 z-50 px-3 pt-3 sm:px-6 lg:px-8 lg:pt-5">
-            <div className={cn("relative z-50 mx-auto flex min-h-[72px] w-full max-w-[1360px] items-center gap-3 rounded-[24px] border border-white/90 bg-white/88 px-3 py-2.5 backdrop-blur-2xl transition-all duration-300 sm:rounded-[28px] sm:px-5", scrolled ? "shadow-[0_18px_55px_rgba(8,47,73,.14)]" : "shadow-[0_12px_38px_rgba(8,47,73,.09)]")}>
-                <Link href="/" className="flex min-w-0 shrink-0 items-center gap-2.5 whitespace-nowrap min-[1380px]:basis-[220px] sm:gap-3">
-                    <div className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-2xl bg-cream-50 shadow-soft ring-1 ring-accent-200/60 sm:size-12">
-                        <Image src="/assets/logo-cilegon.png" alt="Logo Cilegon" width={30} height={30} className="h-8 w-8 object-contain" />
+        <header className="sticky top-0 z-50 w-full max-w-[100vw] px-2 pt-2 sm:px-6 lg:px-8 lg:pt-5">
+            <div className={cn("relative z-50 mx-auto flex min-h-[70px] w-full max-w-[1360px] items-center gap-1.5 rounded-[22px] border border-white/90 bg-white/88 px-2 py-2 backdrop-blur-2xl transition-all duration-300 min-[390px]:gap-2.5 min-[390px]:px-3 sm:min-h-[72px] sm:gap-3 sm:rounded-[28px] sm:px-5", scrolled ? "shadow-[0_18px_55px_rgba(8,47,73,.14)]" : "shadow-[0_12px_38px_rgba(8,47,73,.09)]")}>
+                <Link href="/" className="flex min-w-0 flex-1 items-center gap-2 whitespace-nowrap min-[1380px]:basis-[220px] min-[1380px]:flex-none sm:gap-3">
+                    <div className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-xl bg-cream-50 shadow-soft ring-1 ring-accent-200/60 min-[390px]:size-10 sm:size-12 sm:rounded-2xl">
+                        <Image src="/assets/logo-cilegon.png" alt="Logo Cilegon" width={30} height={30} className="h-7 w-7 object-contain min-[390px]:h-8 min-[390px]:w-8" />
                     </div>
                     <div className="min-w-0 leading-tight">
-                        <b className="block max-w-[10rem] overflow-hidden text-ellipsis text-sm font-extrabold text-green-700 sm:max-w-[13rem] sm:text-base">{site.name}</b>
+                        <b className="block max-w-[7.1rem] overflow-hidden text-ellipsis text-[12px] font-extrabold text-gov-800 min-[375px]:max-w-[9rem] min-[390px]:text-sm sm:max-w-[13rem] sm:text-base">{site.name}</b>
                         <span className="hidden text-[11px] font-medium text-slate-650 sm:block">{site.district}, {site.city}</span>
                     </div>
                 </Link>
 
                 <nav className="hidden min-w-0 flex-1 items-center justify-center gap-0.5 whitespace-nowrap min-[1380px]:flex">
                     {nav.map((item) => (
-                        <Link key={item.href} href={item.href} aria-current={isActive(item.href) ? "page" : undefined} className={cn("relative rounded-full px-2.5 py-2 text-[13px] font-semibold text-gov-900 transition duration-200 hover:bg-green-50 hover:text-green-700", isActive(item.href) && "bg-green-50 text-green-700 after:absolute after:inset-x-3 after:-bottom-1 after:h-0.5 after:rounded-full after:bg-accent-500")}>
+                        <Link key={item.href} href={item.href} aria-current={isActive(item.href) ? "page" : undefined} className={cn("relative rounded-full px-2.5 py-2 text-[13px] font-semibold text-gov-900 transition duration-200 hover:bg-gov-50 hover:text-gov-800", isActive(item.href) && "bg-gov-50 text-gov-800 after:absolute after:inset-x-3 after:-bottom-1 after:h-0.5 after:rounded-full after:bg-accent-500")}>
                             {item.label}
                         </Link>
                     ))}
                 </nav>
 
-                <div className="ml-auto flex shrink-0 items-center gap-2 whitespace-nowrap">
+                <div className="ml-auto flex shrink-0 items-center gap-1.5 whitespace-nowrap min-[390px]:gap-2">
                     {/* Search */}
                     <div className="relative">
-                        <button type="button" onClick={() => setSearchOpen((v) => !v)} className="grid size-11 place-items-center rounded-full border border-border-soft bg-white/80 text-gov-900 shadow-soft transition duration-200 hover:-translate-y-0.5 hover:bg-cream-100 focus:outline-none focus:ring-4 focus:ring-green-100" aria-label="Pencarian" aria-expanded={searchOpen}>
-                            <Search size={17} />
+                        <button type="button" onClick={() => setSearchOpen((v) => !v)} className="grid size-10 place-items-center rounded-full border border-border-soft bg-white/80 text-gov-900 shadow-soft transition duration-200 hover:-translate-y-0.5 hover:bg-cream-100 focus:outline-none focus:ring-4 focus:ring-gov-100 sm:size-11" aria-label="Pencarian" aria-expanded={searchOpen}>
+                            <Search size={16} />
                         </button>
                         {searchOpen && (
-                            <form onSubmit={submitSearch} className="absolute right-0 top-14 flex w-[min(21rem,calc(100vw-2rem))] gap-2 rounded-[22px] border border-border-soft bg-white p-3 shadow-glass">
-                                <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Cari layanan..." className="min-w-0 flex-1 rounded-2xl bg-cream-50 px-4 py-2.5 text-sm font-semibold text-gov-950 outline-none ring-1 ring-border-soft transition focus:ring-2 focus:ring-green-600" />
-                                <button className="grid size-10 place-items-center rounded-xl bg-green-600 text-white" aria-label="Cari"><Search size={16} /></button>
+                            <form onSubmit={submitSearch} className="fixed left-2 right-2 top-[86px] z-[70] flex gap-2 rounded-[22px] border border-border-soft bg-white p-3 shadow-glass sm:absolute sm:left-auto sm:right-0 sm:top-14 sm:w-[min(21rem,calc(100vw-2rem))]">
+                                <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Cari layanan..." className="min-w-0 flex-1 rounded-2xl bg-cream-50 px-4 py-2.5 text-sm font-semibold text-gov-950 outline-none ring-1 ring-border-soft transition focus:ring-2 focus:ring-gov-500" />
+                                <button className="grid size-10 place-items-center rounded-xl bg-gov-800 text-white" aria-label="Cari"><Search size={16} /></button>
                             </form>
                         )}
                     </div>
 
                     {/* Akun Warga */}
                     <div ref={accountRef} className="relative">
-                        <button type="button" onClick={() => setAccountOpen((value) => !value)} className={cn("inline-flex min-h-11 items-center gap-2 rounded-full border border-green-100 bg-white px-3 py-2 text-sm font-black text-gov-950 shadow-soft transition duration-200 hover:-translate-y-0.5 hover:bg-green-50 hover:text-green-700 focus:outline-none focus:ring-4 focus:ring-green-100 sm:px-4", accountOpen && "bg-green-50 text-green-700 ring-4 ring-green-100")} aria-label="Menu Akun Warga" aria-expanded={accountOpen}>
-                            <UserRound size={17} /> Akun Warga <ChevronDown size={15} className={cn("transition duration-200", accountOpen && "rotate-180")} />
+                        <button type="button" onClick={() => setAccountOpen((value) => !value)} className={cn("inline-flex min-h-10 items-center gap-1.5 rounded-full border border-border-soft bg-white px-2.5 py-2 text-xs font-black text-gov-950 shadow-soft transition duration-200 hover:-translate-y-0.5 hover:bg-gov-50 hover:text-gov-800 focus:outline-none focus:ring-4 focus:ring-gov-100 min-[390px]:min-h-11 min-[390px]:gap-2 min-[390px]:text-sm sm:px-4", accountOpen && "bg-gov-50 text-gov-800 ring-4 ring-gov-100")} aria-label="Menu Akun Warga" aria-expanded={accountOpen}>
+                            <UserRound size={16} /> <span className="hidden min-[375px]:inline">Akun</span><span className="hidden min-[430px]:inline"> Warga</span> <ChevronDown size={14} className={cn("transition duration-200", accountOpen && "rotate-180")} />
                         </button>
                         {accountOpen && (
-                            <div className="absolute right-0 top-14 z-[60] w-[min(18.5rem,calc(100vw-1.5rem))] rounded-[20px] border border-green-100 bg-white p-3 shadow-[0_22px_70px_rgba(8,47,73,.18)]">
+                            <div className="absolute right-0 top-14 z-[60] w-[min(18.5rem,calc(100vw-1.5rem))] rounded-[20px] border border-border-soft bg-white p-3 shadow-[0_22px_70px_rgba(8,47,73,.18)]">
                                 {user ? (
                                     <>
-                                        <div className="my-2 h-px bg-green-100" />
+                                        <div className="my-2 h-px bg-gov-100" />
                                         <p className="rounded-2xl bg-cream-50 px-4 py-3 text-sm font-black text-gov-950">{profile?.nama_lengkap ?? "Akun Warga"}</p>
                                         {!isVerified(profile) ? <p className="mt-2 rounded-2xl bg-amber-50 px-4 py-3 text-xs font-bold leading-5 text-amber-700">Akun Anda sedang menunggu verifikasi.</p> : null}
-                                        <div className="my-2 h-px bg-green-100" />
-                                        {wargaMenu.map(({ label, href, icon: Icon }) => <Link key={href} href={href as Route} onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-green-50 hover:text-green-700"><Icon size={16} className="text-green-700" />{label}</Link>)}
+                                        <div className="my-2 h-px bg-gov-100" />
+                                        {wargaMenu.map(({ label, href, icon: Icon }) => <Link key={href} href={href as Route} onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-gov-50 hover:text-gov-800"><Icon size={16} className="text-gov-800" />{label}</Link>)}
                                         <button type="button" onClick={signOut} className="mt-1 flex w-full items-center gap-2 rounded-2xl px-4 py-3 text-left text-sm font-bold text-red-600 transition hover:bg-red-50"><LogOut size={16} />Keluar</button>
                                     </>
                                 ) : (
                                     <>
-                                        <Link href="/login" onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-green-50 hover:text-green-700"><LogIn size={16} className="text-green-700" />Masuk</Link>
-                                        <Link href="/register" onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-green-50 hover:text-green-700"><UserPlus size={16} className="text-green-700" />Daftar Akun</Link>
-                                        <Link href="/login?mode=forgot" onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-green-50 hover:text-green-700"><KeyRound size={16} className="text-green-700" />Lupa Password</Link>
+                                        <Link href="/login" onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-gov-50 hover:text-gov-800"><LogIn size={16} className="text-gov-800" />Masuk</Link>
+                                        <Link href="/register" onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-gov-50 hover:text-gov-800"><UserPlus size={16} className="text-gov-800" />Daftar Akun</Link>
+                                        <Link href="/login?mode=forgot" onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-gov-50 hover:text-gov-800"><KeyRound size={16} className="text-gov-800" />Lupa Password</Link>
                                     </>
                                 )}
                             </div>
@@ -158,7 +158,7 @@ export function Navbar() {
                         <Sheet open={open} onOpenChange={setOpen}>
                             <SheetTrigger
                                 aria-label="Buka menu navigasi"
-                                className="pointer-events-auto grid size-11 place-items-center rounded-full bg-gov-800 text-white shadow-soft transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-gov-100"
+                                className="pointer-events-auto grid size-10 place-items-center rounded-full bg-gov-800 text-white shadow-soft transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-gov-100 sm:size-11"
                             >
                                 {open ? <X size={19} /> : <Menu size={19} />}
                             </SheetTrigger>
@@ -177,21 +177,21 @@ export function Navbar() {
                                 </div>
 
                                 <div className="mt-8 space-y-2">
-                                    <div className="rounded-2xl border border-border-soft bg-green-50/50 p-3">
+                                    <div className="rounded-2xl border border-border-soft bg-gov-50/50 p-3">
                                         <p className="flex items-center gap-2 px-2 pb-2 text-xs font-black uppercase tracking-[.18em] text-accent-600"><UserRound size={14} /> Akun Warga</p>
                                         {user ? (
                                             <>
                                                 <p className="rounded-2xl bg-white px-4 py-3 text-sm font-black text-gov-950">{profile?.nama_lengkap ?? "Akun Warga"}</p>
                                                 {!isVerified(profile) ? <p className="mt-2 rounded-2xl bg-amber-50 px-4 py-3 text-xs font-bold leading-5 text-amber-700">Akun Anda sedang menunggu verifikasi.</p> : null}
-                                                <div className="my-2 h-px bg-green-100" />
-                                                {wargaMenu.map(({ label, href, icon: Icon }) => <Link key={href} href={href as Route} onClick={() => setOpen(false)} className="flex items-center justify-between rounded-2xl px-4 py-3 text-base font-bold text-gov-950 transition hover:bg-white"><span className="flex items-center gap-3"><Icon size={18} className="text-green-700" />{label}</span><ChevronRight size={18} className="text-slate-400" /></Link>)}
+                                                <div className="my-2 h-px bg-gov-100" />
+                                                {wargaMenu.map(({ label, href, icon: Icon }) => <Link key={href} href={href as Route} onClick={() => setOpen(false)} className="flex items-center justify-between rounded-2xl px-4 py-3 text-base font-bold text-gov-950 transition hover:bg-white"><span className="flex items-center gap-3"><Icon size={18} className="text-gov-800" />{label}</span><ChevronRight size={18} className="text-slate-400" /></Link>)}
                                                 <button type="button" onClick={signOut} className="flex w-full items-center justify-between rounded-2xl px-4 py-3 text-base font-bold text-red-600 transition hover:bg-white">Keluar<LogOut size={18} /></button>
                                             </>
                                         ) : (
                                             <>
-                                                <Link href="/login" onClick={() => setOpen(false)} className="flex items-center justify-between rounded-2xl px-4 py-3 text-base font-bold text-gov-950 transition hover:bg-white"><span className="flex items-center gap-3"><LogIn size={18} className="text-green-700" />Masuk</span><ChevronRight size={18} className="text-slate-400" /></Link>
-                                                <Link href="/register" onClick={() => setOpen(false)} className="flex items-center justify-between rounded-2xl px-4 py-3 text-base font-bold text-gov-950 transition hover:bg-white"><span className="flex items-center gap-3"><UserPlus size={18} className="text-green-700" />Daftar Akun</span><ChevronRight size={18} className="text-slate-400" /></Link>
-                                                <Link href="/login?mode=forgot" onClick={() => setOpen(false)} className="flex items-center justify-between rounded-2xl px-4 py-3 text-base font-bold text-gov-950 transition hover:bg-white"><span className="flex items-center gap-3"><KeyRound size={18} className="text-green-700" />Lupa Password</span><ChevronRight size={18} className="text-slate-400" /></Link>
+                                                <Link href="/login" onClick={() => setOpen(false)} className="flex items-center justify-between rounded-2xl px-4 py-3 text-base font-bold text-gov-950 transition hover:bg-white"><span className="flex items-center gap-3"><LogIn size={18} className="text-gov-800" />Masuk</span><ChevronRight size={18} className="text-slate-400" /></Link>
+                                                <Link href="/register" onClick={() => setOpen(false)} className="flex items-center justify-between rounded-2xl px-4 py-3 text-base font-bold text-gov-950 transition hover:bg-white"><span className="flex items-center gap-3"><UserPlus size={18} className="text-gov-800" />Daftar Akun</span><ChevronRight size={18} className="text-slate-400" /></Link>
+                                                <Link href="/login?mode=forgot" onClick={() => setOpen(false)} className="flex items-center justify-between rounded-2xl px-4 py-3 text-base font-bold text-gov-950 transition hover:bg-white"><span className="flex items-center gap-3"><KeyRound size={18} className="text-gov-800" />Lupa Password</span><ChevronRight size={18} className="text-slate-400" /></Link>
                                             </>
                                         )}
                                     </div>
@@ -201,7 +201,7 @@ export function Navbar() {
                                             href={item.href}
                                             onClick={() => setOpen(false)}
                                             aria-current={isActive(item.href) ? "page" : undefined}
-                                            className={cn("flex items-center justify-between rounded-2xl border border-border-soft px-4 py-4 text-base font-bold text-gov-950 transition hover:border-green-200 hover:bg-green-50", isActive(item.href) && "border-green-200 bg-green-50 text-green-700")}
+                                            className={cn("flex items-center justify-between rounded-2xl border border-border-soft px-4 py-4 text-base font-bold text-gov-950 transition hover:border-gov-100 hover:bg-gov-50", isActive(item.href) && "border-gov-100 bg-gov-50 text-gov-800")}
                                         >
                                             {item.label}
                                             <ChevronRight size={18} className="text-slate-400" />
@@ -229,6 +229,7 @@ export function Navbar() {
         </header>
     );
 }
+
 
 
 

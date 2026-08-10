@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getAdminSession } from "@/services/admin-session";
+import { getAdminSession, requireAdmin } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
 
 function jsonError(message: string, status = 400) {
@@ -9,6 +9,8 @@ function jsonError(message: string, status = 400) {
 export async function POST(request: NextRequest) {
     const session = await getAdminSession(request);
     if (session.error) return jsonError("Session admin tidak valid.", 401);
+    const adminOnlyError = requireAdmin(session.profile);
+    if (adminOnlyError) return jsonError("Hanya admin yang dapat mengunggah dokumen admin.", 403);
 
     const supabase = createSupabaseAdminClient();
     if (!supabase) return jsonError("Supabase service role belum dikonfigurasi.", 500);

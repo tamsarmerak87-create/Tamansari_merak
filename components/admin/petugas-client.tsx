@@ -28,7 +28,7 @@ function roleLabel(role: PetugasRole) {
 
 function roleBadgeClass(role: PetugasRole) {
     const classes: Record<PetugasRole, string> = {
-        admin: "bg-blue-100 text-blue-800 ring-blue-200",
+        admin: "bg-gov-100 text-blue-800 ring-blue-200",
         staff_pelayanan: "bg-emerald-100 text-emerald-800 ring-emerald-200",
         petugas_lapangan: "bg-orange-100 text-orange-800 ring-orange-200",
         kepala_seksi: "bg-cyan-100 text-cyan-800 ring-cyan-200",

@@ -196,6 +196,7 @@ function WorkflowStepper({ row }: { row: Row }) {
 function canProcessStage(row: Row, profile?: AdminPortalProfile | null) {
   const stage = activeStage(row);
   const role = profile?.role;
+  if (role === "admin") return Boolean(stage && ["Menunggu", "Diproses"].includes(String(stage.status)) && roleStatus[String(stage.role_petugas)] === normalizedWorkflowStatus(row));
   return Boolean(stage && role === stage.role_petugas && roleStatus[String(role)] === normalizedWorkflowStatus(row) && workflowRoles.includes(role as typeof workflowRoles[number]));
 }
 
@@ -269,7 +270,7 @@ function statusBadgeClass(status?: string | null) {
   if (raw.includes("MENUNGGU") || normalized === "Menunggu") return "bg-amber-100 text-amber-800 ring-amber-200";
   if (normalized === "Selesai") return "bg-emerald-100 text-emerald-800 ring-emerald-200";
   if (normalized === "Disetujui") return "bg-cyan-100 text-cyan-800 ring-cyan-200";
-  if (normalized === "Diproses") return "bg-blue-100 text-blue-800 ring-blue-200";
+  if (normalized === "Diproses") return "bg-gov-100 text-blue-800 ring-blue-200";
   if (normalized === "Terverifikasi") return "bg-cyan-100 text-cyan-800 ring-cyan-200";
   if (normalized === "Ditolak") return "bg-red-100 text-red-800 ring-red-200";
   return "bg-amber-100 text-amber-800 ring-amber-200";
@@ -283,19 +284,22 @@ function csvCell(value: unknown) {
   const text = String(value ?? "-").replace(/"/g, '""');
   return /[",\n\r]/.test(text) ? `"${text}"` : text;
 }
+
 const nav = [
-  ["Dashboard", "/admin/dashboard", LayoutDashboard],
-  ["Verifikasi Warga", "/admin/verifikasi", BadgeCheck],
-  ["Pengajuan Surat", "/admin/pengajuan", FileText],
-  ["Tracking", "/admin/tracking", FileClock],
-  ["POSBANKUM", "/admin/posbankum", Scale],
-  ["Berita", "/admin/berita", Newspaper],
-  ["Master Layanan", "/admin/layanan", Settings],
-  ["Petugas", "/admin/petugas", UserCog],
-  ["Pengguna", "/admin/pengguna", Users],
-  ["Laporan", "/admin/laporan", LineChart],
-  ["Pengaturan", "/admin/pengaturan", Settings],
+  ["Dashboard", "/admin/dashboard", LayoutDashboard, false],
+  ["Master Layanan", "/admin/layanan", Settings, true],
+  ["Verifikasi Warga", "/admin/verifikasi-warga", ShieldCheck, true],
+  ["Pengajuan", "/admin/pengajuan", ClipboardList, false],
+  ["Tracking", "/admin/tracking", QrCode, false],
+  ["POSBANKUM", "/admin/posbankum", Scale, false],
+  ["Berita", "/admin/berita", Newspaper, true],
+  ["Petugas", "/admin/petugas", UserCog, true],
+  ["Pengguna", "/admin/pengguna", Users, true],
+  ["Laporan", "/admin/laporan", LineChart, true],
+  ["Pengaturan", "/admin/pengaturan", Settings, true],
 ] as const;
+
+const adminOnlyViews = new Set(["layanan", "verifikasi-warga", "berita", "petugas", "pengguna", "laporan", "pengaturan"]);
 
 function useAdminData() {
   const [submissions, setSubmissions] = useState<Row[]>([]);
@@ -506,6 +510,18 @@ export function AdminShell({
       </main>
     );
   }
+  if (adminProfile.role !== "admin" && adminOnlyViews.has(view)) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[linear-gradient(135deg,#071a33,#0B2C6A)] p-6 text-white">
+        <div className="max-w-lg rounded-[2rem] border border-white/15 bg-white/10 p-8 text-center shadow-2xl backdrop-blur-xl">
+          <ShieldCheck className="mx-auto size-10 text-accent-300" />
+          <h1 className="mt-4 text-2xl font-black">403 Forbidden</h1>
+          <p className="mt-3 font-bold text-white/80">Fitur ini khusus Administrator. Akun petugas tetap dapat mengakses dashboard, pengajuan, tracking, dan menu operasional sesuai kewenangannya.</p>
+          <button type="button" onClick={() => router.replace("/admin/dashboard")} className="mt-6 rounded-2xl bg-accent-400 px-5 py-3 font-black text-gov-950 hover:bg-accent-300">Kembali ke Dashboard</button>
+        </div>
+      </main>
+    );
+  }
   return (
     <main className="min-h-screen bg-[linear-gradient(135deg,#f8fafc,#eef5ff_48%,#fff8e1)] text-slate-900">
       <aside
@@ -524,7 +540,7 @@ export function AdminShell({
           </button>
         </div>
         <nav className="mt-8 space-y-2">
-          {nav.map(([label, href, Icon]) => (
+          {nav.filter(([, href, , adminOnly]) => adminProfile.role === "admin" || !adminOnly).map(([label, href, Icon]) => (
             <Link
               key={label}
               href={href}
