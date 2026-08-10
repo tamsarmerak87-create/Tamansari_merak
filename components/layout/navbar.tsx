@@ -5,18 +5,17 @@ import Image from "next/image";
 import type { Route } from "next";
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronDown, ChevronRight, Headset, LogOut, Menu, Search, UserRound, X } from "lucide-react";
+import { ChevronDown, ChevronRight, FileText, KeyRound, LayoutDashboard, LogIn, LogOut, MapPinned, Menu, Search, UserPlus, UserRound, X } from "lucide-react";
 import { site } from "@/constants/site";
 import { cn } from "@/utils/cn";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useWargaAuth } from "@/components/auth/warga-auth-provider";
-import { logoutWarga } from "@/services/warga-auth.service";
+import { isVerified, logoutWarga } from "@/services/warga-auth.service";
 
 const nav = [
     { label: "Beranda", href: "/" },
     { label: "Profil", href: "/profil" },
     { label: "Layanan", href: "/layanan" },
-    { label: "Surat Online", href: "/surat-online" },
     { label: "Berita", href: "/berita" },
     { label: "Agenda", href: "/agenda" },
     { label: "POSBANKUM", href: "/posbankum" },
@@ -28,6 +27,13 @@ const mobileNav: { label: string; href: Route; }[] = [
     ...nav,
     { label: "Kontak", href: "/kontak" },
 ];
+
+const wargaMenu = [
+    { label: "Layanan", href: "/layanan", icon: LayoutDashboard },
+    { label: "Pengajuan Saya", href: "/dashboard#pengajuan", icon: FileText },
+    { label: "Tracking", href: "/surat-online/tracking", icon: MapPinned },
+    { label: "Profil Saya", href: "/dashboard#profil", icon: UserRound },
+] as const;
 
 export function Navbar() {
     const pathname = usePathname();
@@ -41,12 +47,7 @@ export function Navbar() {
     const { user, profile, refresh } = useWargaAuth();
 
     const isActive = (href: string) =>
-        href === "/" ? pathname === "/" : href === "/#chat" ? false : pathname === href || pathname.startsWith(`${href}/`);
-
-    const openChat = () => {
-        window.dispatchEvent(new CustomEvent("tamsar-chat:open"));
-        setOpen(false);
-    };
+        href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
 
     const signOut = async () => {
         try {
@@ -104,11 +105,7 @@ export function Navbar() {
                 </Link>
 
                 <nav className="hidden min-w-0 flex-1 items-center justify-center gap-0.5 whitespace-nowrap min-[1380px]:flex">
-                    {nav.map((item) => item.href === "/#chat" ? (
-                        <button key={item.href} type="button" onClick={openChat} className="relative rounded-full px-2.5 py-2 text-[13px] font-semibold text-gov-900 transition duration-200 hover:bg-green-50 hover:text-green-700">
-                            {item.label}
-                        </button>
-                    ) : (
+                    {nav.map((item) => (
                         <Link key={item.href} href={item.href} aria-current={isActive(item.href) ? "page" : undefined} className={cn("relative rounded-full px-2.5 py-2 text-[13px] font-semibold text-gov-900 transition duration-200 hover:bg-green-50 hover:text-green-700", isActive(item.href) && "bg-green-50 text-green-700 after:absolute after:inset-x-3 after:-bottom-1 after:h-0.5 after:rounded-full after:bg-accent-500")}>
                             {item.label}
                         </Link>
@@ -129,30 +126,27 @@ export function Navbar() {
                         )}
                     </div>
 
-                    {/* TAMSAR CS */}
-                    <button type="button" onClick={openChat} className="hidden min-h-11 items-center gap-2 rounded-full bg-green-600 px-5 py-3 text-sm font-black text-white shadow-green transition duration-200 hover:-translate-y-0.5 hover:bg-green-700 focus:outline-none focus:ring-4 focus:ring-green-100 sm:inline-flex">
-                        <Headset size={16} />
-                        <span className="hidden sm:inline">TAMSAR CS</span>
-                        <span className="sm:hidden">CS</span>
-                    </button>
-
-                    {/* Akun Warga - Desktop */}
-                    <div ref={accountRef} className="relative hidden min-[1380px]:block">
-                        <button type="button" onClick={() => setAccountOpen((value) => !value)} className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border-soft bg-white/80 px-4 py-2 text-sm font-black text-gov-950 shadow-soft transition duration-200 hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-green-100" aria-label="Menu Akun Warga" aria-expanded={accountOpen}>
+                    {/* Akun Warga */}
+                    <div ref={accountRef} className="relative">
+                        <button type="button" onClick={() => setAccountOpen((value) => !value)} className={cn("inline-flex min-h-11 items-center gap-2 rounded-full border border-green-100 bg-white px-3 py-2 text-sm font-black text-gov-950 shadow-soft transition duration-200 hover:-translate-y-0.5 hover:bg-green-50 hover:text-green-700 focus:outline-none focus:ring-4 focus:ring-green-100 sm:px-4", accountOpen && "bg-green-50 text-green-700 ring-4 ring-green-100")} aria-label="Menu Akun Warga" aria-expanded={accountOpen}>
                             <UserRound size={17} /> Akun Warga <ChevronDown size={15} className={cn("transition duration-200", accountOpen && "rotate-180")} />
                         </button>
                         {accountOpen && (
-                            <div className="absolute right-0 mt-3 w-64 rounded-[24px] border border-border-soft bg-white p-3 shadow-glass">
+                            <div className="absolute right-0 top-14 z-[60] w-[min(18.5rem,calc(100vw-1.5rem))] rounded-[20px] border border-green-100 bg-white p-3 shadow-[0_22px_70px_rgba(8,47,73,.18)]">
                                 {user ? (
                                     <>
-                                        <p className="px-3 pb-2 text-xs font-black uppercase tracking-[.18em] text-accent-600">{profile?.nama_lengkap ?? "Warga"}</p>
-                                        {[["Dashboard Saya", "/dashboard"], ["Pengajuan Saya", "/dashboard#pengajuan"], ["Profil", "/dashboard#profil"], ["Notifikasi", "/dashboard#notifikasi"]].map(([label, href]) => <Link key={href} href={href as Route} onClick={() => setAccountOpen(false)} className="block rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-green-50">{label}</Link>)}
+                                        <div className="my-2 h-px bg-green-100" />
+                                        <p className="rounded-2xl bg-cream-50 px-4 py-3 text-sm font-black text-gov-950">{profile?.nama_lengkap ?? "Akun Warga"}</p>
+                                        {!isVerified(profile) ? <p className="mt-2 rounded-2xl bg-amber-50 px-4 py-3 text-xs font-bold leading-5 text-amber-700">Akun Anda sedang menunggu verifikasi.</p> : null}
+                                        <div className="my-2 h-px bg-green-100" />
+                                        {wargaMenu.map(({ label, href, icon: Icon }) => <Link key={href} href={href as Route} onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-green-50 hover:text-green-700"><Icon size={16} className="text-green-700" />{label}</Link>)}
                                         <button type="button" onClick={signOut} className="mt-1 flex w-full items-center gap-2 rounded-2xl px-4 py-3 text-left text-sm font-bold text-red-600 transition hover:bg-red-50"><LogOut size={16} />Keluar</button>
                                     </>
                                 ) : (
                                     <>
-                                        <Link href="/login" onClick={() => setAccountOpen(false)} className="block rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-green-50">Masuk</Link>
-                                        <Link href="/register" onClick={() => setAccountOpen(false)} className="block rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-green-50">Daftar</Link>
+                                        <Link href="/login" onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-green-50 hover:text-green-700"><LogIn size={16} className="text-green-700" />Masuk</Link>
+                                        <Link href="/register" onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-green-50 hover:text-green-700"><UserPlus size={16} className="text-green-700" />Daftar Akun</Link>
+                                        <Link href="/login?mode=forgot" onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-green-50 hover:text-green-700"><KeyRound size={16} className="text-green-700" />Lupa Password</Link>
                                     </>
                                 )}
                             </div>
@@ -187,27 +181,21 @@ export function Navbar() {
                                         <p className="flex items-center gap-2 px-2 pb-2 text-xs font-black uppercase tracking-[.18em] text-accent-600"><UserRound size={14} /> Akun Warga</p>
                                         {user ? (
                                             <>
-                                                {[["Dashboard Saya", "/dashboard"], ["Pengajuan Saya", "/dashboard#pengajuan"], ["Profil", "/dashboard#profil"], ["Notifikasi", "/dashboard#notifikasi"]].map(([label, href]) => <Link key={href} href={href as Route} onClick={() => setOpen(false)} className="flex items-center justify-between rounded-2xl px-4 py-3 text-base font-bold text-gov-950 transition hover:bg-white">{label}<ChevronRight size={18} className="text-slate-400" /></Link>)}
+                                                <p className="rounded-2xl bg-white px-4 py-3 text-sm font-black text-gov-950">{profile?.nama_lengkap ?? "Akun Warga"}</p>
+                                                {!isVerified(profile) ? <p className="mt-2 rounded-2xl bg-amber-50 px-4 py-3 text-xs font-bold leading-5 text-amber-700">Akun Anda sedang menunggu verifikasi.</p> : null}
+                                                <div className="my-2 h-px bg-green-100" />
+                                                {wargaMenu.map(({ label, href, icon: Icon }) => <Link key={href} href={href as Route} onClick={() => setOpen(false)} className="flex items-center justify-between rounded-2xl px-4 py-3 text-base font-bold text-gov-950 transition hover:bg-white"><span className="flex items-center gap-3"><Icon size={18} className="text-green-700" />{label}</span><ChevronRight size={18} className="text-slate-400" /></Link>)}
                                                 <button type="button" onClick={signOut} className="flex w-full items-center justify-between rounded-2xl px-4 py-3 text-base font-bold text-red-600 transition hover:bg-white">Keluar<LogOut size={18} /></button>
                                             </>
                                         ) : (
                                             <>
-                                                <Link href="/login" onClick={() => setOpen(false)} className="flex items-center justify-between rounded-2xl px-4 py-3 text-base font-bold text-gov-950 transition hover:bg-white">Masuk<ChevronRight size={18} className="text-slate-400" /></Link>
-                                                <Link href="/register" onClick={() => setOpen(false)} className="flex items-center justify-between rounded-2xl px-4 py-3 text-base font-bold text-gov-950 transition hover:bg-white">Daftar<ChevronRight size={18} className="text-slate-400" /></Link>
+                                                <Link href="/login" onClick={() => setOpen(false)} className="flex items-center justify-between rounded-2xl px-4 py-3 text-base font-bold text-gov-950 transition hover:bg-white"><span className="flex items-center gap-3"><LogIn size={18} className="text-green-700" />Masuk</span><ChevronRight size={18} className="text-slate-400" /></Link>
+                                                <Link href="/register" onClick={() => setOpen(false)} className="flex items-center justify-between rounded-2xl px-4 py-3 text-base font-bold text-gov-950 transition hover:bg-white"><span className="flex items-center gap-3"><UserPlus size={18} className="text-green-700" />Daftar Akun</span><ChevronRight size={18} className="text-slate-400" /></Link>
+                                                <Link href="/login?mode=forgot" onClick={() => setOpen(false)} className="flex items-center justify-between rounded-2xl px-4 py-3 text-base font-bold text-gov-950 transition hover:bg-white"><span className="flex items-center gap-3"><KeyRound size={18} className="text-green-700" />Lupa Password</span><ChevronRight size={18} className="text-slate-400" /></Link>
                                             </>
                                         )}
                                     </div>
-                                    {mobileNav.map((item) => item.href === "/#chat" ? (
-                                        <button
-                                            key={item.href}
-                                            type="button"
-                                            onClick={openChat}
-                                            className={cn("flex w-full items-center justify-between rounded-2xl border border-border-soft px-4 py-4 text-left text-base font-bold text-gov-950 transition hover:border-green-200 hover:bg-green-50")}
-                                        >
-                                            {item.label}
-                                            <ChevronRight size={18} className="text-slate-400" />
-                                        </button>
-                                    ) : (
+                                    {mobileNav.map((item) => (
                                         <Link
                                             key={item.href}
                                             href={item.href}
@@ -224,8 +212,8 @@ export function Navbar() {
                                 <div className="mt-auto pt-8">
                                     <div className="rounded-[1.5rem] bg-gov-950 p-5 text-white">
                                         <p className="text-xs font-black uppercase tracking-[0.24em] text-accent-200">Jam Pelayanan</p>
-                                        <p className="mt-4 text-sm font-bold">Senin–Jumat</p>
-                                        <p className="text-sm text-white/75">08.00–16.00 WIB</p>
+                                        <p className="mt-4 text-sm font-bold">Senin-Jumat</p>
+                                        <p className="text-sm text-white/75">08.00-16.00 WIB</p>
                                         <div className="mt-5 grid gap-3 text-sm text-white/80">
                                             <a className="rounded-xl bg-white/10 px-3 py-2" href={`tel:${site.phone}`}>WhatsApp</a>
                                             <a className="rounded-xl bg-white/10 px-3 py-2" href={`mailto:${site.email}`}>Email</a>
@@ -241,3 +229,8 @@ export function Navbar() {
         </header>
     );
 }
+
+
+
+
+

@@ -75,11 +75,11 @@ export function ServicesCarousel({ services }: ServicesCarouselProps) {
                     <Badge className="border-accent-200 bg-accent-100 text-gov-800">
                         <Sparkles size={15} /> {services.length} Layanan
                     </Badge>
-                    <h2 id="services-carousel-title" className="mt-4 font-display text-3xl font-black tracking-tight text-gov-950 sm:text-5xl">
-                        Jenis Pelayanan Online
+                    <h2 id="services-carousel-title" className="mt-4 font-display text-3xl font-black uppercase tracking-tight text-gov-950 sm:text-5xl">
+                        Layanan Kelurahan Tamansari
                     </h2>
                     <p className="mt-4 text-base leading-8 text-slate-650 sm:text-lg">
-                        Temukan layanan administrasi, pengaduan, dan POSBANKUM dalam satu alur digital yang rapi.
+                        Temukan layanan administrasi dan pelayanan masyarakat secara mudah dan cepat.
                     </p>
                 </div>
                 <Link
@@ -125,6 +125,9 @@ export function ServicesCarousel({ services }: ServicesCarouselProps) {
                                         <p className="mt-5 inline-flex items-center gap-2 text-sm font-black text-gov-800">
                                             <CheckCircle2 size={17} /> Informasi resmi
                                         </p>
+                                        <Link href="/layanan" className="mt-6 inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-accent-300 bg-white px-4 text-sm font-black text-gov-950 transition hover:bg-accent-300">
+                                            Informasi & Ajukan <ArrowRight size={16} />
+                                        </Link>
                                     </GlassCard>
                                 </motion.article>
                             );

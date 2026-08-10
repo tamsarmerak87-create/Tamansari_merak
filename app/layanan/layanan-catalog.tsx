@@ -3,15 +3,7 @@
 import Autoplay from "embla-carousel-autoplay";
 import useEmblaCarousel from "embla-carousel-react";
 import { AnimatePresence, motion } from "framer-motion";
-import {
-    ArrowLeft,
-    ArrowRight,
-    Building2,
-    FileText,
-    Megaphone,
-    Search,
-    X,
-} from "lucide-react";
+import { ArrowLeft, ArrowRight, Building2, FileText, Search, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
@@ -184,35 +176,31 @@ export function LayananCatalog({ services }: Props) {
                     <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} transition={{ duration: 0.4 }} className="mt-10">
                         <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
                             <div>
-                                <p className="text-xs font-extrabold uppercase tracking-[0.28em] text-[#F4C542]">Daftar Pelayanan</p>
-                                <h2 className="mt-2 text-3xl font-extrabold tracking-[-0.04em] text-[#0D2B5C] sm:text-4xl">Pilih kebutuhan administrasi Anda</h2>
+                                <p className="text-xs font-extrabold uppercase tracking-[0.28em] text-[#F4C542]">Daftar Layanan</p>
+                                <h2 className="mt-2 text-3xl font-extrabold uppercase tracking-[-0.04em] text-[#0D2B5C] sm:text-4xl">Layanan Kelurahan Tamansari</h2>
                             </div>
-                            <p className="max-w-xl text-sm font-medium leading-7 text-slate-600">Gunakan kategori dan pencarian realtime untuk menemukan layanan yang paling sesuai. Desktop tampil grid, mobile bisa digeser.</p>
+                            <p className="max-w-xl text-sm font-medium leading-7 text-slate-600">Temukan layanan administrasi dan pelayanan masyarakat secara mudah dan cepat.</p>
                         </div>
 
                         {filtered.length ? (
                             <div className="relative">
                                 <div className="pointer-events-none absolute -inset-4 rounded-[36px] bg-gradient-to-r from-[#F4C542]/20 via-white/50 to-[#0D2B5C]/10 blur-2xl" />
-                                <motion.div key={`grid-${activeCategory}-${query}`} initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }} className="relative hidden grid-cols-2 gap-5 md:grid lg:grid-cols-4 2xl:grid-cols-5">
-                                    {filtered.map((service, index) => <ServiceCard key={service.id} service={service} number={index + 1} onDetail={() => setDetail(service)} />)}
-                                </motion.div>
-                                <div className="relative overflow-hidden py-3 md:hidden" ref={emblaRef} aria-roledescription="carousel" aria-label="Slider pelayanan administrasi mobile">
+                                <div className="relative overflow-hidden py-3" ref={emblaRef} aria-roledescription="carousel" aria-label="Slider layanan Kelurahan Tamansari">
                                     <div className="flex touch-pan-y will-change-transform">
                                         {filtered.map((service, index) => (
-                                            <div key={service.id} className="min-w-0 flex-[0_0_100%] px-1">
+                                            <div key={service.id} className="min-w-0 flex-[0_0_100%] px-1 md:flex-[0_0_50%] md:px-2 xl:flex-[0_0_33.333%]">
                                                 <ServiceCard service={service} number={index + 1} onDetail={() => setDetail(service)} />
                                             </div>
                                         ))}
                                     </div>
                                 </div>
-                                <div className="md:hidden"><SliderFooter selected={selectedIndex} total={scrollSnaps.length} scrollPrev={scrollPrev} scrollNext={scrollNext} scrollTo={scrollTo} /></div>
+                                <SliderFooter selected={selectedIndex} total={scrollSnaps.length} scrollPrev={scrollPrev} scrollNext={scrollNext} scrollTo={scrollTo} />
                             </div>
                         ) : (
                             <div className="rounded-[28px] border border-[#E8EDF5] bg-white p-8 text-center text-base font-extrabold text-[#0D2B5C] shadow-[0_18px_55px_rgba(13,43,92,0.08)]">Layanan tidak ditemukan.</div>
                         )}
                     </motion.div>
 
-                    <BottomCta />
                 </div>
             </section>
             <AnimatePresence>{detail ? <DetailModal service={detail} onClose={() => setDetail(null)} /> : null}</AnimatePresence>
@@ -225,9 +213,9 @@ function Hero({ total }: { total: number }) {
         <motion.div initial="hidden" animate="visible" variants={fadeUp} transition={{ duration: 0.4 }} className="mt-8 overflow-hidden rounded-[36px] border border-white/80 bg-white/92 p-6 shadow-[0_28px_90px_rgba(13,43,92,0.10)] backdrop-blur-2xl sm:p-8 lg:p-10">
             <div className="grid gap-10 lg:grid-cols-[1.25fr_0.75fr] lg:items-center">
                 <div>
-                    <div className="flex items-center gap-3"><span className="grid size-16 place-items-center rounded-[24px] bg-[#FFF8DD] text-[#0D2B5C] shadow-inner"><FileText size={30} /></span><span className="text-xs font-extrabold uppercase tracking-[0.3em] text-[#F4C542]">Administrasi</span></div>
-                    <h1 className="mt-7 max-w-3xl text-[clamp(44px,7vw,64px)] font-extrabold leading-[0.95] tracking-[-0.06em] text-[#0D2B5C]">33 Jenis Pelayanan</h1>
-                    <p className="mt-5 max-w-2xl text-lg font-medium leading-8 text-slate-600 sm:text-xl">Pilih layanan yang Anda butuhkan dengan mudah.</p>
+                    <div className="flex items-center gap-3"><span className="grid size-16 place-items-center rounded-[24px] bg-[#FFF8DD] text-[#0D2B5C] shadow-inner"><FileText size={30} /></span><span className="text-xs font-extrabold uppercase tracking-[0.3em] text-[#F4C542]">Layanan</span></div>
+                    <h1 className="mt-7 max-w-3xl text-[clamp(40px,7vw,64px)] font-extrabold uppercase leading-[0.95] tracking-[-0.06em] text-[#0D2B5C]">Layanan Kelurahan Tamansari</h1>
+                    <p className="mt-5 max-w-2xl text-lg font-medium leading-8 text-slate-600 sm:text-xl">Temukan layanan administrasi dan pelayanan masyarakat secara mudah dan cepat.</p>
                     <div className="mt-7 h-1.5 w-36 rounded-full bg-gradient-to-r from-[#F4C542] via-[#F9D976] to-transparent" />
                 </div>
                 <div className="relative min-h-[300px] overflow-hidden rounded-[32px] bg-gradient-to-br from-[#F7F9FC] to-white p-5 ring-1 ring-[#E8EDF5]">
@@ -253,10 +241,6 @@ function ServiceIcon({ iconKey }: { iconKey: string }) {
 function SliderFooter({ selected, total, scrollPrev, scrollNext, scrollTo }: { selected: number; total: number; scrollPrev: () => void; scrollNext: () => void; scrollTo: (index: number) => void }) {
     const safeTotal = Math.max(total, 1);
     return <div className="mt-6 flex flex-col items-center justify-between gap-5 rounded-[28px] border border-white/80 bg-white/70 p-4 shadow-[0_16px_45px_rgba(13,43,92,0.07)] backdrop-blur-xl sm:flex-row"><div className="flex items-center gap-3"><button type="button" onClick={scrollPrev} aria-label="Slide sebelumnya" className="grid size-12 place-items-center rounded-full bg-[#F4C542] text-[#0D2B5C] shadow-[0_12px_30px_rgba(244,197,66,0.30)] transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-[#F4C542]/25"><ArrowLeft size={18} /></button><p className="min-w-20 text-center text-sm font-extrabold text-[#0D2B5C]">{selected + 1} / {safeTotal}</p><button type="button" onClick={scrollNext} aria-label="Slide berikutnya" className="grid size-12 place-items-center rounded-full bg-[#F4C542] text-[#0D2B5C] shadow-[0_12px_30px_rgba(244,197,66,0.30)] transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-[#F4C542]/25"><ArrowRight size={18} /></button></div><div className="flex flex-wrap justify-center gap-2" aria-label="Bullet indicator pelayanan">{Array.from({ length: safeTotal }, (_, index) => <button key={index} type="button" onClick={() => scrollTo(index)} aria-label={`Ke slide ${index + 1}`} aria-current={selected === index ? "true" : undefined} className={cn("h-2.5 rounded-full transition focus:outline-none focus:ring-4 focus:ring-[#F4C542]/25", selected === index ? "w-8 bg-[#F4C542]" : "w-2.5 bg-[#C8D4E6] hover:bg-[#0D2B5C]")} />)}</div></div>;
-}
-
-function BottomCta() {
-    return <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} transition={{ duration: 0.4 }} className="relative mt-10 overflow-hidden rounded-[32px] bg-[#0D2B5C] p-6 text-white shadow-[0_28px_80px_rgba(13,43,92,0.22)] sm:p-8"><div className="absolute -right-20 -top-20 size-56 rounded-full bg-[#F4C542]/20" /><div className="relative flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between"><div className="flex items-center gap-4"><span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-white/12 text-[#F4C542]"><Megaphone size={28} /></span><p className="max-w-3xl text-2xl font-extrabold leading-tight tracking-[-0.03em] sm:text-3xl">Layanan cepat, mudah dan transparan untuk masyarakat.</p></div><Link href="/layanan" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-[#F4C542] px-6 text-sm font-extrabold text-[#0D2B5C] transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-[#F4C542]/25">Lihat Semua Layanan <ArrowRight size={17} /></Link></div></motion.div>;
 }
 
 function DetailModal({ service, onClose }: { service: PublicService; onClose: () => void }) {
