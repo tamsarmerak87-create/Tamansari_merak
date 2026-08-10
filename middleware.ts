@@ -21,7 +21,7 @@ export function middleware(request: NextRequest) {
     if (isAdminProtectedPath(pathname)) {
         const adminSessionToken = request.cookies.has("tamsar_admin_session");
         const response = NextResponse.next();
-        response.headers.set("x-tamsar-admin-role-required", "admin,petugas");
+        response.headers.set("x-tamsar-admin-role-required", "admin");
         if (!adminSessionToken) {
             const url = request.nextUrl.clone();
             url.pathname = "/admin/login";
@@ -32,7 +32,7 @@ export function middleware(request: NextRequest) {
     }
     if (isPetugasProtectedPath(pathname)) {
         const url = request.nextUrl.clone();
-        if (!request.cookies.has("tamsar_admin_session")) {
+        if (!request.cookies.has("tamsar_petugas_session")) {
             url.pathname = "/petugas/login";
             url.searchParams.set("next", pathname);
             return NextResponse.redirect(url);

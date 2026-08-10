@@ -408,18 +408,18 @@
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 
-  /* Dashboard-aligned neutral base */
-  --color-cream-50: #F7F9FC;
-  --color-cream-100: #EEF4FB;
+  /* Warm Tamansari base */
+  --color-cream-50: #fbfff7;
+  --color-cream-100: #f4f8e9;
 
-  /* Gov navy */
-  --color-gov-50: #f0f4fa;
-  --color-gov-100: #dbe6f6;
-  --color-gov-500: #2d5fa0;
-  --color-gov-700: #1a3e6e;
-  --color-gov-800: #0F2942;
-  --color-gov-900: #082F49;
-  --color-gov-950: #061827;
+  /* Tamansari green */
+  --color-gov-50: #edf8ec;
+  --color-gov-100: #d9f0d4;
+  --color-gov-500: #4f9f45;
+  --color-gov-700: #236329;
+  --color-gov-800: #164b24;
+  --color-gov-900: #103d1e;
+  --color-gov-950: #082814;
 
   /* Gold accent */
   --color-accent-50: #fefce8;
@@ -441,32 +441,32 @@
   /* Functional */
   --color-success: #15803D;
   --color-danger: #dc2626;
-  --color-border-soft: #DDE7F3;
-  --color-slate-650: #4a5568;
+  --color-border-soft: #dfe8d0;
+  --color-slate-650: #55614f;
 
   /* Shadows */
-  --shadow-glass: 0 24px 72px rgba(8, 47, 73, 0.12);
-  --shadow-soft: 0 12px 36px rgba(8, 47, 73, 0.08);
+  --shadow-glass: 0 24px 72px rgba(16, 61, 30, 0.12);
+  --shadow-soft: 0 12px 36px rgba(16, 61, 30, 0.08);
   --shadow-gold: 0 18px 54px rgba(234, 179, 8, 0.18);
   --shadow-green: 0 14px 40px rgba(21, 128, 61, 0.16);
 }
 
 :root {
   color-scheme: light;
-  --color-primary: #0F2942;
-  --color-primary-dark: #061827;
-  --color-primary-light: #2d5fa0;
-  --color-secondary: #dbe6f6;
+  --color-primary: #164b24;
+  --color-primary-dark: #082814;
+  --color-primary-light: #4f9f45;
+  --color-secondary: #d9f0d4;
   --color-accent: #FACC15;
-  --color-background: #F7F9FC;
+  --color-background: #fbfff7;
   --color-surface: #FFFFFF;
-  --color-text: #0F2942;
-  --color-text-muted: #4a5568;
-  --color-border: #DDE7F3;
+  --color-text: #082814;
+  --color-text-muted: #55614f;
+  --color-border: #dfe8d0;
   --color-success: #15803D;
   --color-warning: #D99A00;
   --color-danger: #dc2626;
-  --color-info: #2d5fa0;
+  --color-info: #4f9f45;
   --radius-card: 1.5rem;
 }
 
@@ -522,9 +522,9 @@ textarea {
 @media (max-width: 480px) {
   body::before {
     background:
-      radial-gradient(ellipse 80% 42% at 10% 6%, rgba(45, 95, 160, 0.08) 0%, transparent 68%),
-      radial-gradient(ellipse 70% 36% at 94% 8%, rgba(250, 204, 21, 0.07) 0%, transparent 72%),
-      linear-gradient(160deg, #F7F9FC 0%, #EEF4FB 52%, #F7F9FC 100%);
+      radial-gradient(ellipse 80% 42% at 10% 6%, rgba(79, 159, 69, 0.11) 0%, transparent 68%),
+      radial-gradient(ellipse 70% 36% at 94% 8%, rgba(250, 204, 21, 0.10) 0%, transparent 72%),
+      linear-gradient(160deg, #fbfff7 0%, #f4f8e9 52%, #fffdf2 100%);
   }
 
   body::after {
@@ -540,9 +540,9 @@ body::before {
   inset: 0;
   z-index: -2;
   background:
-    radial-gradient(ellipse 72% 52% at 8% 12%, rgba(45, 95, 160, 0.10) 0%, transparent 68%),
-    radial-gradient(ellipse 58% 46% at 92% 10%, rgba(250, 204, 21, 0.08) 0%, transparent 72%),
-    linear-gradient(160deg, #F7F9FC 0%, #EEF4FB 52%, #F7F9FC 100%);
+    radial-gradient(ellipse 72% 52% at 8% 12%, rgba(79, 159, 69, 0.12) 0%, transparent 68%),
+    radial-gradient(ellipse 58% 46% at 92% 10%, rgba(250, 204, 21, 0.10) 0%, transparent 72%),
+    linear-gradient(160deg, #fbfff7 0%, #f4f8e9 50%, #fffdf2 100%);
 }
 
 /* Very subtle dot texture - only top portion */
@@ -553,7 +553,7 @@ body::after {
   z-index: -1;
   pointer-events: none;
   opacity: 0.12;
-  background-image: radial-gradient(rgba(45, 95, 160, 0.34) 1px, transparent 1px);
+  background-image: radial-gradient(rgba(79, 159, 69, 0.28) 1px, transparent 1px);
   background-size: 28px 28px;
   mask-image: linear-gradient(to bottom, black 0%, transparent 60%);
 }
@@ -565,10 +565,34 @@ body::after {
 
 /* Glass utility */
 .glass {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.92) 0%, rgba(240, 244, 250, 0.76) 100%);
-  border: 1px solid rgba(221, 231, 243, 0.92);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.94) 0%, rgba(244, 248, 233, 0.78) 100%);
+  border: 1px solid rgba(223, 232, 208, 0.92);
   box-shadow: var(--shadow-soft);
   backdrop-filter: blur(20px) saturate(140%);
+}
+
+.tamsari-card {
+  border: 1px solid rgba(223, 232, 208, 0.9);
+  border-radius: 1.75rem;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(18px) saturate(140%);
+}
+
+.tamsari-input {
+  min-height: 3rem;
+  width: 100%;
+  border-radius: 1rem;
+  border: 1px solid var(--color-border);
+  background: rgba(255, 255, 255, 0.92);
+  padding: .75rem 1rem;
+  color: var(--color-text);
+  outline: none;
+}
+
+.tamsari-input:focus {
+  box-shadow: 0 0 0 4px rgba(79, 159, 69, 0.16);
+  border-color: #4f9f45;
 }
 
 .text-balance {

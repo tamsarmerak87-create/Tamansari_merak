@@ -59,6 +59,7 @@ export async function POST(request: NextRequest) {
             path: "/",
             maxAge: 60 * 60 * 8,
         });
+        response.cookies.delete("tamsar_petugas_session");
         return response;
     } catch (error) {
         console.error("[admin-login]", error);
