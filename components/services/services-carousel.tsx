@@ -3,7 +3,7 @@
 import Autoplay from "embla-carousel-autoplay";
 import useEmblaCarousel from "embla-carousel-react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, ArrowRight, CheckCircle2, FileText, MessageSquareText, Scale, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, Car, CheckCircle2, FileText, MessageSquareText, Scale, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PublicService } from "@/types";
@@ -21,7 +21,18 @@ const categoryIcon = {
     posbankum: Scale,
 } satisfies Record<PublicService["category"], React.ComponentType<{ size?: number; className?: string }>>;
 
+const vehicleTaxUrl = "https://infopkb.bantenprov.go.id/";
+const vehicleTaxService: PublicService = {
+    id: "cek-pajak-kendaraan-banten",
+    title: "CEK PAJAK KENDARAAN",
+    category: "administrasi",
+    description: "Cek informasi pajak kendaraan bermotor untuk kendaraan yang terdaftar di Provinsi Banten.",
+    requirements: [],
+    online: true,
+};
+
 export function ServicesCarousel({ services }: ServicesCarouselProps) {
+    const displayServices = useMemo(() => [...services, vehicleTaxService], [services]);
     const autoplay = useMemo(
         () => Autoplay({ delay: 4000, stopOnInteraction: false, stopOnMouseEnter: true }),
         [],
@@ -31,7 +42,7 @@ export function ServicesCarousel({ services }: ServicesCarouselProps) {
         [autoplay],
     );
     const [selectedIndex, setSelectedIndex] = useState(0);
-    const [scrollSnaps, setScrollSnaps] = useState<number[]>(() => services.map((_, index) => index));
+    const [scrollSnaps, setScrollSnaps] = useState<number[]>(() => displayServices.map((_, index) => index));
 
     const scrollPrev = useCallback(() => emblaApi?.scrollPrev(), [emblaApi]);
     const scrollNext = useCallback(() => emblaApi?.scrollNext(), [emblaApi]);
@@ -73,7 +84,7 @@ export function ServicesCarousel({ services }: ServicesCarouselProps) {
             <div className="mb-8 flex min-w-0 flex-col gap-5 sm:mb-10 lg:flex-row lg:items-end lg:justify-between">
                 <div className="max-w-3xl">
                     <Badge className="border-accent-200 bg-accent-100 text-gov-800">
-                        <Sparkles size={15} /> {services.length} Layanan
+                        <Sparkles size={15} /> {displayServices.length} Layanan
                     </Badge>
                     <h2 id="services-carousel-title" className="mt-4 font-display text-[clamp(1.85rem,8vw,3rem)] font-black uppercase leading-tight tracking-tight text-gov-950 sm:text-5xl">
                         Layanan Kelurahan Tamansari
@@ -101,8 +112,9 @@ export function ServicesCarousel({ services }: ServicesCarouselProps) {
                     onMouseLeave={() => autoplay.reset()}
                 >
                     <div className="flex touch-pan-y will-change-transform">
-                        {services.map((item, index) => {
-                            const Icon = categoryIcon[item.category];
+                        {displayServices.map((item, index) => {
+                            const isVehicleTax = item.id === vehicleTaxService.id;
+                            const Icon = isVehicleTax ? Car : categoryIcon[item.category];
                             return (
                                 <motion.article
                                     key={item.id}
@@ -119,15 +131,23 @@ export function ServicesCarousel({ services }: ServicesCarouselProps) {
                                         <div className="relative grid size-12 place-items-center rounded-2xl bg-gov-800 text-white shadow-soft transition duration-500 group-hover:scale-110 group-hover:bg-accent-400 group-hover:text-gov-950">
                                             <Icon size={22} />
                                         </div>
-                                        <p className="mt-6 text-xs font-black uppercase tracking-[.22em] text-accent-700">{item.category}</p>
+                                        <p className="mt-6 text-xs font-black uppercase tracking-[.22em] text-accent-700">{isVehicleTax ? "LAYANAN PUBLIK" : item.category}</p>
                                         <h3 className="mt-3 font-display text-xl font-black tracking-tight text-gov-950 [overflow-wrap:anywhere] sm:text-2xl">{item.title}</h3>
                                         <p className="mt-3 line-clamp-3 leading-7 text-slate-650">{item.description}</p>
-                                        <p className="mt-5 inline-flex items-center gap-2 text-sm font-black text-gov-800">
-                                            <CheckCircle2 size={17} /> Informasi resmi
-                                        </p>
-                                        <Link href="/layanan" className="mt-6 inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-accent-300 bg-white px-4 text-sm font-black text-gov-950 transition hover:bg-accent-300">
-                                            Informasi & Ajukan <ArrowRight size={16} />
-                                        </Link>
+                                        <div className="mt-6 flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                                            <p className="inline-flex items-center gap-2 text-sm font-black text-gov-800">
+                                                <CheckCircle2 size={17} /> {isVehicleTax ? "Layanan resmi" : "Informasi resmi"}
+                                            </p>
+                                            {isVehicleTax ? (
+                                                <a href={vehicleTaxUrl} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full border border-accent-300 bg-white px-4 text-sm font-black text-gov-950 transition hover:bg-accent-300 sm:w-auto">
+                                                    Cek Plat Nomor <ArrowRight size={16} />
+                                                </a>
+                                            ) : (
+                                                <Link href="/layanan" className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full border border-accent-300 bg-white px-4 text-sm font-black text-gov-950 transition hover:bg-accent-300 sm:w-auto">
+                                                    Informasi & Ajukan <ArrowRight size={16} />
+                                                </Link>
+                                            )}
+                                        </div>
                                     </GlassCard>
                                 </motion.article>
                             );

@@ -21,13 +21,8 @@ export async function GET() {
         .order("nama", { ascending: true });
 
     return NextResponse.json({
-        env: {
-            url: process.env.NEXT_PUBLIC_SUPABASE_URL,
-            anonExists: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-            serviceExists: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-        },
         total: data?.length ?? 0,
-        error,
+        error: error ? "Gagal memuat layanan." : null,
         data,
     });
 }

@@ -21,10 +21,7 @@ export async function PATCH(request: NextRequest) {
         }
 
         const body = (await request.json()) as VerificationRequestBody;
-        console.log("Request:", body);
-
         const wargaId = body.wargaId ?? body.id;
-        console.log("ID Warga:", wargaId);
 
         if (!wargaId) {
             return NextResponse.json({ ok: false, error: "ID warga wajib diisi." }, { status: 400 });
@@ -53,9 +50,6 @@ export async function PATCH(request: NextRequest) {
             .eq("id", wargaId)
             .select("id,nama_lengkap,nik,email,status_verifikasi,alasan_penolakan,verified_at,verified_by");
 
-        console.log("UPDATE RESULT:", data);
-        console.error("UPDATE ERROR:", error);
-
         if (error) {
             return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
         }
@@ -69,7 +63,8 @@ export async function PATCH(request: NextRequest) {
 
         return NextResponse.json({ ok: true, data });
     } catch (error) {
-        console.error("[api/admin/verifikasi]", error);
+        const message = error instanceof Error ? error.message : "Gagal memperbarui verifikasi warga.";
+        console.error(`[api/admin/verifikasi] ${message}`);
         return NextResponse.json(
             { ok: false, error: error instanceof Error ? error.message : "Gagal memperbarui verifikasi warga." },
             { status: 500 },

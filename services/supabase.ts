@@ -8,13 +8,6 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 let browserClient: SupabaseClient | null = null;
 
-export function logSupabaseEnvStatus() {
-    console.log("[SUPABASE CONFIG]", {
-        hasUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
-        hasAnonKey: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
-    });
-}
-
 function requireSupabaseUrl() {
     if (!supabaseUrl) throw new Error("NEXT_PUBLIC_SUPABASE_URL belum dikonfigurasi. Isi environment variable Supabase URL sebelum membuat client.");
     return supabaseUrl;
@@ -32,7 +25,6 @@ function requireSupabaseServiceKey() {
 
 export function createSupabaseBrowserClient() {
     if (browserClient) return browserClient;
-    logSupabaseEnvStatus();
     browserClient = createClient(requireSupabaseUrl(), requireSupabaseAnonKey(), {
         auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
     });
@@ -40,12 +32,10 @@ export function createSupabaseBrowserClient() {
 }
 
 export function createSupabaseServerClient() {
-    logSupabaseEnvStatus();
     return createClient(requireSupabaseUrl(), requireSupabaseServiceKey(), { auth: { persistSession: false } });
 }
 
 export function createSupabaseAdminClient() {
-    logSupabaseEnvStatus();
     return createClient(requireSupabaseUrl(), requireSupabaseServiceKey(), { auth: { persistSession: false } });
 }
 
@@ -55,7 +45,8 @@ function requireClient(client: SupabaseClient) {
 
 export function logSupabaseError(error: unknown, context?: string) {
     if (!error) return;
-    console.error(`[Supabase${context ? `:${context}` : ""}]`, error);
+    const message = error instanceof Error ? error.message : "Operasi Supabase gagal.";
+    console.error(`[Supabase${context ? `:${context}` : ""}] ${message}`);
 }
 
 export const authService = {

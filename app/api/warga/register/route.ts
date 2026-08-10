@@ -60,7 +60,6 @@ export async function POST(request: Request) {
             status_verifikasi: "Belum Terverifikasi",
         }) satisfies WargaProfileInsertPayload;
 
-        console.log("Payload:", profileData);
         const profileResponse = await supabaseAdmin.from("warga_profiles").insert(profileData).select("*").single();
         if (profileResponse.error) {
             let cleanupNote = "";
@@ -80,10 +79,11 @@ export async function POST(request: Request) {
             try {
                 await cleanupAuthUser(createdUserId);
             } catch (cleanupError) {
-                console.error("[api/warga/register] Cleanup Auth tambahan gagal", cleanupError);
+                const message = cleanupError instanceof Error ? cleanupError.message : "Cleanup Auth tambahan gagal.";
+                console.error(`[api/warga/register] ${message}`);
             }
         }
-        console.error("[api/warga/register] Registrasi gagal", error);
+        console.error(`[api/warga/register] ${errorMessage(error)}`);
         return NextResponse.json({ error: errorMessage(error) }, { status: 400 });
     }
 }

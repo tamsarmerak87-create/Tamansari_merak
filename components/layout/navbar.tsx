@@ -5,7 +5,7 @@ import Image from "next/image";
 import type { Route } from "next";
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronDown, ChevronRight, FileText, KeyRound, LayoutDashboard, LogIn, LogOut, MapPinned, Menu, Search, UserPlus, UserRound, X } from "lucide-react";
+import { Car, ChevronDown, ChevronRight, FileText, KeyRound, LayoutDashboard, LogIn, LogOut, MapPinned, Menu, Search, UserPlus, UserRound, X } from "lucide-react";
 import { site } from "@/constants/site";
 import { cn } from "@/utils/cn";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -14,19 +14,13 @@ import { isVerified, logoutWarga } from "@/services/warga-auth.service";
 
 const nav = [
     { label: "Beranda", href: "/" },
-    { label: "Profil", href: "/profil" },
-    { label: "Layanan", href: "/layanan" },
-    { label: "Berita", href: "/berita" },
-    { label: "Agenda", href: "/agenda" },
+    { label: "Pelayanan", href: "/#layanan" },
     { label: "POSBANKUM", href: "/posbankum" },
-    { label: "FAQ", href: "/faq" },
-    { label: "TAMSAR", href: "/#chat" },
 ] as const;
 
-const mobileNav: { label: string; href: Route; }[] = [
-    ...nav,
-    { label: "Kontak", href: "/kontak" },
-];
+const vehicleTaxUrl = "https://infopkb.bantenprov.go.id/";
+
+const mobileNav: { label: string; href: Route; }[] = [...nav];
 
 const wargaMenu = [
     { label: "Layanan", href: "/layanan", icon: LayoutDashboard },
@@ -104,12 +98,15 @@ export function Navbar() {
                     </div>
                 </Link>
 
-                <nav className="hidden min-w-0 flex-1 items-center justify-center gap-0.5 whitespace-nowrap min-[1380px]:flex">
+                <nav className="hidden min-w-0 flex-1 items-center justify-center gap-1 whitespace-nowrap lg:flex">
                     {nav.map((item) => (
-                        <Link key={item.href} href={item.href} aria-current={isActive(item.href) ? "page" : undefined} className={cn("relative rounded-full px-2.5 py-2 text-[13px] font-semibold text-gov-900 transition duration-200 hover:bg-gov-50 hover:text-gov-800", isActive(item.href) && "bg-gov-50 text-gov-800 after:absolute after:inset-x-3 after:-bottom-1 after:h-0.5 after:rounded-full after:bg-accent-500")}>
+                        <Link key={item.href} href={item.href} aria-current={isActive(item.href) ? "page" : undefined} className={cn("relative rounded-full px-3 py-2 text-[13px] font-black text-gov-900 transition duration-200 hover:bg-gov-50 hover:text-gov-800", isActive(item.href) && "bg-gov-50 text-gov-800 after:absolute after:inset-x-3 after:-bottom-1 after:h-0.5 after:rounded-full after:bg-accent-500")}>
                             {item.label}
                         </Link>
                     ))}
+                    <a href={vehicleTaxUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-[13px] font-black text-gov-900 transition duration-200 hover:bg-gov-50 hover:text-gov-800">
+                        <Car size={15} /> Cek Pajak Kendaraan
+                    </a>
                 </nav>
 
                 <div className="ml-auto flex shrink-0 items-center gap-1.5 whitespace-nowrap min-[390px]:gap-2">
@@ -154,7 +151,7 @@ export function Navbar() {
                     </div>
 
                     {/* Mobile Hamburger */}
-                    <div className="min-[1380px]:hidden">
+                    <div className="lg:hidden">
                         <Sheet open={open} onOpenChange={setOpen}>
                             <SheetTrigger
                                 aria-label="Buka menu navigasi"
@@ -189,6 +186,24 @@ export function Navbar() {
                                             <ChevronRight size={18} className="text-slate-400" />
                                         </Link>
                                     ))}
+                                    <a
+                                        href={vehicleTaxUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={() => setOpen(false)}
+                                        className="flex items-center justify-between rounded-2xl border border-border-soft px-4 py-4 text-base font-bold text-gov-950 transition hover:border-gov-100 hover:bg-gov-50"
+                                    >
+                                        <span className="inline-flex items-center gap-2"><Car size={18} className="text-gov-800" /> Cek Pajak Kendaraan</span>
+                                        <ChevronRight size={18} className="text-slate-400" />
+                                    </a>
+                                    <Link
+                                        href="/login"
+                                        onClick={() => setOpen(false)}
+                                        className="flex items-center justify-between rounded-2xl border border-border-soft px-4 py-4 text-base font-bold text-gov-950 transition hover:border-gov-100 hover:bg-gov-50"
+                                    >
+                                        Masuk
+                                        <ChevronRight size={18} className="text-slate-400" />
+                                    </Link>
                                 </div>
 
                                 <div className="mt-auto pt-8">
@@ -211,6 +226,8 @@ export function Navbar() {
         </header>
     );
 }
+
+
 
 
 

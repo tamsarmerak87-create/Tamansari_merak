@@ -50,6 +50,10 @@ export function hasFullAdminAccess(user?: { role?: string | null } | null) {
     return isAdmin(user);
 }
 
+export function allowFullAdminAccess(user?: { role?: string | null } | null) {
+    return hasFullAdminAccess(user);
+}
+
 export function requireActiveAdmin(user?: { role?: string | null; is_active?: boolean | null } | null) {
     if (!user || user.is_active === false) return "UNAUTHENTICATED" as const;
     return requireAdmin(user);
