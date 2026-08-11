@@ -92,7 +92,6 @@ function serviceGroupLabel(service: PublicService) {
 export function LayananCatalog({ services, mode = "full" }: Props) {
     const adminServices = useMemo(() => services.filter((item) => item.category === "administrasi").slice(0, 33), [services]);
     const isHome = mode === "home";
-    const homePreview = useMemo(() => adminServices.slice(0, 3), [adminServices]);
     const [query, setQuery] = useState("");
     const [activeCategory, setActiveCategory] = useState<CategoryKey>("all");
     const [detail, setDetail] = useState<PublicService | null>(null);
@@ -105,7 +104,7 @@ export function LayananCatalog({ services, mode = "full" }: Props) {
             return matchesCategory && matchesQuery;
         });
     }, [activeCategory, adminServices, query]);
-    const visibleServices = isHome ? homePreview : filtered;
+    const visibleServices = isHome ? adminServices : filtered;
 
     const autoplay = useMemo(() => Autoplay({ delay: AUTO_MS, stopOnInteraction: false, stopOnMouseEnter: true }), []);
     const [emblaRef, emblaApi] = useEmblaCarousel({ align: "start", loop: true, dragFree: false, duration: 42 }, [autoplay]);
@@ -121,9 +120,18 @@ export function LayananCatalog({ services, mode = "full" }: Props) {
         setScrollSnaps(emblaApi.scrollSnapList());
         setSelectedIndex(emblaApi.selectedScrollSnap());
     }, [emblaApi]);
-    const scrollPrev = useCallback(() => emblaApi?.scrollPrev(), [emblaApi]);
-    const scrollNext = useCallback(() => emblaApi?.scrollNext(), [emblaApi]);
-    const scrollTo = useCallback((index: number) => emblaApi?.scrollTo(index), [emblaApi]);
+    const scrollPrev = useCallback(() => {
+        emblaApi?.scrollPrev();
+        autoplay.reset();
+    }, [autoplay, emblaApi]);
+    const scrollNext = useCallback(() => {
+        emblaApi?.scrollNext();
+        autoplay.reset();
+    }, [autoplay, emblaApi]);
+    const scrollTo = useCallback((index: number) => {
+        emblaApi?.scrollTo(index);
+        autoplay.reset();
+    }, [autoplay, emblaApi]);
 
     useEffect(() => {
         if (!emblaApi) return;
@@ -188,16 +196,27 @@ export function LayananCatalog({ services, mode = "full" }: Props) {
                         {visibleServices.length ? (
                             <div className="relative">
                                 <div className="pointer-events-none absolute -inset-4 rounded-[36px] bg-gradient-to-r from-[#F4C542]/20 via-white/50 to-[#0D2B5C]/10 blur-2xl" />
-                                <div className={cn("relative py-3", isHome ? "grid gap-4 md:grid-cols-2 xl:grid-cols-3" : "overflow-hidden")} ref={isHome ? undefined : emblaRef} aria-roledescription={isHome ? undefined : "carousel"} aria-label="Slider layanan Kelurahan Tamansari">
-                                    <div className={isHome ? "contents" : "flex touch-pan-y will-change-transform"}>
+                                <div
+                                    className="relative overflow-hidden py-3"
+                                    ref={emblaRef}
+                                    aria-roledescription="carousel"
+                                    aria-label="Slider layanan Kelurahan Tamansari"
+                                    onPointerDown={() => autoplay.stop()}
+                                    onPointerUp={() => autoplay.reset()}
+                                    onPointerCancel={() => autoplay.reset()}
+                                    onMouseEnter={() => autoplay.stop()}
+                                    onMouseLeave={() => autoplay.reset()}
+                                >
+                                    <div className="flex touch-pan-y will-change-transform">
                                         {visibleServices.map((service) => (
-                                            <div key={service.id} className={isHome ? "min-w-0" : "min-w-0 flex-[0_0_100%] px-1 md:flex-[0_0_50%] md:px-2 xl:flex-[0_0_33.333%]"}>
+                                            <div key={service.id} className="min-w-0 flex-[0_0_100%] px-1 md:flex-[0_0_50%] md:px-2 xl:flex-[0_0_33.333%]">
                                                 <ServiceCard service={service} number={adminServices.findIndex((item) => item.id === service.id) + 1} onDetail={() => setDetail(service)} />
                                             </div>
                                         ))}
                                     </div>
                                 </div>
-                                {isHome ? <div className="mt-7 flex justify-center"><Link href="/layanan" className="group inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-[#0D2B5C] px-6 text-sm font-extrabold text-white shadow-[0_18px_45px_rgba(13,43,92,.20)] transition hover:-translate-y-1 focus:outline-none focus:ring-4 focus:ring-[#FFC533]/25">Lihat Semua <ArrowRight size={17} className="transition group-hover:translate-x-1" /></Link></div> : <SliderFooter selected={selectedIndex} total={scrollSnaps.length} scrollPrev={scrollPrev} scrollNext={scrollNext} scrollTo={scrollTo} />}
+                                <SliderFooter selected={selectedIndex} total={scrollSnaps.length} scrollPrev={scrollPrev} scrollNext={scrollNext} scrollTo={scrollTo} />
+                                {isHome ? <div className="mt-7 flex justify-center"><Link href="/layanan" className="group inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-[#0D2B5C] px-6 text-sm font-extrabold text-white shadow-[0_18px_45px_rgba(13,43,92,.20)] transition hover:-translate-y-1 focus:outline-none focus:ring-4 focus:ring-[#FFC533]/25">Lihat Semua <ArrowRight size={17} className="transition group-hover:translate-x-1" /></Link></div> : null}
                             </div>
                         ) : (
                             <div className="rounded-[28px] border border-[#E8EDF5] bg-white p-8 text-center text-base font-extrabold text-[#0D2B5C] shadow-[0_18px_55px_rgba(13,43,92,0.08)]">Layanan tidak ditemukan.</div>
@@ -247,7 +266,9 @@ function ServiceIcon({ iconKey }: { iconKey: string }) {
 
 function SliderFooter({ selected, total, scrollPrev, scrollNext, scrollTo }: { selected: number; total: number; scrollPrev: () => void; scrollNext: () => void; scrollTo: (index: number) => void }) {
     const safeTotal = Math.max(total, 1);
-    return <div className="mt-6 flex flex-col items-center justify-between gap-5 rounded-[28px] border border-white/80 bg-white/70 p-4 shadow-[0_16px_45px_rgba(13,43,92,0.07)] backdrop-blur-xl sm:flex-row"><div className="flex items-center gap-3"><button type="button" onClick={scrollPrev} aria-label="Slide sebelumnya" className="grid size-12 place-items-center rounded-full bg-[#F4C542] text-[#0D2B5C] shadow-[0_12px_30px_rgba(244,197,66,0.30)] transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-[#F4C542]/25"><ArrowLeft size={18} /></button><p className="min-w-20 text-center text-sm font-extrabold text-[#0D2B5C]">{selected + 1} / {safeTotal}</p><button type="button" onClick={scrollNext} aria-label="Slide berikutnya" className="grid size-12 place-items-center rounded-full bg-[#F4C542] text-[#0D2B5C] shadow-[0_12px_30px_rgba(244,197,66,0.30)] transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-[#F4C542]/25"><ArrowRight size={18} /></button></div><div className="flex flex-wrap justify-center gap-2" aria-label="Bullet indicator pelayanan">{Array.from({ length: safeTotal }, (_, index) => <button key={index} type="button" onClick={() => scrollTo(index)} aria-label={`Ke slide ${index + 1}`} aria-current={selected === index ? "true" : undefined} className={cn("h-2.5 rounded-full transition focus:outline-none focus:ring-4 focus:ring-[#F4C542]/25", selected === index ? "w-8 bg-[#F4C542]" : "w-2.5 bg-[#C8D4E6] hover:bg-[#0D2B5C]")} />)}</div></div>;
+    const indicatorCount = Math.min(safeTotal, 7);
+    const activeIndicator = Math.min(indicatorCount - 1, Math.floor((selected / safeTotal) * indicatorCount));
+    return <div className="mt-6 flex flex-col items-center justify-between gap-5 rounded-[28px] border border-white/80 bg-white/70 p-4 shadow-[0_16px_45px_rgba(13,43,92,0.07)] backdrop-blur-xl sm:flex-row"><div className="flex items-center gap-3"><button type="button" onClick={scrollPrev} aria-label="Layanan sebelumnya" className="grid size-12 place-items-center rounded-full bg-[#F4C542] text-[#0D2B5C] shadow-[0_12px_30px_rgba(244,197,66,0.30)] transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-[#F4C542]/25"><ArrowLeft size={18} /></button><p className="min-w-20 text-center text-sm font-extrabold text-[#0D2B5C]">{selected + 1} / {safeTotal}</p><button type="button" onClick={scrollNext} aria-label="Layanan berikutnya" className="grid size-12 place-items-center rounded-full bg-[#F4C542] text-[#0D2B5C] shadow-[0_12px_30px_rgba(244,197,66,0.30)] transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-[#F4C542]/25"><ArrowRight size={18} /></button></div><div className="flex justify-center gap-2" aria-label="Bullet indicator pelayanan">{Array.from({ length: indicatorCount }, (_, index) => { const target = Math.min(safeTotal - 1, Math.round((index / indicatorCount) * safeTotal)); return <button key={index} type="button" onClick={() => scrollTo(target)} aria-label={`Ke kelompok layanan ${index + 1}`} aria-current={activeIndicator === index ? "true" : undefined} className={cn("h-2.5 rounded-full transition focus:outline-none focus:ring-4 focus:ring-[#F4C542]/25", activeIndicator === index ? "w-8 bg-[#F4C542]" : "w-2.5 bg-[#C8D4E6] hover:bg-[#0D2B5C]")} />; })}</div></div>;
 }
 
 function DetailModal({ service, onClose }: { service: PublicService; onClose: () => void }) {
