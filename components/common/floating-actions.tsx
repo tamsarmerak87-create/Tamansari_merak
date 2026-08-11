@@ -45,18 +45,18 @@ export function FloatingActions() {
     const openChat = () => window.dispatchEvent(new CustomEvent("tamsar-chat:open"));
 
     return (
-        <div className="fixed bottom-[max(18px,env(safe-area-inset-bottom))] right-[max(14px,env(safe-area-inset-right))] z-[9999] flex flex-col items-end gap-4 md:bottom-[calc(20px+env(safe-area-inset-bottom))] md:right-[18px] lg:bottom-[calc(24px+env(safe-area-inset-bottom))] lg:right-6 lg:gap-5">
+        <div className="fixed bottom-[max(18px,env(safe-area-inset-bottom))] right-[max(14px,env(safe-area-inset-right))] z-[9999] flex flex-col items-end gap-5 md:bottom-[calc(20px+env(safe-area-inset-bottom))] md:right-[18px] lg:bottom-[calc(24px+env(safe-area-inset-bottom))] lg:right-6 lg:gap-6">
             <a
-                className="group relative grid size-[58px] place-items-center rounded-full transition-transform duration-200 ease-out hover:scale-[1.06] focus:outline-none focus:ring-4 focus:ring-[#25d366]/25 md:size-[62px] lg:size-[68px]"
+                className="group grid size-[62px] place-items-center rounded-full transition-transform duration-200 ease-out hover:scale-[1.06] focus:outline-none focus:ring-4 focus:ring-[#25d366]/25 md:size-[68px] lg:size-[74px]"
                 href={`${site.wa}?text=Assalamualaikum%2C%20saya%20ingin%20bertanya%20layanan%20Tamansari`}
                 aria-label="WhatsApp Kelurahan"
             >
-                <Image src="/assets/icon-whatsapp-v3.svg" alt="" width={72} height={72} className="size-full transition-transform duration-200 group-hover:scale-[1.03]" aria-hidden="true" priority />
+                <Image src="/assets/icon-whatsapp-v3.svg" alt="" width={88} height={88} className="size-full object-contain transition-transform duration-200 group-hover:scale-[1.03]" aria-hidden="true" priority />
             </a>
             <button
                 type="button"
                 onClick={openChat}
-                className="group relative grid size-[58px] place-items-center rounded-full transition-transform duration-200 ease-out hover:scale-[1.06] focus:outline-none focus:ring-4 focus:ring-sky-100 md:size-[62px] lg:size-[68px]"
+                className="group grid size-[62px] place-items-center rounded-full transition-transform duration-200 ease-out hover:scale-[1.06] focus:outline-none focus:ring-4 focus:ring-sky-100 md:size-[68px] lg:size-[74px]"
                 aria-label="Buka Chat TAMSAR AI"
             >
                 <CustomerService3DIcon />
