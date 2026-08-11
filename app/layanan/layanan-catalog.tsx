@@ -11,7 +11,7 @@ import type { CSSProperties, ReactNode } from "react";
 import type { PublicService } from "@/types";
 import { cn } from "@/utils/cn";
 
-type Props = { services: PublicService[] };
+type Props = { services: PublicService[]; mode?: "full" | "home" };
 const AUTO_MS = 5000;
 const fadeUp = { hidden: { opacity: 0, y: 24 }, visible: { opacity: 1, y: 0 } };
 
@@ -89,8 +89,10 @@ function serviceGroupLabel(service: PublicService) {
     return categoryChips.find((item) => item.key === serviceGroup(service))?.label.replace(/^\S+\s/, "") ?? "Administrasi";
 }
 
-export function LayananCatalog({ services }: Props) {
+export function LayananCatalog({ services, mode = "full" }: Props) {
     const adminServices = useMemo(() => services.filter((item) => item.category === "administrasi").slice(0, 33), [services]);
+    const isHome = mode === "home";
+    const homePreview = useMemo(() => adminServices.slice(0, 3), [adminServices]);
     const [query, setQuery] = useState("");
     const [activeCategory, setActiveCategory] = useState<CategoryKey>("all");
     const [detail, setDetail] = useState<PublicService | null>(null);
@@ -103,6 +105,7 @@ export function LayananCatalog({ services }: Props) {
             return matchesCategory && matchesQuery;
         });
     }, [activeCategory, adminServices, query]);
+    const visibleServices = isHome ? homePreview : filtered;
 
     const autoplay = useMemo(() => Autoplay({ delay: AUTO_MS, stopOnInteraction: false, stopOnMouseEnter: true }), []);
     const [emblaRef, emblaApi] = useEmblaCarousel({ align: "start", loop: true, dragFree: false, duration: 42 }, [autoplay]);
@@ -153,14 +156,14 @@ export function LayananCatalog({ services }: Props) {
 
     return (
         <>
-            <section className="relative isolate overflow-hidden px-4 pb-24 pt-5 sm:px-6 lg:px-8 xl:px-12">
+            <section id={isHome ? "layanan" : undefined} className={cn("relative isolate overflow-hidden px-4 sm:px-6 lg:px-8 xl:px-12", isHome ? "py-12 sm:py-16 lg:py-20" : "pb-24 pt-5")}>
                 <div className="pointer-events-none absolute inset-0 -z-10 bg-[#F7F9FC]" />
                 <div className="pointer-events-none absolute -left-32 top-20 -z-10 size-96 rounded-full bg-[#F4C542]/16 blur-3xl" />
                 <div className="pointer-events-none absolute -right-32 top-44 -z-10 size-[30rem] rounded-full bg-[#0D2B5C]/10 blur-3xl" />
 
                 <div className="mx-auto max-w-7xl">
-                    <Hero total={adminServices.length} />
-                    <div className="mt-6 rounded-[30px] border border-white/80 bg-white/88 p-4 shadow-[0_18px_50px_rgba(13,43,92,0.08)] backdrop-blur-2xl sm:p-5">
+                    {isHome ? <HomeHeading total={adminServices.length} /> : <Hero total={adminServices.length} />}
+                    {!isHome ? <div className="mt-6 rounded-[30px] border border-white/80 bg-white/88 p-4 shadow-[0_18px_50px_rgba(13,43,92,0.08)] backdrop-blur-2xl sm:p-5">
                         <div className="relative">
                             <Search className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 text-[#0B2C6A]/45" size={20} />
                             <label className="sr-only" htmlFor="layanan-search">Cari layanan</label>
@@ -171,30 +174,30 @@ export function LayananCatalog({ services }: Props) {
                                 <button key={item.key} type="button" onClick={() => changeCategory(item.key)} aria-label={`Filter kategori ${item.label}`} aria-pressed={activeCategory === item.key} className={cn("shrink-0 rounded-full border px-4 py-2.5 text-sm font-extrabold transition duration-300 focus:outline-none focus:ring-4 focus:ring-[#FFC533]/25", activeCategory === item.key ? "border-[#FFC533] bg-[#0B2C6A] text-white shadow-[0_14px_34px_rgba(11,44,106,.22)]" : "border-[#E8EDF5] bg-white text-[#0B2C6A] hover:border-[#FFC533] hover:bg-[#FFF8DD]")}>{item.label}</button>
                             ))}
                         </div>
-                    </div>
+                    </div> : null}
 
                     <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} transition={{ duration: 0.4 }} className="mt-10">
-                        <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                        {!isHome ? <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
                             <div>
                                 <p className="text-xs font-extrabold uppercase tracking-[0.28em] text-[#F4C542]">Daftar Layanan</p>
                                 <h2 className="mt-2 text-3xl font-extrabold uppercase tracking-[-0.04em] text-[#0D2B5C] sm:text-4xl">Layanan Kelurahan Tamansari</h2>
                             </div>
                             <p className="max-w-xl text-sm font-medium leading-7 text-slate-600">Temukan layanan administrasi dan pelayanan masyarakat secara mudah dan cepat.</p>
-                        </div>
+                        </div> : null}
 
-                        {filtered.length ? (
+                        {visibleServices.length ? (
                             <div className="relative">
                                 <div className="pointer-events-none absolute -inset-4 rounded-[36px] bg-gradient-to-r from-[#F4C542]/20 via-white/50 to-[#0D2B5C]/10 blur-2xl" />
-                                <div className="relative overflow-hidden py-3" ref={emblaRef} aria-roledescription="carousel" aria-label="Slider layanan Kelurahan Tamansari">
-                                    <div className="flex touch-pan-y will-change-transform">
-                                        {filtered.map((service, index) => (
-                                            <div key={service.id} className="min-w-0 flex-[0_0_100%] px-1 md:flex-[0_0_50%] md:px-2 xl:flex-[0_0_33.333%]">
-                                                <ServiceCard service={service} number={index + 1} onDetail={() => setDetail(service)} />
+                                <div className={cn("relative py-3", isHome ? "grid gap-4 md:grid-cols-2 xl:grid-cols-3" : "overflow-hidden")} ref={isHome ? undefined : emblaRef} aria-roledescription={isHome ? undefined : "carousel"} aria-label="Slider layanan Kelurahan Tamansari">
+                                    <div className={isHome ? "contents" : "flex touch-pan-y will-change-transform"}>
+                                        {visibleServices.map((service) => (
+                                            <div key={service.id} className={isHome ? "min-w-0" : "min-w-0 flex-[0_0_100%] px-1 md:flex-[0_0_50%] md:px-2 xl:flex-[0_0_33.333%]"}>
+                                                <ServiceCard service={service} number={adminServices.findIndex((item) => item.id === service.id) + 1} onDetail={() => setDetail(service)} />
                                             </div>
                                         ))}
                                     </div>
                                 </div>
-                                <SliderFooter selected={selectedIndex} total={scrollSnaps.length} scrollPrev={scrollPrev} scrollNext={scrollNext} scrollTo={scrollTo} />
+                                {isHome ? <div className="mt-7 flex justify-center"><Link href="/layanan" className="group inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-[#0D2B5C] px-6 text-sm font-extrabold text-white shadow-[0_18px_45px_rgba(13,43,92,.20)] transition hover:-translate-y-1 focus:outline-none focus:ring-4 focus:ring-[#FFC533]/25">Lihat Semua <ArrowRight size={17} className="transition group-hover:translate-x-1" /></Link></div> : <SliderFooter selected={selectedIndex} total={scrollSnaps.length} scrollPrev={scrollPrev} scrollNext={scrollNext} scrollTo={scrollTo} />}
                             </div>
                         ) : (
                             <div className="rounded-[28px] border border-[#E8EDF5] bg-white p-8 text-center text-base font-extrabold text-[#0D2B5C] shadow-[0_18px_55px_rgba(13,43,92,0.08)]">Layanan tidak ditemukan.</div>
@@ -206,6 +209,10 @@ export function LayananCatalog({ services }: Props) {
             <AnimatePresence>{detail ? <DetailModal service={detail} onClose={() => setDetail(null)} /> : null}</AnimatePresence>
         </>
     );
+}
+
+function HomeHeading({ total }: { total: number }) {
+    return <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} transition={{ duration: 0.4 }} className="mb-8 flex min-w-0 flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div className="max-w-3xl"><span className="inline-flex items-center gap-2 rounded-full border border-[#F4C542]/45 bg-[#FFF8DD] px-4 py-2 text-sm font-extrabold uppercase tracking-[0.16em] text-[#0D2B5C]"><FileText size={15} /> {total} Layanan</span><h2 className="mt-4 text-[clamp(1.85rem,8vw,3rem)] font-extrabold uppercase leading-tight tracking-[-0.04em] text-[#0D2B5C] sm:text-5xl">Layanan Kelurahan Tamansari</h2><p className="mt-4 text-base font-medium leading-8 text-slate-600 sm:text-lg">Temukan layanan administrasi dan pelayanan masyarakat secara mudah dan cepat.</p></div></motion.div>;
 }
 
 function Hero({ total }: { total: number }) {

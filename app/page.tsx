@@ -1,6 +1,6 @@
 import Image from "next/image";
 import { HomeHero } from "@/components/hero/home-hero";
-import { ServicesCarousel } from "@/components/services/services-carousel";
+import { LayananCatalog } from "@/app/layanan/layanan-catalog";
 import { publicRepository } from "@/services/repository";
 import { MotionShell } from "@/components/common/motion-shell";
 import { Badge } from "@/components/ui/badge";
@@ -28,7 +28,7 @@ export default async function HomePage() {
     return (
         <main id="top" className="premium-shell min-h-screen overflow-hidden">
             <HomeHero />
-            <ServicesCarousel services={services} />
+            <LayananCatalog services={services} mode="home" />
 
             {/* Dokumentasi */}
             <section id="dokumentasi" className="mx-auto max-w-[1320px] px-4 py-16 sm:px-8 sm:py-20 lg:px-12 lg:py-24">
