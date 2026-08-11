@@ -1,39 +1,40 @@
 "use client";
-import Image from "next/image";
 import { site } from "@/constants/site";
 
 export function FloatingActions() {
     const openChat = () => window.dispatchEvent(new CustomEvent("tamsar-chat:open"));
 
     return (
-        <div className="fixed bottom-[max(18px,env(safe-area-inset-bottom))] right-[max(14px,env(safe-area-inset-right))] z-[80] flex flex-col items-end gap-3 sm:bottom-[calc(24px+env(safe-area-inset-bottom))] sm:right-6 sm:gap-4">
+        <div className="fixed bottom-[max(16px,env(safe-area-inset-bottom))] right-[max(14px,env(safe-area-inset-right))] z-[9999] flex flex-col items-end gap-3 md:bottom-[calc(18px+env(safe-area-inset-bottom))] md:right-[18px] lg:bottom-[calc(24px+env(safe-area-inset-bottom))] lg:right-6 lg:gap-4">
             <a
-                className="group relative grid size-12 place-items-center overflow-hidden rounded-full bg-[linear-gradient(145deg,#54f28b_0%,#22c55e_42%,#0f8f43_100%)] shadow-[0_16px_28px_rgba(10,111,54,.34),inset_0_-8px_14px_rgba(4,77,36,.28),inset_0_7px_12px_rgba(255,255,255,.42)] ring-[3px] ring-white/95 transition duration-300 ease-out hover:scale-[1.05] focus:outline-none focus:ring-4 focus:ring-[#25d366]/30 sm:size-14"
+                className="group relative grid size-[46px] place-items-center rounded-full border-[5px] border-white bg-[radial-gradient(circle_at_31%_20%,#78f6a4_0_18%,transparent_36%),linear-gradient(145deg,#25D366_0%,#16b958_46%,#128C7E_100%)] shadow-[8px_12px_18px_rgba(2,44,24,.28),0_4px_0_rgba(255,255,255,.95),inset_5px_6px_10px_rgba(255,255,255,.32),inset_-7px_-10px_13px_rgba(0,74,36,.34)] transition-[transform,box-shadow] duration-200 ease-out before:absolute before:inset-[3px] before:rounded-full before:border before:border-white/30 before:shadow-[inset_2px_3px_5px_rgba(255,255,255,.28),inset_-5px_-7px_10px_rgba(0,0,0,.22)] after:absolute after:left-[8px] after:top-[5px] after:h-[13px] after:w-[24px] after:rotate-[-22deg] after:rounded-full after:bg-white/48 after:blur-[1px] hover:scale-[1.05] hover:shadow-[10px_14px_22px_rgba(2,44,24,.34),0_4px_0_rgba(255,255,255,.95),inset_5px_6px_10px_rgba(255,255,255,.34),inset_-7px_-10px_13px_rgba(0,74,36,.36)] focus:outline-none focus:ring-4 focus:ring-[#25d366]/25 md:size-[50px] lg:size-14"
                 href={`${site.wa}?text=Assalamualaikum%2C%20saya%20ingin%20bertanya%20layanan%20Tamansari`}
                 aria-label="WhatsApp Kelurahan"
             >
-                <span className="pointer-events-none absolute left-2 top-1.5 h-4 w-7 rounded-full bg-white/55 blur-[1px] sm:left-2.5 sm:top-2 sm:h-4 sm:w-8" />
-                <span className="pointer-events-none absolute inset-[4px] rounded-full border border-white/30" />
-                <span className="relative grid size-7 place-items-center overflow-hidden rounded-full drop-shadow-[0_2px_3px_rgba(0,0,0,.18)] sm:size-8">
-                    <Image src="/assets/icon-whatsapp.png" alt="" aria-hidden="true" fill sizes="32px" className="object-cover brightness-0 invert transition duration-300 group-hover:scale-[1.04]" />
-                </span>
+                <span className="absolute -bottom-[6px] right-[-5px] h-4 w-9 rounded-full bg-black/20 blur-md" aria-hidden="true" />
+                <svg className="relative z-10 size-[29px] drop-shadow-[0_3px_3px_rgba(0,0,0,.28)] transition duration-200 group-hover:scale-[1.03] md:size-[31px] lg:size-[35px]" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+                    <path d="M26.2 5.75A14.2 14.2 0 0 0 3.86 22.9L2.5 29.5l6.78-1.55A14.2 14.2 0 0 0 26.2 5.75Z" fill="white" />
+                    <path d="M8.98 25.34 5.8 26.07l.64-3.08.2-.95-.5-.84A11.23 11.23 0 1 1 10.03 25l-.83-.45-.22.79Z" fill="#10a84f" />
+                    <path d="M12.26 9.62c-.25-.57-.53-.58-.78-.59h-.66c-.23 0-.6.08-.92.4-.31.34-1.2 1.18-1.2 2.87 0 1.7 1.23 3.34 1.4 3.57.17.23 2.37 3.78 5.88 5.14 2.92 1.15 3.52.92 4.15.86.64-.06 2.05-.84 2.34-1.65.29-.81.29-1.51.2-1.65-.08-.15-.31-.23-.66-.4-.35-.18-2.05-1.02-2.37-1.13-.32-.12-.55-.18-.78.17-.23.35-.9 1.13-1.1 1.36-.2.23-.4.26-.75.09-.35-.18-1.48-.55-2.82-1.74-1.04-.93-1.75-2.08-1.96-2.43-.2-.35-.02-.54.15-.72.16-.15.35-.4.52-.61.18-.2.23-.35.35-.58.12-.23.06-.43-.03-.61-.09-.18-.76-1.87-1.06-2.56Z" fill="white" />
+                </svg>
             </a>
             <button
                 type="button"
                 onClick={openChat}
-                className="group relative grid size-12 place-items-center overflow-hidden rounded-full bg-[linear-gradient(145deg,#dff7ff_0%,#46a8e8_45%,#124878_100%)] shadow-[0_16px_28px_rgba(18,72,120,.32),inset_0_-8px_14px_rgba(10,54,96,.32),inset_0_7px_12px_rgba(255,255,255,.48)] ring-[3px] ring-white/95 transition duration-300 ease-out hover:scale-[1.05] focus:outline-none focus:ring-4 focus:ring-sky-100 sm:size-14"
+                className="group relative grid size-[46px] place-items-center overflow-hidden rounded-full border-[5px] border-white bg-[radial-gradient(circle_at_31%_20%,#83c7ff_0_17%,transparent_34%),linear-gradient(145deg,#2D8CFF_0%,#1d73ee_48%,#1556D6_100%)] shadow-[8px_12px_18px_rgba(15,50,120,.3),0_4px_0_rgba(255,255,255,.95),inset_5px_6px_10px_rgba(255,255,255,.34),inset_-7px_-10px_13px_rgba(7,38,117,.36)] transition-[transform,box-shadow] duration-200 ease-out before:absolute before:inset-[3px] before:rounded-full before:border before:border-white/30 before:shadow-[inset_2px_3px_5px_rgba(255,255,255,.28),inset_-5px_-7px_10px_rgba(0,0,0,.22)] after:absolute after:left-[8px] after:top-[5px] after:h-[13px] after:w-[24px] after:rotate-[-22deg] after:rounded-full after:bg-white/48 after:blur-[1px] hover:scale-[1.05] hover:shadow-[10px_14px_22px_rgba(15,50,120,.36),0_4px_0_rgba(255,255,255,.95),inset_5px_6px_10px_rgba(255,255,255,.36),inset_-7px_-10px_13px_rgba(7,38,117,.38)] focus:outline-none focus:ring-4 focus:ring-sky-100 md:size-[50px] lg:size-14"
                 aria-label="Buka Chat TAMSAR AI"
             >
-                <span className="pointer-events-none absolute left-2 top-1.5 h-4 w-7 rounded-full bg-white/60 blur-[1px] sm:left-2.5 sm:top-2 sm:h-4 sm:w-8" />
-                <span className="pointer-events-none absolute inset-[4px] rounded-full border border-white/35" />
-                <span className="relative grid size-9 place-items-center rounded-full bg-[radial-gradient(circle_at_50%_30%,#ffe6c7_0_38%,#f5b876_39%_54%,transparent_55%),linear-gradient(180deg,#0f766e_0_43%,#0b4f57_44%_100%)] shadow-[inset_0_2px_5px_rgba(255,255,255,.55),0_3px_6px_rgba(0,0,0,.18)] transition duration-300 group-hover:scale-[1.03] sm:size-10" aria-hidden="true">
-                    <span className="absolute top-[8px] h-[7px] w-[20px] rounded-t-full bg-[#17324d] sm:top-[9px] sm:w-[22px]" />
-                    <span className="absolute top-[15px] h-[9px] w-[20px] rounded-b-full rounded-t-[6px] bg-[#ffd6a3] sm:top-[16px] sm:w-[22px]" />
-                    <span className="absolute top-[18px] h-[2px] w-[11px] rounded-full bg-[#8d5b32] opacity-70 sm:top-[20px]" />
-                    <span className="absolute left-[7px] top-[13px] h-[13px] w-[3px] rounded-full bg-white shadow-[20px_0_0_#fff] sm:left-[8px] sm:top-[14px] sm:shadow-[21px_0_0_#fff]" />
-                    <span className="absolute left-[6px] top-[12px] h-[14px] w-[4px] rounded-full bg-[#12395f] shadow-[23px_0_0_#12395f] sm:left-[7px] sm:top-[13px] sm:shadow-[24px_0_0_#12395f]" />
-                    <span className="absolute right-[8px] top-[23px] h-[2px] w-[11px] origin-left rotate-[18deg] rounded-full bg-[#12395f] sm:right-[9px] sm:top-[25px]" />
-                    <span className="absolute right-[7px] top-[25px] size-[4px] rounded-full bg-white sm:right-[8px] sm:top-[27px]" />
+                <span className="absolute -bottom-[6px] right-[-5px] h-4 w-9 rounded-full bg-black/20 blur-md" aria-hidden="true" />
+                <span className="relative z-10 grid size-[35px] place-items-center rounded-full transition duration-200 group-hover:scale-[1.03] md:size-[38px] lg:size-[42px]" aria-hidden="true">
+                    <span className="absolute bottom-[2px] h-[13px] w-[29px] rounded-t-[14px] bg-[linear-gradient(145deg,#1f7ced,#0f4db7)] shadow-[inset_2px_2px_4px_rgba(255,255,255,.24),inset_-3px_-4px_6px_rgba(0,32,91,.35),0_3px_4px_rgba(0,0,0,.18)] md:w-[31px] lg:h-[15px] lg:w-[34px]" />
+                    <span className="absolute top-[5px] h-[21px] w-[23px] rounded-[48%_48%_44%_44%] bg-[radial-gradient(circle_at_34%_28%,#ffe8c6_0_12%,transparent_24%),linear-gradient(145deg,#ffd9a8_0%,#f0ad72_100%)] shadow-[inset_2px_2px_4px_rgba(255,255,255,.5),inset_-3px_-4px_5px_rgba(155,75,22,.22),0_3px_4px_rgba(0,0,0,.22)] md:h-[22px] md:w-[24px] lg:top-[6px] lg:h-[24px] lg:w-[26px]" />
+                    <span className="absolute top-[3px] h-[12px] w-[25px] rounded-t-[16px] rounded-bl-[10px] bg-[radial-gradient(circle_at_32%_20%,#4b4b4b_0_8%,transparent_20%),linear-gradient(145deg,#222_0%,#111827_56%,#05070a_100%)] shadow-[inset_2px_2px_3px_rgba(255,255,255,.18),0_2px_4px_rgba(0,0,0,.25)] md:w-[26px] lg:top-[4px] lg:h-[13px] lg:w-[28px]" />
+                    <span className="absolute left-[6px] top-[14px] size-[3px] rounded-full bg-[#1f2937] shadow-[13px_0_0_#1f2937] md:left-[7px] md:top-[15px] md:shadow-[14px_0_0_#1f2937] lg:left-[8px] lg:top-[17px] lg:shadow-[15px_0_0_#1f2937]" />
+                    <span className="absolute top-[20px] h-[2px] w-[10px] rounded-b-full border-b-2 border-[#7c3f20] md:top-[21px] lg:top-[23px]" />
+                    <span className="absolute left-[2px] top-[10px] h-[15px] w-[5px] rounded-full bg-[linear-gradient(145deg,#2b3646,#0c1320)] shadow-[26px_0_0_#0c1320] md:top-[11px] md:shadow-[28px_0_0_#0c1320] lg:left-[3px] lg:top-[12px] lg:h-[17px] lg:shadow-[31px_0_0_#0c1320]" />
+                    <span className="absolute left-[1px] top-[8px] h-[17px] w-[3px] rounded-full bg-[#2563eb] shadow-[31px_0_0_#2563eb] md:shadow-[33px_0_0_#2563eb] lg:left-[2px] lg:top-[9px] lg:h-[19px] lg:shadow-[35px_0_0_#2563eb]" />
+                    <span className="absolute right-[3px] top-[22px] h-[2px] w-[12px] origin-left rotate-[18deg] rounded-full bg-[#111827] md:right-[4px] md:top-[24px] lg:right-[5px] lg:top-[26px]" />
+                    <span className="absolute right-[2px] top-[25px] size-[4px] rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,.28)] md:right-[3px] md:top-[27px] lg:right-[4px] lg:top-[29px]" />
                 </span>
             </button>
         </div>
