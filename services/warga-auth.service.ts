@@ -125,18 +125,18 @@ function client() {
 
 const WARGA_PROFILE_COLUMNS = "id,nama_lengkap,nik,nomor_kk,email,nomor_hp,nomor_whatsapp,tempat_lahir,tanggal_lahir,jenis_kelamin,alamat,rt,rw,kelurahan,kecamatan,foto_url,role,status_verifikasi,alasan_penolakan,created_at,updated_at";
 
-async function getProfileForUser(user: User, columns = WARGA_PROFILE_COLUMNS) {
+async function getProfileForUser(user: User): Promise<WargaProfile | null> {
     const supabase = client();
-    const byId = await supabase.from("warga_profiles").select(columns).eq("id", user.id).maybeSingle();
+    const byId = await supabase.from("warga_profiles").select(WARGA_PROFILE_COLUMNS).eq("id", user.id).returns<WargaProfile>().maybeSingle();
     if (byId.error) throw byId.error;
-    if (byId.data) return byId.data as WargaProfile;
+    if (byId.data) return byId.data;
 
-    const byEmail = await supabase.from("warga_profiles").select(columns).eq("email", user.email ?? "").maybeSingle();
+    const byEmail = await supabase.from("warga_profiles").select(WARGA_PROFILE_COLUMNS).eq("email", user.email ?? "").returns<WargaProfile>().maybeSingle();
     if (byEmail.error) throw byEmail.error;
     if (process.env.NODE_ENV !== "production") {
         console.debug("[warga_profiles] profile lookup", { userId: user.id, email: user.email, found: Boolean(byEmail.data) });
     }
-    return byEmail.data as WargaProfile | null;
+    return byEmail.data;
 }
 
 export function isVerified(profile?: WargaProfile | null) {
@@ -157,7 +157,7 @@ export async function getCurrentWargaVerificationStatus() {
     const user = userData.user;
     if (!user) return { user: null, profile: null };
 
-    const profile = await getProfileForUser(user, "id,nama_lengkap,email,nik,status_verifikasi,alasan_penolakan");
+    const profile = await getProfileForUser(user);
     return { user, profile };
 }
 
