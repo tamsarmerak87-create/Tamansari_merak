@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import { site } from "@/constants/site";
 
 export function FloatingActions() {
@@ -12,11 +13,7 @@ export function FloatingActions() {
                 aria-label="WhatsApp Kelurahan"
             >
                 <span className="absolute -bottom-[6px] right-[-5px] h-4 w-9 rounded-full bg-black/20 blur-md" aria-hidden="true" />
-                <svg className="relative z-10 size-[29px] drop-shadow-[0_3px_3px_rgba(0,0,0,.28)] transition duration-200 group-hover:scale-[1.03] md:size-[31px] lg:size-[35px]" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-                    <path d="M26.2 5.75A14.2 14.2 0 0 0 3.86 22.9L2.5 29.5l6.78-1.55A14.2 14.2 0 0 0 26.2 5.75Z" fill="white" />
-                    <path d="M8.98 25.34 5.8 26.07l.64-3.08.2-.95-.5-.84A11.23 11.23 0 1 1 10.03 25l-.83-.45-.22.79Z" fill="#10a84f" />
-                    <path d="M12.26 9.62c-.25-.57-.53-.58-.78-.59h-.66c-.23 0-.6.08-.92.4-.31.34-1.2 1.18-1.2 2.87 0 1.7 1.23 3.34 1.4 3.57.17.23 2.37 3.78 5.88 5.14 2.92 1.15 3.52.92 4.15.86.64-.06 2.05-.84 2.34-1.65.29-.81.29-1.51.2-1.65-.08-.15-.31-.23-.66-.4-.35-.18-2.05-1.02-2.37-1.13-.32-.12-.55-.18-.78.17-.23.35-.9 1.13-1.1 1.36-.2.23-.4.26-.75.09-.35-.18-1.48-.55-2.82-1.74-1.04-.93-1.75-2.08-1.96-2.43-.2-.35-.02-.54.15-.72.16-.15.35-.4.52-.61.18-.2.23-.35.35-.58.12-.23.06-.43-.03-.61-.09-.18-.76-1.87-1.06-2.56Z" fill="white" />
-                </svg>
+                <Image src="/assets/icon-whatsapp-v3.svg" alt="" width={40} height={40} className="relative z-10 size-[34px] drop-shadow-[0_4px_5px_rgba(0,0,0,.26)] transition duration-200 group-hover:scale-[1.04] md:size-[37px] lg:size-[42px]" aria-hidden="true" />
             </a>
             <button
                 type="button"

@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChatLauncher } from "@/components/chat/chat-launcher";
 import { ChatOverlay } from "@/components/chat/chat-overlay";
 import { ChatWindow } from "@/components/chat/chat-window";
 
@@ -77,7 +76,6 @@ export function TamsarChatWidget() {
 
     return <>
         <ChatOverlay open={isOpen} onClose={closeChat} />
-        <ChatLauncher onClick={openChat} />
         <AnimatePresence>
             {isOpen ? (
                 <motion.div
