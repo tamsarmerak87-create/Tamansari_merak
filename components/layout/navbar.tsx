@@ -125,8 +125,8 @@ export function Navbar() {
 
                     {/* Menu akun */}
                     <div ref={accountRef} className="relative">
-                        <button type="button" onClick={() => setAccountOpen((value) => !value)} className={cn("inline-flex min-h-10 items-center gap-1.5 rounded-full border border-border-soft bg-white px-2.5 py-2 text-xs font-black text-gov-950 shadow-soft transition duration-200 hover:-translate-y-0.5 hover:bg-gov-50 hover:text-gov-800 focus:outline-none focus:ring-4 focus:ring-gov-100 min-[390px]:min-h-11 min-[390px]:gap-2 min-[390px]:text-sm sm:px-4", accountOpen && "bg-gov-50 text-gov-800 ring-4 ring-gov-100")} aria-label="Menu Masuk" aria-expanded={accountOpen}>
-                            <UserRound size={16} /> <span className="hidden min-[375px]:inline">Masuk</span> <ChevronDown size={14} className={cn("transition duration-200", accountOpen && "rotate-180")} />
+                        <button type="button" onClick={() => setAccountOpen((value) => !value)} className={cn("inline-flex min-h-10 items-center gap-1.5 rounded-full border border-border-soft bg-white px-2.5 py-2 text-xs font-black text-gov-950 shadow-soft transition duration-200 hover:-translate-y-0.5 hover:bg-gov-50 hover:text-gov-800 focus:outline-none focus:ring-4 focus:ring-gov-100 min-[390px]:min-h-11 min-[390px]:gap-2 min-[390px]:text-sm sm:px-4", accountOpen && "bg-gov-50 text-gov-800 ring-4 ring-gov-100")} aria-label="Menu Akun" aria-expanded={accountOpen}>
+                            <UserRound size={16} /> <span className="hidden min-[375px]:inline">Akun</span> <ChevronDown size={14} className={cn("transition duration-200", accountOpen && "rotate-180")} />
                         </button>
                         {accountOpen && (
                             <div className="absolute right-0 top-14 z-[60] w-[min(18.5rem,calc(100vw-1.5rem))] rounded-[20px] border border-border-soft bg-white p-3 shadow-[0_22px_70px_rgba(8,47,73,.18)]">
@@ -141,7 +141,7 @@ export function Navbar() {
                                     </>
                                 ) : (
                                     <>
-                                        <Link href="/login" onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-gov-50 hover:text-gov-800"><LogIn size={16} className="text-gov-800" />Masuk</Link>
+                                        <Link href="/login" onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-gov-50 hover:text-gov-800"><LogIn size={16} className="text-gov-800" />Akun</Link>
                                         <Link href="/register" onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-gov-50 hover:text-gov-800"><UserPlus size={16} className="text-gov-800" />Daftar Akun</Link>
                                         <Link href="/login?mode=forgot" onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-gov-50 hover:text-gov-800"><KeyRound size={16} className="text-gov-800" />Lupa Password</Link>
                                     </>
@@ -201,7 +201,7 @@ export function Navbar() {
                                         onClick={() => setOpen(false)}
                                         className="flex items-center justify-between rounded-2xl border border-border-soft px-4 py-4 text-base font-bold text-gov-950 transition hover:border-gov-100 hover:bg-gov-50"
                                     >
-                                        Masuk
+                                        Akun
                                         <ChevronRight size={18} className="text-slate-400" />
                                     </Link>
                                 </div>
@@ -226,6 +226,7 @@ export function Navbar() {
         </header>
     );
 }
+
 
 
 
