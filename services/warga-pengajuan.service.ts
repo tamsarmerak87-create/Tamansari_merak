@@ -1,5 +1,6 @@
 import { createSupabaseBrowserClient } from "@/services/supabase";
 import type { WargaProfile } from "@/services/warga-auth.service";
+import { getCurrentWarga } from "@/services/warga-auth.service";
 
 export type TrackingPengajuan = {
     id?: string;
@@ -143,19 +144,11 @@ async function hydrateRows(rows: WargaPengajuan[], profile?: WargaProfile | null
 }
 
 export async function getCurrentWargaProfile() {
-    const supabase = client();
-    const { data: userData, error: userError } = await supabase.auth.getUser();
-    if (userError) throw userError;
-    const user = userData.user;
-    if (!user) return { user: null, profile: null };
-
-    const { data: profile, error } = await supabase.from("warga_profiles").select("*").eq("id", user.id).maybeSingle();
-    if (error) throw error;
-    return { user, profile: profile as WargaProfile | null };
+    return getCurrentWarga();
 }
 
-export async function getMyPengajuan() {
-    const { profile } = await getCurrentWargaProfile();
+export async function getMyPengajuan(profileInput?: WargaProfile | null) {
+    const profile = profileInput ?? (await getCurrentWargaProfile()).profile;
     if (!profile?.nik) return [];
 
     const { data, error } = await client()
@@ -168,8 +161,8 @@ export async function getMyPengajuan() {
     return hydrateRows(data as WargaPengajuan[], profile);
 }
 
-export async function getMyPengajuanDetail(id: string) {
-    const { profile } = await getCurrentWargaProfile();
+export async function getMyPengajuanDetail(id: string, profileInput?: WargaProfile | null) {
+    const profile = profileInput ?? (await getCurrentWargaProfile()).profile;
     if (!profile?.nik) return null;
 
     const { data, error } = await client()
@@ -184,11 +177,11 @@ export async function getMyPengajuanDetail(id: string) {
     return (await hydrateRows([data as WargaPengajuan], profile))[0] ?? null;
 }
 
-export async function getMyFavorit() {
+export async function getMyFavorit(userId?: string | null) {
     if (favoritTableAvailable === false) return [];
-    const { user } = await getCurrentWargaProfile();
-    if (!user) return [];
-    const { data, error } = await client().from("warga_favorit").select("id,warga_id,layanan_id,created_at,layanan:layanan_id(id,nama,deskripsi)").eq("warga_id", user.id).order("created_at", { ascending: false });
+    const resolvedUserId = userId ?? (await getCurrentWargaProfile()).user?.id;
+    if (!resolvedUserId) return [];
+    const { data, error } = await client().from("warga_favorit").select("id,warga_id,layanan_id,created_at,layanan:layanan_id(id,nama,deskripsi)").eq("warga_id", resolvedUserId).order("created_at", { ascending: false });
     if (error?.code === "42P01" || error?.message?.toLowerCase().includes("could not find the table")) {
         favoritTableAvailable = false;
         return [];
@@ -313,10 +306,10 @@ export async function uploadMyDokumen(file: File, jenis = "Dokumen Pendukung") {
 }
 
 export async function getWargaDashboardData(): Promise<WargaDashboardData> {
-    const { profile } = await getCurrentWargaProfile();
-    const pengajuan = await getMyPengajuan();
+    const { user, profile } = await getCurrentWargaProfile();
+    const pengajuan = await getMyPengajuan(profile);
     const [favorit, notifikasi] = await Promise.all([
-        getMyFavorit().catch(() => []),
+        getMyFavorit(user?.id).catch(() => []),
         getMyNotifikasi(pengajuan).catch(() => buildTrackingNotifications(pengajuan)),
     ]);
     return { profile, pengajuan, notifikasi, dokumen: getMyDocumentsFromPengajuan(pengajuan), favorit, fitur: { favoritAvailable: isFavoritAvailable(), notifikasiAvailable: isNotifikasiAvailable() } };

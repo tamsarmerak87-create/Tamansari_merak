@@ -7,6 +7,7 @@ export type WargaVerificationStatus = "Belum Terverifikasi" | "Akun Terverifikas
 
 export type WargaProfile = {
     id: string;
+    user_id?: string | null;
     nama_lengkap: string;
     nik: string;
     nomor_kk: string;
@@ -122,6 +123,22 @@ function client() {
     return supabase;
 }
 
+const WARGA_PROFILE_COLUMNS = "id,nama_lengkap,nik,nomor_kk,email,nomor_hp,nomor_whatsapp,tempat_lahir,tanggal_lahir,jenis_kelamin,alamat,rt,rw,kelurahan,kecamatan,foto_url,role,status_verifikasi,alasan_penolakan,created_at,updated_at";
+
+async function getProfileForUser(user: User, columns = WARGA_PROFILE_COLUMNS) {
+    const supabase = client();
+    const byId = await supabase.from("warga_profiles").select(columns).eq("id", user.id).maybeSingle();
+    if (byId.error) throw byId.error;
+    if (byId.data) return byId.data as WargaProfile;
+
+    const byEmail = await supabase.from("warga_profiles").select(columns).eq("email", user.email ?? "").maybeSingle();
+    if (byEmail.error) throw byEmail.error;
+    if (process.env.NODE_ENV !== "production") {
+        console.debug("[warga_profiles] profile lookup", { userId: user.id, email: user.email, found: Boolean(byEmail.data) });
+    }
+    return byEmail.data as WargaProfile | null;
+}
+
 export function isVerified(profile?: WargaProfile | null) {
     return profile?.status_verifikasi === "Akun Terverifikasi" || profile?.status_verifikasi === "Terverifikasi";
 }
@@ -140,9 +157,8 @@ export async function getCurrentWargaVerificationStatus() {
     const user = userData.user;
     if (!user) return { user: null, profile: null };
 
-    const { data: profile, error } = await supabase.from("warga_profiles").select("id,nama_lengkap,email,nik,status_verifikasi,alasan_penolakan").eq("id", user.id).maybeSingle();
-    if (error) throw error;
-    return { user, profile: profile as WargaProfile | null };
+    const profile = await getProfileForUser(user, "id,nama_lengkap,email,nik,status_verifikasi,alasan_penolakan");
+    return { user, profile };
 }
 
 export async function getCurrentWarga() {
@@ -151,9 +167,8 @@ export async function getCurrentWarga() {
     if (userError) throw userError;
     const user = userData.user;
     if (!user) return { user: null, profile: null };
-    const { data: profile, error } = await supabase.from("warga_profiles").select("*").eq("id", user.id).maybeSingle();
-    if (error) throw error;
-    return { user, profile: profile as WargaProfile | null };
+    const profile = await getProfileForUser(user);
+    return { user, profile };
 }
 
 export async function registerWarga(input: WargaRegisterInput) {

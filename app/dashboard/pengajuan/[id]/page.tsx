@@ -15,11 +15,11 @@ function docLabel(jenis?: string | null, namaFile?: string | null) { const value
 export default function DetailPengajuanPage({ params }: { params: { id: string } }) {
     const { id } = params;
     const router = useRouter();
-    const { user, loading } = useWargaAuth();
+    const { user, profile, loading } = useWargaAuth();
     const [item, setItem] = useState<WargaPengajuan | null>(null);
     const [fetching, setFetching] = useState(true);
     useEffect(() => { if (!loading && !user) router.push("/login"); }, [loading, user, router]);
-    useEffect(() => { if (!user) return; void (async () => { try { setFetching(true); setItem(await getMyPengajuanDetail(id)); } catch (error) { console.error(error); setItem(null); } finally { setFetching(false); } })(); }, [user, id]);
+    useEffect(() => { if (!user || !profile) { if (!loading) setFetching(false); return; } void (async () => { try { setFetching(true); setItem(await getMyPengajuanDetail(id, profile)); } catch (error) { console.error(error); setItem(null); } finally { setFetching(false); } })(); }, [loading, user, profile, id]);
     if (loading || !user || fetching) return <main className="min-h-screen bg-[#F7F9FC] p-10 font-black text-gov-950">Memuat detail pengajuan...</main>;
     if (!item) return <main className="min-h-screen bg-[#F7F9FC] px-5 py-16 sm:px-10 lg:px-20"><section className="mx-auto max-w-2xl rounded-[32px] border border-white bg-white/85 p-8 text-center shadow-soft"><h1 className="text-3xl font-black text-gov-950">Pengajuan tidak ditemukan.</h1><p className="mt-4 leading-7 text-slate-600">Data tidak tersedia atau bukan milik akun warga yang sedang login.</p><Button type="button" className="mt-6" variant="gold" href="/dashboard/pengajuan">Kembali ke Pengajuan</Button></section></main>;
     const tracking = item.tracking_pengajuan ?? [];
