@@ -8,6 +8,7 @@ export const SUBMISSION_STATUS = ["Menunggu Verifikasi", "Verifikasi", "Diproses
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_FILE_TYPES = ["application/pdf", "image/jpeg", "image/png"];
+const SUBMISSION_STORAGE_BUCKET = "surat";
 
 export const submissionSchema = z.object({
     layanan_id: z.string().uuid("Jenis layanan tidak valid"),
@@ -33,6 +34,32 @@ export const submissionSchema = z.object({
 
 export type SubmissionInput = z.infer<typeof submissionSchema>;
 
+type UploadedFileMeta = {
+    path: string;
+    url?: string | null;
+    name: string;
+    type: string;
+    size: number;
+};
+
+type SubmissionRequest = SubmissionInput & {
+    ktp_path?: string | null;
+    ktp_url?: string | null;
+    ktp_name?: string | null;
+    ktp_type?: string | null;
+    ktp_size?: number | string | null;
+    kk_path?: string | null;
+    kk_url?: string | null;
+    kk_name?: string | null;
+    kk_type?: string | null;
+    kk_size?: number | string | null;
+    pendukung_path?: string | null;
+    pendukung_url?: string | null;
+    pendukung_name?: string | null;
+    pendukung_type?: string | null;
+    pendukung_size?: number | string | null;
+};
+
 class SupabaseOperationError extends Error {
     details?: string;
     hint?: string;
@@ -49,7 +76,34 @@ class SupabaseOperationError extends Error {
 
 export function validateUploadFile(file: File) {
     if (!ALLOWED_FILE_TYPES.includes(file.type)) throw new Error("File harus PDF, JPG, atau PNG.");
-    if (file.size > MAX_FILE_SIZE) throw new Error("Ukuran file maksimal 5 MB.");
+    if (file.size > MAX_FILE_SIZE) throw new Error("Ukuran file terlalu besar. Maksimal 5 MB.");
+}
+
+function validateUploadedFileMeta(file: UploadedFileMeta, label: string) {
+    if (!file.path || file.path.includes("..")) throw new Error(`${label} tidak valid.`);
+    if (!ALLOWED_FILE_TYPES.includes(file.type)) throw new Error(`${label} harus PDF, JPG, atau PNG.`);
+    if (file.size > MAX_FILE_SIZE) throw new Error(`Ukuran ${label} terlalu besar. Maksimal 5 MB.`);
+}
+
+function extensionFromFile(file: File) {
+    const ext = file.name.split(".").pop()?.toLowerCase() ?? "bin";
+    return ext.replace(/[^a-z0-9]/g, "") || "bin";
+}
+
+export async function uploadSubmissionAttachment(folder: "ktp" | "kk" | "pendukung", file: File, ownerId: string) {
+    validateUploadFile(file);
+    const client = createSupabaseBrowserClient();
+    const safeOwner = ownerId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "warga";
+    const randomId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+    const path = `${folder}/${safeOwner}/${Date.now()}-${randomId}.${extensionFromFile(file)}`;
+    const { error } = await client.storage.from(SUBMISSION_STORAGE_BUCKET).upload(path, file, {
+        cacheControl: "3600",
+        contentType: file.type,
+        upsert: false,
+    });
+    if (error) throw new Error(error.message || "Gagal mengunggah dokumen.");
+    const publicUrl = client.storage.from(SUBMISSION_STORAGE_BUCKET).getPublicUrl(path).data.publicUrl;
+    return { path, url: publicUrl, name: file.name, type: file.type, size: file.size } satisfies UploadedFileMeta;
 }
 
 export function getProgressFromStatus(status?: string) {
@@ -145,10 +199,15 @@ export async function getLayananList() {
     return data ?? [];
 }
 
-export async function createSubmission(formData: FormData) {
+export async function createSubmission(formData: FormData | SubmissionRequest) {
     if (typeof window !== "undefined") {
         try {
-            const response = await fetch("/api/surat-online/pengajuan", { method: "POST", body: formData });
+            const isFormData = formData instanceof FormData;
+            const response = await fetch("/api/surat-online/pengajuan", {
+                method: "POST",
+                headers: isFormData ? undefined : { "content-type": "application/json" },
+                body: isFormData ? formData : JSON.stringify(formData),
+            });
             const result = await response.json().catch(() => null);
             const message = typeof result?.error === "string" ? result.error : result?.error?.message;
             if (!response.ok || !result?.ok) throw new Error(message ?? "Gagal mengirim pengajuan.");
@@ -169,35 +228,59 @@ export async function createSubmission(formData: FormData) {
     let ktp: File | null = null;
     let kk: File | null = null;
     let pendukung: File | null = null;
+    let ktpMeta: UploadedFileMeta | null = null;
+    let kkMeta: UploadedFileMeta | null = null;
+    let pendukungMeta: UploadedFileMeta | null = null;
+
+    const getValue = (key: keyof SubmissionRequest) => formData instanceof FormData ? formData.get(key) : formData[key];
+    const readMeta = (prefix: "ktp" | "kk" | "pendukung") => {
+        const path = getValue(`${prefix}_path` as keyof SubmissionRequest);
+        if (!path) return null;
+        return {
+            path: String(path),
+            url: String(getValue(`${prefix}_url` as keyof SubmissionRequest) ?? "") || null,
+            name: String(getValue(`${prefix}_name` as keyof SubmissionRequest) ?? prefix),
+            type: String(getValue(`${prefix}_type` as keyof SubmissionRequest) ?? ""),
+            size: Number(getValue(`${prefix}_size` as keyof SubmissionRequest) ?? 0),
+        } satisfies UploadedFileMeta;
+    };
 
     try {
         payload = submissionSchema.parse({
-            layanan_id: formData.get("layanan_id"),
-            nik: formData.get("nik"),
-            nama_lengkap: formData.get("nama_lengkap"),
-            nomor_kk: formData.get("nomor_kk"),
-            tempat_lahir: formData.get("tempat_lahir"),
-            tanggal_lahir: formData.get("tanggal_lahir"),
-            jenis_kelamin: formData.get("jenis_kelamin"),
-            agama: formData.get("agama"),
-            status_perkawinan: formData.get("status_perkawinan"),
-            pekerjaan: formData.get("pekerjaan"),
-            alamat: formData.get("alamat"),
-            rt_rw: formData.get("rt_rw"),
-            kelurahan: formData.get("kelurahan"),
-            kecamatan: formData.get("kecamatan"),
-            nomor_hp: formData.get("nomor_hp"),
-            email: formData.get("email"),
-            jenis_surat: formData.get("jenis_surat"),
-            keperluan: formData.get("keperluan"),
-            catatan: formData.get("catatan") ?? "",
+            layanan_id: getValue("layanan_id"),
+            nik: getValue("nik"),
+            nama_lengkap: getValue("nama_lengkap"),
+            nomor_kk: getValue("nomor_kk"),
+            tempat_lahir: getValue("tempat_lahir"),
+            tanggal_lahir: getValue("tanggal_lahir"),
+            jenis_kelamin: getValue("jenis_kelamin"),
+            agama: getValue("agama"),
+            status_perkawinan: getValue("status_perkawinan"),
+            pekerjaan: getValue("pekerjaan"),
+            alamat: getValue("alamat"),
+            rt_rw: getValue("rt_rw"),
+            kelurahan: getValue("kelurahan"),
+            kecamatan: getValue("kecamatan"),
+            nomor_hp: getValue("nomor_hp"),
+            email: getValue("email"),
+            jenis_surat: getValue("jenis_surat"),
+            keperluan: getValue("keperluan"),
+            catatan: getValue("catatan") ?? "",
         });
-        ktp = formData.get("ktp") as File | null;
-        kk = formData.get("kk") as File | null;
-        pendukung = formData.get("pendukung") as File | null;
+        if (formData instanceof FormData) {
+            ktp = formData.get("ktp") as File | null;
+            kk = formData.get("kk") as File | null;
+            pendukung = formData.get("pendukung") as File | null;
+        }
+        ktpMeta = readMeta("ktp");
+        kkMeta = readMeta("kk");
+        pendukungMeta = readMeta("pendukung");
         if (Number.isNaN(Date.parse(payload.tanggal_lahir))) throw new Error("Tanggal lahir tidak valid.");
-        if (!ktp || !kk) throw new Error("Upload KTP dan KK wajib diisi.");
+        if ((!ktp && !ktpMeta) || (!kk && !kkMeta)) throw new Error("Upload KTP dan KK wajib diisi.");
         [ktp, kk, pendukung].filter(Boolean).forEach((file) => validateUploadFile(file as File));
+        if (ktpMeta) validateUploadedFileMeta(ktpMeta, "KTP");
+        if (kkMeta) validateUploadedFileMeta(kkMeta, "KK");
+        if (pendukungMeta) validateUploadedFileMeta(pendukungMeta, "Dokumen pendukung");
     } catch (error) {
         console.error("SURAT ONLINE VALIDATION ERROR");
         console.dir(error, { depth: null });
@@ -209,7 +292,7 @@ export async function createSubmission(formData: FormData) {
     const uploadedPaths: string[] = [];
     const cleanupUploadedFiles = async () => {
         try {
-            if (uploadedPaths.length > 0) await client.storage.from("surat").remove(uploadedPaths);
+            if (uploadedPaths.length > 0) await client.storage.from(SUBMISSION_STORAGE_BUCKET).remove(uploadedPaths);
         } catch (cleanupError) {
             console.error("[surat-online:cleanup-upload]", cleanupError);
         }
@@ -219,14 +302,14 @@ export async function createSubmission(formData: FormData) {
         if (!file) return null;
         const ext = file.name.split(".").pop() ?? "bin";
         const path = `${folder}/${nomor_pengajuan}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-        const { error } = await client.storage.from("surat").upload(path, file, { upsert: false, contentType: file.type });
+        const { error } = await client.storage.from(SUBMISSION_STORAGE_BUCKET).upload(path, file, { upsert: false, contentType: file.type });
         if (error) {
             console.error("SUPABASE STORAGE UPLOAD ERROR");
             console.dir(error, { depth: null });
             throw error;
         }
         uploadedPaths.push(path);
-        return client.storage.from("surat").getPublicUrl(path).data.publicUrl;
+        return client.storage.from(SUBMISSION_STORAGE_BUCKET).getPublicUrl(path).data.publicUrl;
     };
 
     let nomor_pengajuan = "";
@@ -265,9 +348,9 @@ export async function createSubmission(formData: FormData) {
         nomor_tiket = createNomorTiket(sequence);
         tracking_url = createTrackingUrl(nomor_pengajuan);
 
-        const ktp_url = await uploadOne("ktp", ktp);
-        const kk_url = await uploadOne("kk", kk);
-        const pendukung_url = await uploadOne("pendukung", pendukung);
+        const ktp_url = ktpMeta?.url || (ktpMeta?.path ? client.storage.from(SUBMISSION_STORAGE_BUCKET).getPublicUrl(ktpMeta.path).data.publicUrl : await uploadOne("ktp", ktp));
+        const kk_url = kkMeta?.url || (kkMeta?.path ? client.storage.from(SUBMISSION_STORAGE_BUCKET).getPublicUrl(kkMeta.path).data.publicUrl : await uploadOne("kk", kk));
+        const pendukung_url = pendukungMeta?.url || (pendukungMeta?.path ? client.storage.from(SUBMISSION_STORAGE_BUCKET).getPublicUrl(pendukungMeta.path).data.publicUrl : await uploadOne("pendukung", pendukung));
 
         const [rt = "", rw = ""] = payload.rt_rw.split("/").map((part) => part.trim());
         const pengajuanPayload = {
