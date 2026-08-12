@@ -249,11 +249,12 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
 
             try {
                 if (process.env.NODE_ENV !== "production") console.info("[surat-online]", { stage: "file_upload", bucket: "surat", files: { ktp: Boolean(files.ktp), kk: Boolean(files.kk), pendukung: Boolean(files.support) } });
-                const ktpUpload = files.ktp ? await uploadSubmissionAttachment("ktp", files.ktp, ownerId) : null;
+                const nomorPengajuan = `draft-${Date.now()}`;
+                const ktpUpload = files.ktp ? await uploadSubmissionAttachment("ktp", files.ktp, ownerId, nomorPengajuan) : null;
                 if (ktpUpload?.path) uploadedPaths.push(ktpUpload.path);
-                const kkUpload = files.kk ? await uploadSubmissionAttachment("kk", files.kk, ownerId) : null;
+                const kkUpload = files.kk ? await uploadSubmissionAttachment("kk", files.kk, ownerId, nomorPengajuan) : null;
                 if (kkUpload?.path) uploadedPaths.push(kkUpload.path);
-                const pendukungUpload = files.support ? await uploadSubmissionAttachment("pendukung", files.support, ownerId) : null;
+                const pendukungUpload = files.support ? await uploadSubmissionAttachment("pendukung", files.support, ownerId, nomorPengajuan) : null;
                 if (pendukungUpload?.path) uploadedPaths.push(pendukungUpload.path);
 
                 if (process.env.NODE_ENV !== "production") console.info("[surat-online]", { stage: "pengajuan_insert", uploadedPathCount: uploadedPaths.length });

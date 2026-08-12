@@ -103,6 +103,10 @@ export function validateUploadFile(file: File) {
     if (file.size > MAX_FILE_SIZE) throw new Error("Ukuran file terlalu besar. Maksimal 5 MB.");
 }
 
+function safeStorageSegment(value: string) {
+    return value.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-").slice(0, 96) || "dokumen";
+}
+
 function validateUploadedFileMeta(file: UploadedFileMeta, label: string) {
     if (!file.path || file.path.includes("..")) throw new Error(`${label} tidak valid.`);
     if (!ALLOWED_FILE_TYPES.includes(file.type)) throw new Error(`${label} harus PDF, JPG, atau PNG.`);
@@ -114,12 +118,14 @@ function extensionFromFile(file: File) {
     return ext.replace(/[^a-z0-9]/g, "") || "bin";
 }
 
-export async function uploadSubmissionAttachment(folder: "ktp" | "kk" | "pendukung", file: File, ownerId: string) {
+export async function uploadSubmissionAttachment(folder: "ktp" | "kk" | "pendukung", file: File, ownerId: string, nomorPengajuan?: string) {
     validateUploadFile(file);
     const client = createSupabaseBrowserClient();
-    const safeOwner = ownerId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "warga";
-    const randomId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2);
-    const path = `${folder}/${safeOwner}/${Date.now()}-${randomId}.${extensionFromFile(file)}`;
+    const { data: authData, error: authError } = await client.auth.getUser();
+    if (process.env.NODE_ENV !== "production") logUploadStage("[surat-online:auth-check]", { hasUser: Boolean(authData?.user), authError: authError?.message ?? null });
+    if (authError || !authData.user) throw new Error("Supabase Auth session belum aktif.");
+    const safeNomor = safeStorageSegment(nomorPengajuan ?? `draft-${Date.now()}`);
+    const path = `${authData.user.id}/${safeNomor}/${folder}.${extensionFromFile(file)}`;
     const { data, error } = await client.storage.from(SUBMISSION_STORAGE_BUCKET).upload(path, file, {
         cacheControl: "3600",
         contentType: file.type,
@@ -127,7 +133,7 @@ export async function uploadSubmissionAttachment(folder: "ktp" | "kk" | "penduku
     });
     if (error) throw new Error(error.message || "Gagal mengunggah dokumen.");
     const uploadedPath = data.path;
-    logUploadStage("UPLOAD PATH", { bucket: SUBMISSION_STORAGE_BUCKET, path: uploadedPath, plannedPath: path, fileName: file.name });
+    logUploadStage("UPLOAD PATH", { bucket: SUBMISSION_STORAGE_BUCKET, userId: authData.user.id, ownerId, path: uploadedPath, plannedPath: path, fileName: file.name });
     return { path: uploadedPath, url: null, name: file.name, type: file.type, size: file.size } satisfies UploadedFileMeta;
 }
 
