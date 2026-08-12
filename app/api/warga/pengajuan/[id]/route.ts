@@ -22,7 +22,7 @@ function logSupabaseError(label: string, error: unknown) {
 }
 
 function logDetailError(error: unknown) {
-    const supabaseError = error as { message?: string; code?: string; details?: string; hint?: string };
+    const supabaseError = error as { code?: string; details?: string; hint?: string };
     console.error("DETAIL PENGAJUAN ERROR", {
         message: error instanceof Error ? error.message : String(error),
         code: supabaseError.code,
@@ -61,7 +61,25 @@ export async function GET(request: NextRequest, context: RouteContext) {
         const supabase = createSupabaseAdminClient();
         const { data: pengajuan, error } = await supabase
             .from("pengajuan_surat")
-            .select("*")
+            .select(`
+                id,
+                nomor_pengajuan,
+                nik,
+                nama_lengkap,
+                status,
+                created_at,
+                updated_at,
+                layanan_id,
+                keperluan,
+                catatan,
+                alamat,
+                rt,
+                rw,
+                kelurahan,
+                kecamatan,
+                no_hp,
+                email
+            `)
             .eq("id", id)
             .maybeSingle();
         if (error) {
@@ -75,21 +93,14 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
         return NextResponse.json({
             ok: true,
-            data: {
-                id: pengajuan.id,
-                nomor_pengajuan: pengajuan.nomor_pengajuan,
-                nik: pengajuan.nik,
-                nama_lengkap: pengajuan.nama_lengkap,
-                status: pengajuan.status,
-                created_at: pengajuan.created_at,
-            },
+            data: pengajuan,
         });
     } catch (error) {
         logDetailError(error);
         return NextResponse.json(
             {
                 ok: false,
-                error: error instanceof Error ? error.message : "Gagal mengambil detail pengajuan warga.",
+                error: "Gagal mengambil detail pengajuan warga.",
             },
             { status: 500 },
         );
