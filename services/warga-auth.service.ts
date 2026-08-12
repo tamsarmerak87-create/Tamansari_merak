@@ -2,8 +2,7 @@ import type { User } from "@supabase/supabase-js";
 import { z } from "zod";
 import { createSupabaseBrowserClient } from "@/services/supabase";
 
-export const WARGA_PROFILE_PHOTO_BUCKET = "surat";
-export const WARGA_PROFILE_PHOTO_FOLDER = "profile-photos";
+export const WARGA_PROFILE_PHOTO_BUCKET = "avatars";
 
 export type WargaRole = "admin" | "petugas" | "warga";
 export type WargaVerificationStatus = "Belum Terverifikasi" | "Akun Terverifikasi" | "Terverifikasi" | "Ditolak";
@@ -277,16 +276,34 @@ export async function uploadWargaProfilePhoto(file: File) {
     if (file.size > 5 * 1024 * 1024) throw new Error("Ukuran foto maksimal 5 MB.");
 
     const supabase = client();
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError) throw userError;
     if (!user) throw new Error("Silakan login terlebih dahulu.");
 
     const ext = file.name.split(".").pop()?.toLowerCase() || (file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg");
-    const path = `${WARGA_PROFILE_PHOTO_FOLDER}/${user.id}/profile-${Date.now()}.${ext}`;
+    const path = `${user.id}/profile-${Date.now()}.${ext}`;
+
+    if (process.env.NODE_ENV !== "production") {
+        console.debug("[warga_profile_photo:upload_attempt]", {
+            authenticatedUserId: user.id,
+            hasSession: Boolean(sessionData.session),
+            bucket: WARGA_PROFILE_PHOTO_BUCKET,
+            objectPath: path,
+        });
+    }
 
     const upload = await supabase.storage.from(WARGA_PROFILE_PHOTO_BUCKET).upload(path, file, { upsert: false, contentType: file.type });
     if (upload.error) {
         logProfilePhotoError(upload.error, "upload");
+        if (process.env.NODE_ENV !== "production") {
+            console.debug("[warga_profile_photo:upload_error_context]", {
+                authenticatedUserId: user.id,
+                bucket: WARGA_PROFILE_PHOTO_BUCKET,
+                objectPath: path,
+            });
+        }
         throw upload.error;
     }
 
