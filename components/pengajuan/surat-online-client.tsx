@@ -29,7 +29,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/card";
 import { site } from "@/constants/site";
-import { createSubmission, searchSubmission, submissionSchema } from "@/services/surat-online.service";
+import { createSubmission, removeSubmissionAttachments, searchSubmission, submissionSchema, uploadSubmissionAttachment } from "@/services/surat-online.service";
 import type { PublicService } from "@/types";
 import { cn } from "@/utils/cn";
 import QRCode from "qrcode";
@@ -216,7 +216,6 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
             }
             if (!validate()) return;
             setIsSubmitting(true);
-            const formData = new FormData();
             const payload = {
                 layanan_id: form.serviceId,
                 nik: form.nik,
@@ -239,14 +238,39 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
                 catatan: form.note,
             };
             submissionSchema.parse(payload);
-            Object.entries(payload).forEach(([key, value]) => formData.append(key, value));
-            if (files.ktp) formData.append("ktp", files.ktp);
-            if (files.kk) formData.append("kk", files.kk);
-            if (files.support) formData.append("pendukung", files.support);
-            const result = await createSubmission(formData) as SubmissionResult;
-            setTicket(result.nomor_pengajuan);
-            setSuccessData(result);
-            setSubmitted(true);
+            const ownerId = form.nik || profile?.nik || user?.id || "warga";
+            const uploadedPaths: string[] = [];
+            const cleanupUploadedFiles = async () => {
+                if (uploadedPaths.length === 0) return;
+                await removeSubmissionAttachments(uploadedPaths).catch((error) => {
+                    if (process.env.NODE_ENV !== "production") console.error("SURAT ONLINE UPLOAD CLEANUP ERROR", error instanceof Error ? error.message : error);
+                });
+            };
+
+            try {
+                if (process.env.NODE_ENV !== "production") console.info("[surat-online]", { stage: "file_upload", bucket: "surat", files: { ktp: Boolean(files.ktp), kk: Boolean(files.kk), pendukung: Boolean(files.support) } });
+                const ktpUpload = files.ktp ? await uploadSubmissionAttachment("ktp", files.ktp, ownerId) : null;
+                if (ktpUpload?.path) uploadedPaths.push(ktpUpload.path);
+                const kkUpload = files.kk ? await uploadSubmissionAttachment("kk", files.kk, ownerId) : null;
+                if (kkUpload?.path) uploadedPaths.push(kkUpload.path);
+                const pendukungUpload = files.support ? await uploadSubmissionAttachment("pendukung", files.support, ownerId) : null;
+                if (pendukungUpload?.path) uploadedPaths.push(pendukungUpload.path);
+
+                if (process.env.NODE_ENV !== "production") console.info("[surat-online]", { stage: "pengajuan_insert", uploadedPathCount: uploadedPaths.length });
+                const result = await createSubmission({
+                    ...payload,
+                    file_ktp: ktpUpload?.path ?? null,
+                    file_kk: kkUpload?.path ?? null,
+                    file_pendukung: pendukungUpload?.path ?? null,
+                }) as SubmissionResult;
+                uploadedPaths.length = 0;
+                setTicket(result.nomor_pengajuan);
+                setSuccessData(result);
+                setSubmitted(true);
+            } catch (error) {
+                await cleanupUploadedFiles();
+                throw error;
+            }
         } catch (error) {
             if (process.env.NODE_ENV !== "production") console.error("SURAT ONLINE SUBMIT ERROR", error);
             alert(error instanceof Error ? error.message : "Gagal mengirim permohonan.");

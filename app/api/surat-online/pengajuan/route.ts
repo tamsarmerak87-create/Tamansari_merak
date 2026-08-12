@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
-import { createSubmission } from "@/services/surat-online.service";
+import { createSubmission, removeSubmissionAttachments } from "@/services/surat-online.service";
+
+const FILE_PATH_KEYS = ["file_ktp", "file_kk", "file_pendukung"] as const;
+
+function collectUploadedPaths(body: unknown) {
+  if (!body || typeof body !== "object") return [];
+  return FILE_PATH_KEYS.map((key) => (body as Record<string, unknown>)[key]).filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+}
 
 export async function POST(request: Request) {
   try {
@@ -14,10 +21,22 @@ export async function POST(request: Request) {
       });
     }
 
-    const body = contentType.includes("application/json")
-      ? await request.json()
-      : await request.formData();
-    const data = await createSubmission(body);
+    if (!contentType.includes("application/json")) {
+      return NextResponse.json(
+        { ok: false, error: "Endpoint pengajuan hanya menerima JSON data teks dan path file. Upload file harus langsung ke Supabase Storage bucket surat." },
+        { status: 415 },
+      );
+    }
+
+    const body = await request.json();
+    const uploadedPaths = collectUploadedPaths(body);
+    let data;
+    try {
+      data = await createSubmission(body);
+    } catch (error) {
+      if (uploadedPaths.length > 0) await removeSubmissionAttachments(uploadedPaths).catch((cleanupError) => console.error("[PENGAJUAN CLEANUP ERROR]", cleanupError));
+      throw error;
+    }
     return NextResponse.json({
       ok: true,
       message: "Pengajuan berhasil dikirim.",

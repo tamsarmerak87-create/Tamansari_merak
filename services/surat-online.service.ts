@@ -44,6 +44,9 @@ type UploadedFileMeta = {
 };
 
 type SubmissionRequest = SubmissionInput & {
+    file_ktp?: string | null;
+    file_kk?: string | null;
+    file_pendukung?: string | null;
     ktp_path?: string | null;
     ktp_url?: string | null;
     ktp_name?: string | null;
@@ -60,6 +63,10 @@ type SubmissionRequest = SubmissionInput & {
     pendukung_type?: string | null;
     pendukung_size?: number | string | null;
 };
+
+type SubmissionPathKey = "file_ktp" | "file_kk" | "file_pendukung";
+
+const SUBMISSION_PATH_KEYS: SubmissionPathKey[] = ["file_ktp", "file_kk", "file_pendukung"];
 
 class SupabaseOperationError extends Error {
     details?: string;
@@ -119,8 +126,28 @@ export async function uploadSubmissionAttachment(folder: "ktp" | "kk" | "penduku
         upsert: false,
     });
     if (error) throw new Error(error.message || "Gagal mengunggah dokumen.");
-    const publicUrl = client.storage.from(SUBMISSION_STORAGE_BUCKET).getPublicUrl(path).data.publicUrl;
-    return { path, url: publicUrl, name: file.name, type: file.type, size: file.size } satisfies UploadedFileMeta;
+    return { path, url: null, name: file.name, type: file.type, size: file.size } satisfies UploadedFileMeta;
+}
+
+export async function removeSubmissionAttachments(paths: string[]) {
+    const safePaths = paths.filter((path) => path && !path.includes(".."));
+    if (safePaths.length === 0) return;
+    const client = typeof window === "undefined" ? createSupabaseAdminClient() : createSupabaseBrowserClient();
+    const { error } = await client.storage.from(SUBMISSION_STORAGE_BUCKET).remove(safePaths);
+    if (error) throw new Error(error.message || "Gagal membersihkan dokumen upload.");
+}
+
+function assertTextPathPayload(formData: SubmissionRequest) {
+    SUBMISSION_PATH_KEYS.forEach((key) => {
+        const value = formData[key];
+        if (value == null || value === "") return;
+        if (typeof value !== "string") throw new Error(`${key} harus berupa path file Storage, bukan File/Blob/Base64.`);
+        const trimmed = value.trim();
+        if (!trimmed || trimmed.includes("..") || /^data:/i.test(trimmed) || /^https?:\/\//i.test(trimmed)) {
+            throw new Error(`${key} harus berupa path file Storage yang valid.`);
+        }
+        if (trimmed.length > 512) throw new Error(`${key} terlalu panjang untuk path file Storage.`);
+    });
 }
 
 export function getProgressFromStatus(status?: string) {
@@ -216,14 +243,14 @@ export async function getLayananList() {
     return data ?? [];
 }
 
-export async function createSubmission(formData: FormData | SubmissionRequest) {
+export async function createSubmission(formData: SubmissionRequest) {
     if (typeof window !== "undefined") {
         try {
-            const isFormData = formData instanceof FormData;
+            assertTextPathPayload(formData);
             const response = await fetch("/api/surat-online/pengajuan", {
                 method: "POST",
-                headers: isFormData ? undefined : { "content-type": "application/json" },
-                body: isFormData ? formData : JSON.stringify(formData),
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify(formData),
             });
             const result = await response.json().catch(() => null);
             const message = typeof result?.error === "string" ? result.error : result?.error?.message;
@@ -242,14 +269,17 @@ export async function createSubmission(formData: FormData | SubmissionRequest) {
     if (!client) throw new Error("Supabase service role belum dikonfigurasi.");
 
     let payload: SubmissionInput;
-    let ktp: File | null = null;
-    let kk: File | null = null;
-    let pendukung: File | null = null;
     let ktpMeta: UploadedFileMeta | null = null;
     let kkMeta: UploadedFileMeta | null = null;
     let pendukungMeta: UploadedFileMeta | null = null;
 
-    const getValue = (key: keyof SubmissionRequest) => formData instanceof FormData ? formData.get(key) : formData[key];
+    assertTextPathPayload(formData);
+
+    const getValue = (key: keyof SubmissionRequest) => formData[key];
+    const readPath = (key: "file_ktp" | "file_kk" | "file_pendukung") => {
+        const value = getValue(key);
+        return typeof value === "string" && value.trim() ? value.trim() : null;
+    };
     const readMeta = (prefix: "ktp" | "kk" | "pendukung") => {
         const path = getValue(`${prefix}_path` as keyof SubmissionRequest);
         if (!path) return null;
@@ -284,20 +314,14 @@ export async function createSubmission(formData: FormData | SubmissionRequest) {
             keperluan: getValue("keperluan"),
             catatan: getValue("catatan") ?? "",
         });
-        if (formData instanceof FormData) {
-            ktp = formData.get("ktp") as File | null;
-            kk = formData.get("kk") as File | null;
-            pendukung = formData.get("pendukung") as File | null;
-        }
-        ktpMeta = readMeta("ktp");
-        kkMeta = readMeta("kk");
-        pendukungMeta = readMeta("pendukung");
+        ktpMeta = readPath("file_ktp") ? { path: readPath("file_ktp") ?? "", url: null, name: "KTP", type: "application/pdf", size: 0 } : readMeta("ktp");
+        kkMeta = readPath("file_kk") ? { path: readPath("file_kk") ?? "", url: null, name: "KK", type: "application/pdf", size: 0 } : readMeta("kk");
+        pendukungMeta = readPath("file_pendukung") ? { path: readPath("file_pendukung") ?? "", url: null, name: "Dokumen pendukung", type: "application/pdf", size: 0 } : readMeta("pendukung");
         if (Number.isNaN(Date.parse(payload.tanggal_lahir))) throw new Error("Tanggal lahir tidak valid.");
-        if ((!ktp && !ktpMeta) || (!kk && !kkMeta)) throw new Error("Upload KTP dan KK wajib diisi.");
-        [ktp, kk, pendukung].filter(Boolean).forEach((file) => validateUploadFile(file as File));
-        if (ktpMeta) validateUploadedFileMeta(ktpMeta, "KTP");
-        if (kkMeta) validateUploadedFileMeta(kkMeta, "KK");
-        if (pendukungMeta) validateUploadedFileMeta(pendukungMeta, "Dokumen pendukung");
+        if (!ktpMeta || !kkMeta) throw new Error("Upload KTP dan KK wajib diisi.");
+        [ktpMeta, kkMeta, pendukungMeta].filter(Boolean).forEach((file) => {
+            if (!file?.path || file.path.includes("..")) throw new Error("Path dokumen tidak valid.");
+        });
     } catch (error) {
         console.error("SURAT ONLINE VALIDATION ERROR");
         console.dir(error, { depth: null });
@@ -305,30 +329,6 @@ export async function createSubmission(formData: FormData | SubmissionRequest) {
     } finally {
         // Tidak ada resource yang perlu dibersihkan pada tahap validasi.
     }
-
-    const uploadedPaths: string[] = [];
-    const cleanupUploadedFiles = async () => {
-        try {
-            if (uploadedPaths.length > 0) await client.storage.from(SUBMISSION_STORAGE_BUCKET).remove(uploadedPaths);
-        } catch (cleanupError) {
-            console.error("[surat-online:cleanup-upload]", cleanupError);
-        }
-    };
-
-    const uploadOne = async (folder: "ktp" | "kk" | "pendukung", file: File | null) => {
-        if (!file) return null;
-        const ext = file.name.split(".").pop() ?? "bin";
-        const path = `${folder}/${nomor_pengajuan}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-        logUploadStage("[surat-online:file-upload:start]", { bucket: SUBMISSION_STORAGE_BUCKET, path, name: file.name, size: file.size, type: file.type });
-        const { error } = await client.storage.from(SUBMISSION_STORAGE_BUCKET).upload(path, file, { upsert: false, contentType: file.type });
-        if (error) {
-            logSupabaseStageError("[surat-online:file-upload:error]", error, { bucket: SUBMISSION_STORAGE_BUCKET, path, name: file.name, size: file.size, type: file.type });
-            throw new SupabaseOperationError("SUPABASE STORAGE UPLOAD ERROR", error, "file_upload");
-        }
-        uploadedPaths.push(path);
-        logUploadStage("[surat-online:file-upload:success]", { bucket: SUBMISSION_STORAGE_BUCKET, path, name: file.name, size: file.size, type: file.type });
-        return { path, url: client.storage.from(SUBMISSION_STORAGE_BUCKET).getPublicUrl(path).data.publicUrl };
-    };
 
     let nomor_pengajuan = "";
     let nomor_tiket = "";
@@ -366,9 +366,9 @@ export async function createSubmission(formData: FormData | SubmissionRequest) {
         nomor_tiket = createNomorTiket(sequence);
         tracking_url = createTrackingUrl(nomor_pengajuan);
 
-        const ktpUpload = ktpMeta?.path ? { path: ktpMeta.path, url: ktpMeta.url || client.storage.from(SUBMISSION_STORAGE_BUCKET).getPublicUrl(ktpMeta.path).data.publicUrl } : await uploadOne("ktp", ktp);
-        const kkUpload = kkMeta?.path ? { path: kkMeta.path, url: kkMeta.url || client.storage.from(SUBMISSION_STORAGE_BUCKET).getPublicUrl(kkMeta.path).data.publicUrl } : await uploadOne("kk", kk);
-        const pendukungUpload = pendukungMeta?.path ? { path: pendukungMeta.path, url: pendukungMeta.url || client.storage.from(SUBMISSION_STORAGE_BUCKET).getPublicUrl(pendukungMeta.path).data.publicUrl } : await uploadOne("pendukung", pendukung);
+        const ktpUpload = ktpMeta?.path ? { path: ktpMeta.path } : null;
+        const kkUpload = kkMeta?.path ? { path: kkMeta.path } : null;
+        const pendukungUpload = pendukungMeta?.path ? { path: pendukungMeta.path } : null;
 
         const [rt = "", rw = ""] = payload.rt_rw.split("/").map((part) => part.trim());
         const pengajuanPayload = {
@@ -398,17 +398,11 @@ export async function createSubmission(formData: FormData | SubmissionRequest) {
             file_pendukung: pendukungUpload?.path ?? null,
         };
 
-        console.log("[PENGAJUAN PAYLOAD]", {
-            ...pengajuanPayload,
-            file_ktp: pengajuanPayload.file_ktp ? "[FILE]" : null,
-            file_kk: pengajuanPayload.file_kk ? "[FILE]" : null,
-            file_pendukung: pengajuanPayload.file_pendukung ? "[FILE]" : null,
-        });
+        logUploadStage("[surat-online:pengajuan-insert:start]", { stage: "pengajuan_insert", hasKtpPath: Boolean(pengajuanPayload.file_ktp), hasKkPath: Boolean(pengajuanPayload.file_kk), hasPendukungPath: Boolean(pengajuanPayload.file_pendukung) });
 
         const { data: pengajuan, error } = await client.from("pengajuan_surat").insert(pengajuanPayload).select("id,nomor_pengajuan,status,created_at").single();
         if (error) {
             logSupabaseStageError("[surat-online:pengajuan-insert:error]", error, { stage: "pengajuan_insert" });
-            await cleanupUploadedFiles();
             throw new SupabaseOperationError("PENGAJUAN INSERT ERROR", error, "pengajuan_insert");
         }
 
