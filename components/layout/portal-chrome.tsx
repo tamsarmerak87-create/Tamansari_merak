@@ -12,8 +12,17 @@ export function PortalChrome({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const isAdminPortal = pathname === "/admin" || pathname.startsWith("/admin/");
     const isPetugasPortal = pathname === "/petugas" || pathname.startsWith("/petugas/");
+    const isWargaDashboard = pathname === "/dashboard" || pathname.startsWith("/dashboard/");
 
     if (isAdminPortal || isPetugasPortal) return <>{children}</>;
+
+    if (isWargaDashboard) {
+        return (
+            <WargaAuthProvider>
+                <VerificationGuard>{children}</VerificationGuard>
+            </WargaAuthProvider>
+        );
+    }
 
     return (
         <WargaAuthProvider>
