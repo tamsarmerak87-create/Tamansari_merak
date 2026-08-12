@@ -111,7 +111,31 @@ const PENGAJUAN_COLUMNS = "id,nomor_pengajuan,nik,nomor_kk,nama_lengkap,tempat_l
 const TRACKING_COLUMNS = "id,pengajuan_id,status,keterangan,petugas,created_at";
 const DOKUMEN_COLUMNS = "id,pengajuan_id,nama_file,jenis,url_file,created_at";
 const VERIFIKASI_COLUMNS = "id,pengajuan_id,tahap,nama_tahap,role_petugas,status,nama_petugas,catatan,hasil_verifikasi,created_at,updated_at,acted_at,approved_at";
+const DOKUMEN_BUCKET = "surat";
 let favoritTableAvailable: boolean | null = null;
+
+function logDokumenPath(label: string, meta: Record<string, unknown>) {
+    if (process.env.NODE_ENV === "production") return;
+    console.info(label, meta);
+}
+
+export function normalizeSuratObjectPath(pathOrUrl?: string | null) {
+    const value = pathOrUrl?.trim();
+    if (!value) return "";
+    if (!/^https?:\/\//i.test(value)) return value.replace(/^surat\//, "");
+    try {
+        const url = new URL(value);
+        const marker = `/storage/v1/object/public/${DOKUMEN_BUCKET}/`;
+        const publicIndex = url.pathname.indexOf(marker);
+        if (publicIndex >= 0) return decodeURIComponent(url.pathname.slice(publicIndex + marker.length)).replace(/^surat\//, "");
+        const signedMarker = `/storage/v1/object/sign/${DOKUMEN_BUCKET}/`;
+        const signedIndex = url.pathname.indexOf(signedMarker);
+        if (signedIndex >= 0) return decodeURIComponent(url.pathname.slice(signedIndex + signedMarker.length)).replace(/^surat\//, "");
+    } catch {
+        return "";
+    }
+    return "";
+}
 
 function normalizeRows(rows: WargaPengajuan[] | null | undefined, layananById = new Map<string, { id?: string; nama?: string | null; deskripsi?: string | null }>(), trackingByPengajuanId = new Map<string, TrackingPengajuan[]>(), dokumenByPengajuanId = new Map<string, DokumenPengajuan[]>(), verifikasiByPengajuanId = new Map<string, VerifikasiPengajuan[]>()) {
     return (rows ?? []).map((row) => ({
@@ -325,14 +349,22 @@ export async function uploadMyDokumen(file: File, jenis = "Dokumen Pendukung") {
     const supabase = client();
     const upload = await supabase.storage.from("surat").upload(path, file, { upsert: false, contentType: file.type });
     if (upload.error) throw upload.error;
+    logDokumenPath("UPLOAD PATH", { bucket: DOKUMEN_BUCKET, path: upload.data.path, plannedPath: path, fileName: file.name });
     return { url_file: upload.data.path, nama_file: file.name, jenis };
 }
 
 export function getDokumenUrl(pathOrUrl?: string | null) {
-    const value = pathOrUrl?.trim();
-    if (!value) return "";
-    if (/^https?:\/\//i.test(value)) return value;
-    return client().storage.from("surat").getPublicUrl(value).data.publicUrl;
+    const path = normalizeSuratObjectPath(pathOrUrl);
+    logDokumenPath("READ PATH", { bucket: DOKUMEN_BUCKET, databasePath: pathOrUrl ?? null, path });
+    if (!path) return "";
+    return client().storage.from(DOKUMEN_BUCKET).getPublicUrl(path).data.publicUrl;
+}
+
+export async function debugListSuratFolder(folder: string) {
+    if (process.env.NODE_ENV === "production") return [];
+    const { data, error } = await client().storage.from(DOKUMEN_BUCKET).list(folder);
+    if (error) throw error;
+    return data ?? [];
 }
 
 export async function getWargaDashboardData(): Promise<WargaDashboardData> {

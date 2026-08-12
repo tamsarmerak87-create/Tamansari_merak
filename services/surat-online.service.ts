@@ -120,13 +120,15 @@ export async function uploadSubmissionAttachment(folder: "ktp" | "kk" | "penduku
     const safeOwner = ownerId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "warga";
     const randomId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2);
     const path = `${folder}/${safeOwner}/${Date.now()}-${randomId}.${extensionFromFile(file)}`;
-    const { error } = await client.storage.from(SUBMISSION_STORAGE_BUCKET).upload(path, file, {
+    const { data, error } = await client.storage.from(SUBMISSION_STORAGE_BUCKET).upload(path, file, {
         cacheControl: "3600",
         contentType: file.type,
         upsert: false,
     });
     if (error) throw new Error(error.message || "Gagal mengunggah dokumen.");
-    return { path, url: null, name: file.name, type: file.type, size: file.size } satisfies UploadedFileMeta;
+    const uploadedPath = data.path;
+    logUploadStage("UPLOAD PATH", { bucket: SUBMISSION_STORAGE_BUCKET, path: uploadedPath, plannedPath: path, fileName: file.name });
+    return { path: uploadedPath, url: null, name: file.name, type: file.type, size: file.size } satisfies UploadedFileMeta;
 }
 
 export async function removeSubmissionAttachments(paths: string[]) {
@@ -369,6 +371,13 @@ export async function createSubmission(formData: SubmissionRequest) {
         const ktpUpload = ktpMeta?.path ? { path: ktpMeta.path } : null;
         const kkUpload = kkMeta?.path ? { path: kkMeta.path } : null;
         const pendukungUpload = pendukungMeta?.path ? { path: pendukungMeta.path } : null;
+
+        logUploadStage("DATABASE PATH", {
+            bucket: SUBMISSION_STORAGE_BUCKET,
+            file_ktp: ktpUpload?.path ?? null,
+            file_kk: kkUpload?.path ?? null,
+            file_pendukung: pendukungUpload?.path ?? null,
+        });
 
         const [rt = "", rw = ""] = payload.rt_rw.split("/").map((part) => part.trim());
         const pengajuanPayload = {

@@ -6,6 +6,11 @@ function jsonError(message: string, status = 400) {
     return NextResponse.json({ ok: false, error: message }, { status });
 }
 
+function logDokumenPath(label: string, meta: Record<string, unknown>) {
+    if (process.env.NODE_ENV === "production") return;
+    console.info(label, meta);
+}
+
 export async function POST(request: NextRequest) {
     const session = await getAdminSession(request, { cookie: "admin" });
     if (session.error) return jsonError("Session admin tidak valid.", 401);
@@ -23,16 +28,19 @@ export async function POST(request: NextRequest) {
 
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
     const path = `pendukung/${pengajuanId}-${Date.now()}-${safeName}`;
-    const { error: uploadError } = await supabase.storage.from("surat").upload(path, file, { upsert: true, contentType: file.type });
+    const { data: uploadData, error: uploadError } = await supabase.storage.from("surat").upload(path, file, { upsert: true, contentType: file.type });
     if (uploadError) return jsonError(uploadError.message, 500);
+    const uploadedPath = uploadData.path;
+    logDokumenPath("UPLOAD PATH", { bucket: "surat", path: uploadedPath, plannedPath: path, fileName: file.name });
+    logDokumenPath("DATABASE PATH", { bucket: "surat", url_file: uploadedPath });
 
-    const url = supabase.storage.from("surat").getPublicUrl(path).data.publicUrl;
     const { data, error: insertError } = await supabase
         .from("dokumen_pengajuan")
-        .insert({ pengajuan_id: pengajuanId, nama_file: file.name, jenis: "Hasil Surat", url_file: url })
+        .insert({ pengajuan_id: pengajuanId, nama_file: file.name, jenis: "Hasil Surat", url_file: uploadedPath })
         .select("*")
         .single();
 
     if (insertError) return jsonError(insertError.message, 500);
+    const url = supabase.storage.from("surat").getPublicUrl(uploadedPath).data.publicUrl;
     return NextResponse.json({ ok: true, data, url });
 }
