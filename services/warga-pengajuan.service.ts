@@ -107,6 +107,12 @@ type WargaPengajuanApiResponse = {
     error?: string;
 };
 
+type WargaPengajuanDetailApiResponse = {
+    ok?: boolean;
+    data?: WargaPengajuan;
+    error?: string;
+};
+
 function client() {
     const supabase = createSupabaseBrowserClient();
     if (!supabase) throw new Error("Supabase env belum dikonfigurasi.");
@@ -166,8 +172,21 @@ export async function getMyPengajuan(profileInput?: WargaProfile | null) {
 }
 
 export async function getMyPengajuanDetail(id: string, profileInput?: WargaProfile | null) {
-    const items = await getMyPengajuan(profileInput);
-    return items.find((item) => item.id === id) ?? null;
+    void profileInput;
+    const { data: sessionData, error: sessionError } = await client().auth.getSession();
+    if (sessionError) throw sessionError;
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) throw new Error("Silakan login terlebih dahulu.");
+
+    const response = await fetch(`/api/warga/pengajuan/${encodeURIComponent(id)}`, {
+        method: "GET",
+        headers: { authorization: `Bearer ${accessToken}` },
+        cache: "no-store",
+    });
+    const result = await response.json().catch(() => null) as WargaPengajuanDetailApiResponse | null;
+    if (response.status === 404 || response.status === 403) return null;
+    if (!response.ok || !result?.ok) throw new Error(result?.error || "Gagal memuat detail pengajuan warga.");
+    return result.data ?? null;
 }
 
 export async function getMyFavorit(userId?: string | null) {
