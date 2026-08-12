@@ -25,7 +25,7 @@ const mobileNav: { label: string; href: Route; }[] = [...nav];
 const wargaMenu = [
     { label: "Layanan", href: "/layanan", icon: LayoutDashboard },
     { label: "Pengajuan Saya", href: "/dashboard#pengajuan", icon: FileText },
-    { label: "Tracking", href: "/surat-online/tracking", icon: MapPinned },
+    { label: "Tracking Dokumen", href: "/surat-online/tracking", icon: MapPinned },
     { label: "Profil Saya", href: "/dashboard#profil", icon: UserRound },
 ] as const;
 
@@ -226,6 +226,7 @@ export function Navbar() {
         </header>
     );
 }
+
 
 
 

@@ -6,7 +6,7 @@ import { site } from "@/constants/site";
 const footerLinks = [
     { label: "Profil", href: "/profil" },
     { label: "Layanan", href: "/layanan" },
-    { label: "Surat Online", href: "/surat-online" },
+    { label: "Tracking Dokumen", href: "/surat-online/tracking" },
     { label: "POSBANKUM", href: "/posbankum" },
     { label: "Kontak", href: "/kontak" },
 ] as const;
