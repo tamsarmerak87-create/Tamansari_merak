@@ -33,6 +33,7 @@ export const submissionSchema = z.object({
 });
 
 export type SubmissionInput = z.infer<typeof submissionSchema>;
+type UploadStage = "file_upload" | "pengajuan_insert" | "verification_insert" | "dokumen_insert" | "tracking_insert";
 
 type UploadedFileMeta = {
     path: string;
@@ -64,14 +65,30 @@ class SupabaseOperationError extends Error {
     details?: string;
     hint?: string;
     code?: string;
+    stage?: UploadStage;
 
-    constructor(label: string, error: { message?: string; details?: string; hint?: string; code?: string }) {
+    constructor(label: string, error: { message?: string; details?: string; hint?: string; code?: string }, stage?: UploadStage) {
         super(error.message ?? label);
         this.name = label;
         this.details = error.details;
         this.hint = error.hint;
         this.code = error.code;
+        this.stage = stage;
     }
+}
+
+function logUploadStage(label: string, meta: Record<string, unknown>) {
+    if (process.env.NODE_ENV === "production") return;
+    console.info(label, meta);
+}
+
+function logSupabaseStageError(label: string, error: { message?: string; statusCode?: string; status?: number; error?: string; code?: string }, meta: Record<string, unknown> = {}) {
+    console.error(label, {
+        ...meta,
+        status: error.status ?? error.statusCode,
+        code: error.code ?? error.error,
+        message: error.message,
+    });
 }
 
 export function validateUploadFile(file: File) {
@@ -302,14 +319,15 @@ export async function createSubmission(formData: FormData | SubmissionRequest) {
         if (!file) return null;
         const ext = file.name.split(".").pop() ?? "bin";
         const path = `${folder}/${nomor_pengajuan}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+        logUploadStage("[surat-online:file-upload:start]", { bucket: SUBMISSION_STORAGE_BUCKET, path, name: file.name, size: file.size, type: file.type });
         const { error } = await client.storage.from(SUBMISSION_STORAGE_BUCKET).upload(path, file, { upsert: false, contentType: file.type });
         if (error) {
-            console.error("SUPABASE STORAGE UPLOAD ERROR");
-            console.dir(error, { depth: null });
-            throw error;
+            logSupabaseStageError("[surat-online:file-upload:error]", error, { bucket: SUBMISSION_STORAGE_BUCKET, path, name: file.name, size: file.size, type: file.type });
+            throw new SupabaseOperationError("SUPABASE STORAGE UPLOAD ERROR", error, "file_upload");
         }
         uploadedPaths.push(path);
-        return client.storage.from(SUBMISSION_STORAGE_BUCKET).getPublicUrl(path).data.publicUrl;
+        logUploadStage("[surat-online:file-upload:success]", { bucket: SUBMISSION_STORAGE_BUCKET, path, name: file.name, size: file.size, type: file.type });
+        return { path, url: client.storage.from(SUBMISSION_STORAGE_BUCKET).getPublicUrl(path).data.publicUrl };
     };
 
     let nomor_pengajuan = "";
@@ -348,9 +366,9 @@ export async function createSubmission(formData: FormData | SubmissionRequest) {
         nomor_tiket = createNomorTiket(sequence);
         tracking_url = createTrackingUrl(nomor_pengajuan);
 
-        const ktp_url = ktpMeta?.url || (ktpMeta?.path ? client.storage.from(SUBMISSION_STORAGE_BUCKET).getPublicUrl(ktpMeta.path).data.publicUrl : await uploadOne("ktp", ktp));
-        const kk_url = kkMeta?.url || (kkMeta?.path ? client.storage.from(SUBMISSION_STORAGE_BUCKET).getPublicUrl(kkMeta.path).data.publicUrl : await uploadOne("kk", kk));
-        const pendukung_url = pendukungMeta?.url || (pendukungMeta?.path ? client.storage.from(SUBMISSION_STORAGE_BUCKET).getPublicUrl(pendukungMeta.path).data.publicUrl : await uploadOne("pendukung", pendukung));
+        const ktpUpload = ktpMeta?.path ? { path: ktpMeta.path, url: ktpMeta.url || client.storage.from(SUBMISSION_STORAGE_BUCKET).getPublicUrl(ktpMeta.path).data.publicUrl } : await uploadOne("ktp", ktp);
+        const kkUpload = kkMeta?.path ? { path: kkMeta.path, url: kkMeta.url || client.storage.from(SUBMISSION_STORAGE_BUCKET).getPublicUrl(kkMeta.path).data.publicUrl } : await uploadOne("kk", kk);
+        const pendukungUpload = pendukungMeta?.path ? { path: pendukungMeta.path, url: pendukungMeta.url || client.storage.from(SUBMISSION_STORAGE_BUCKET).getPublicUrl(pendukungMeta.path).data.publicUrl } : await uploadOne("pendukung", pendukung);
 
         const [rt = "", rw = ""] = payload.rt_rw.split("/").map((part) => part.trim());
         const pengajuanPayload = {
@@ -375,9 +393,9 @@ export async function createSubmission(formData: FormData | SubmissionRequest) {
             catatan: payload.catatan || null,
             nomor_pengajuan,
             status: "Menunggu Verifikasi",
-            file_ktp: ktp_url ?? null,
-            file_kk: kk_url ?? null,
-            file_pendukung: pendukung_url ?? null,
+            file_ktp: ktpUpload?.path ?? null,
+            file_kk: kkUpload?.path ?? null,
+            file_pendukung: pendukungUpload?.path ?? null,
         };
 
         console.log("[PENGAJUAN PAYLOAD]", {
@@ -389,45 +407,42 @@ export async function createSubmission(formData: FormData | SubmissionRequest) {
 
         const { data: pengajuan, error } = await client.from("pengajuan_surat").insert(pengajuanPayload).select("id,nomor_pengajuan,status,created_at").single();
         if (error) {
-            console.error("[PENGAJUAN INSERT ERROR]", error);
-            console.dir(error, { depth: null });
+            logSupabaseStageError("[surat-online:pengajuan-insert:error]", error, { stage: "pengajuan_insert" });
             await cleanupUploadedFiles();
-            throw new SupabaseOperationError("PENGAJUAN INSERT ERROR", error);
+            throw new SupabaseOperationError("PENGAJUAN INSERT ERROR", error, "pengajuan_insert");
         }
 
         const { error: verificationError } = await client.from("verifikasi_pengajuan").insert(createVerificationRows(pengajuan.id));
         if (verificationError) {
-            console.error("SUPABASE INSERT VERIFIKASI_PENGAJUAN ERROR");
-            console.dir(verificationError, { depth: null });
-            throw new SupabaseOperationError("SUPABASE INSERT VERIFIKASI_PENGAJUAN ERROR", verificationError);
+            logSupabaseStageError("[surat-online:verification-insert:error]", verificationError, { stage: "verification_insert" });
+            throw new SupabaseOperationError("SUPABASE INSERT VERIFIKASI_PENGAJUAN ERROR", verificationError, "verification_insert");
         }
 
         const { error: dokumenError } = await client.from("dokumen_pengajuan").insert([
             {
                 pengajuan_id: pengajuan.id,
                 nama_file: "KTP",
-                url_file: ktp_url,
+                url_file: ktpUpload?.path,
                 jenis: "KTP",
             },
             {
                 pengajuan_id: pengajuan.id,
                 nama_file: "KK",
-                url_file: kk_url,
+                url_file: kkUpload?.path,
                 jenis: "KK",
             },
-            ...(pendukung_url
+            ...(pendukungUpload?.path
                 ? [{
                     pengajuan_id: pengajuan.id,
                     nama_file: "Dokumen Pendukung",
-                    url_file: pendukung_url,
+                    url_file: pendukungUpload.path,
                     jenis: "Pendukung",
                 }]
                 : []),
         ]);
         if (dokumenError) {
-            console.error("SUPABASE INSERT DOKUMEN_PENGAJUAN ERROR");
-            console.dir(dokumenError, { depth: null });
-            throw new SupabaseOperationError("SUPABASE INSERT DOKUMEN_PENGAJUAN ERROR", dokumenError);
+            logSupabaseStageError("[surat-online:dokumen-insert:error]", dokumenError, { stage: "dokumen_insert" });
+            throw new SupabaseOperationError("SUPABASE INSERT DOKUMEN_PENGAJUAN ERROR", dokumenError, "dokumen_insert");
         }
 
         const { error: trackingError } = await client.from("tracking_pengajuan").insert({
@@ -437,9 +452,8 @@ export async function createSubmission(formData: FormData | SubmissionRequest) {
             petugas: null,
         });
         if (trackingError) {
-            console.error("[PENGAJUAN TRACKING ERROR]", trackingError);
-            console.dir(trackingError, { depth: null });
-            throw new SupabaseOperationError("PENGAJUAN TRACKING ERROR", trackingError);
+            logSupabaseStageError("[surat-online:tracking-insert:error]", trackingError, { stage: "tracking_insert" });
+            throw new SupabaseOperationError("PENGAJUAN TRACKING ERROR", trackingError, "tracking_insert");
         }
 
         try {

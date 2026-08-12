@@ -29,7 +29,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/card";
 import { site } from "@/constants/site";
-import { createSubmission, searchSubmission, submissionSchema, uploadSubmissionAttachment } from "@/services/surat-online.service";
+import { createSubmission, searchSubmission, submissionSchema } from "@/services/surat-online.service";
 import type { PublicService } from "@/types";
 import { cn } from "@/utils/cn";
 import QRCode from "qrcode";
@@ -239,28 +239,11 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
                 catatan: form.note,
             };
             submissionSchema.parse(payload);
-            const ownerId = user?.id ?? form.nik;
-            const ktpMeta = files.ktp ? await uploadSubmissionAttachment("ktp", files.ktp, ownerId) : null;
-            const kkMeta = files.kk ? await uploadSubmissionAttachment("kk", files.kk, ownerId) : null;
-            const pendukungMeta = files.support ? await uploadSubmissionAttachment("pendukung", files.support, ownerId) : null;
-            const result = await createSubmission({
-                ...payload,
-                ktp_path: ktpMeta?.path,
-                ktp_url: ktpMeta?.url,
-                ktp_name: ktpMeta?.name,
-                ktp_type: ktpMeta?.type,
-                ktp_size: ktpMeta?.size,
-                kk_path: kkMeta?.path,
-                kk_url: kkMeta?.url,
-                kk_name: kkMeta?.name,
-                kk_type: kkMeta?.type,
-                kk_size: kkMeta?.size,
-                pendukung_path: pendukungMeta?.path,
-                pendukung_url: pendukungMeta?.url,
-                pendukung_name: pendukungMeta?.name,
-                pendukung_type: pendukungMeta?.type,
-                pendukung_size: pendukungMeta?.size,
-            }) as SubmissionResult;
+            Object.entries(payload).forEach(([key, value]) => formData.append(key, value));
+            if (files.ktp) formData.append("ktp", files.ktp);
+            if (files.kk) formData.append("kk", files.kk);
+            if (files.support) formData.append("pendukung", files.support);
+            const result = await createSubmission(formData) as SubmissionResult;
             setTicket(result.nomor_pengajuan);
             setSuccessData(result);
             setSubmitted(true);
