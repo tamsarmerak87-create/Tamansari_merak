@@ -3,9 +3,10 @@ import { createSupabaseAdminClient } from "@/services/supabase";
 import type { WargaProfile } from "@/services/warga-auth.service";
 
 type ValidatedWarga = { warga: WargaProfile | null } | { error: string; status: number };
-type RouteContext = { params: Promise<{ id: string }> | { id: string } };
+type RouteContext = { params: Promise<{ id: string }> };
 
 const WARGA_PROFILE_SAFE_COLUMNS = "id,nama_lengkap,nik,nomor_kk,email,nomor_hp,nomor_whatsapp,tempat_lahir,tanggal_lahir,jenis_kelamin,alamat,rt,rw,kelurahan,kecamatan,foto_url,role,status_verifikasi,alasan_penolakan,created_at,updated_at";
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function jsonError(message: string, status = 400) {
     return NextResponse.json({ ok: false, error: message }, { status });
@@ -49,9 +50,24 @@ async function getValidatedWarga(request: NextRequest): Promise<ValidatedWarga> 
     return { warga: byEmail.data ?? null };
 }
 
-export async function GET(request: NextRequest, context: RouteContext) {
+export async function GET(request: NextRequest, { params }: RouteContext) {
     try {
-        const { id } = await context.params;
+        const { id } = await params;
+        console.log("DETAIL PENGAJUAN ID", {
+            id,
+            valid: Boolean(id),
+        });
+
+        if (!id) {
+            console.error("DETAIL PENGAJUAN ID MISSING");
+            return jsonError("ID pengajuan tidak ditemukan.", 400);
+        }
+
+        if (!UUID_REGEX.test(id)) {
+            console.error("DETAIL PENGAJUAN INVALID UUID", { id });
+            return jsonError("ID pengajuan tidak valid.", 400);
+        }
+
         const validated = await getValidatedWarga(request);
         if ("error" in validated) return jsonError(validated.error, validated.status);
         const warga = validated.warga;
@@ -83,7 +99,13 @@ export async function GET(request: NextRequest, context: RouteContext) {
             .eq("id", id)
             .maybeSingle();
         if (error) {
-            logSupabaseError("DETAIL PENGAJUAN QUERY ERROR", error);
+            console.error("DETAIL PENGAJUAN QUERY ERROR", {
+                message: error.message,
+                code: error.code,
+                details: error.details,
+                hint: error.hint,
+                id,
+            });
             throw error;
         }
 
