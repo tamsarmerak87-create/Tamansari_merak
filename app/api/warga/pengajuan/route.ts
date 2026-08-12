@@ -6,13 +6,29 @@ import type { DokumenPengajuan, TrackingPengajuan, VerifikasiPengajuan, WargaPen
 type ValidatedWarga = { warga: WargaProfile | null } | { error: string; status: number };
 
 const WARGA_PROFILE_COLUMNS = "id,user_id,nama_lengkap,nik,nomor_kk,email,nomor_hp,nomor_whatsapp,tempat_lahir,tanggal_lahir,jenis_kelamin,alamat,rt,rw,kelurahan,kecamatan,foto_url,role,status_verifikasi,alasan_penolakan,created_at,updated_at";
-const PENGAJUAN_COLUMNS = "id,nomor_pengajuan,nik,nomor_kk,nama_lengkap,tempat_lahir,tanggal_lahir,jenis_kelamin,agama,status_perkawinan,pekerjaan,alamat,rt,rw,kelurahan,kecamatan,no_hp,email,layanan_id,keperluan,catatan,file_ktp,file_kk,file_pendukung,status,created_at,updated_at,alasan_penolakan,verified_at,verified_by,diproses_at,diproses_by,selesai_at,selesai_by,catatan_admin";
+const WARGA_PROFILE_SAFE_COLUMNS = "id,nama_lengkap,nik,nomor_kk,email,nomor_hp,nomor_whatsapp,tempat_lahir,tanggal_lahir,jenis_kelamin,alamat,rt,rw,kelurahan,kecamatan,foto_url,role,status_verifikasi,alasan_penolakan,created_at,updated_at";
+const PENGAJUAN_COLUMNS = "id,nomor_pengajuan,nik,nama_lengkap,layanan_id,status,created_at,updated_at";
 const TRACKING_COLUMNS = "id,pengajuan_id,status,keterangan,petugas,created_at";
 const DOKUMEN_COLUMNS = "id,pengajuan_id,nama_file,jenis,url_file,created_at";
 const VERIFIKASI_COLUMNS = "id,pengajuan_id,tahap,nama_tahap,role_petugas,status,nama_petugas,catatan,hasil_verifikasi,created_at,updated_at,acted_at,approved_at";
 
 function jsonError(message: string, status = 400) {
     return NextResponse.json({ ok: false, error: message }, { status });
+}
+
+function maskNik(nik?: string | null) {
+    if (!nik) return null;
+    return `${nik.slice(0, 4)}********${nik.slice(-4)}`;
+}
+
+function logSupabaseError(label: string, error: unknown) {
+    const supabaseError = error as { message?: string; code?: string; details?: string; hint?: string };
+    console.error(label, {
+        message: supabaseError.message ?? (error instanceof Error ? error.message : "Unknown error"),
+        code: supabaseError.code,
+        details: supabaseError.details,
+        hint: supabaseError.hint,
+    });
 }
 
 async function getValidatedWarga(request: NextRequest): Promise<ValidatedWarga> {
@@ -24,15 +40,15 @@ async function getValidatedWarga(request: NextRequest): Promise<ValidatedWarga> 
     if (userError || !userData.user) return { error: "Session warga tidak valid.", status: 401 as const };
 
     const user = userData.user;
-    const byId = await supabase.from("warga_profiles").select(WARGA_PROFILE_COLUMNS).eq("id", user.id).maybeSingle<WargaProfile>();
+    const byId = await supabase.from("warga_profiles").select(WARGA_PROFILE_SAFE_COLUMNS).eq("id", user.id).maybeSingle<WargaProfile>();
     if (byId.error) throw byId.error;
     if (byId.data) return { warga: byId.data };
 
-    const byUserId = await supabase.from("warga_profiles").select(WARGA_PROFILE_COLUMNS).eq("user_id", user.id).maybeSingle<WargaProfile>();
+    const byUserId = await supabase.from("warga_profiles").select(WARGA_PROFILE_SAFE_COLUMNS).eq("user_id", user.id).maybeSingle<WargaProfile>();
     if (byUserId.error && byUserId.error.code !== "42703") throw byUserId.error;
     if (byUserId.data) return { warga: byUserId.data };
 
-    const byEmail = await supabase.from("warga_profiles").select(WARGA_PROFILE_COLUMNS).eq("email", user.email ?? "").maybeSingle<WargaProfile>();
+    const byEmail = await supabase.from("warga_profiles").select(WARGA_PROFILE_SAFE_COLUMNS).eq("email", user.email ?? "").maybeSingle<WargaProfile>();
     if (byEmail.error) throw byEmail.error;
     return { warga: byEmail.data ?? null };
 }
@@ -58,6 +74,7 @@ export async function GET(request: NextRequest) {
         if ("error" in validated) return jsonError(validated.error, validated.status);
         const warga = validated.warga;
         if (!warga?.nik) return jsonError("Profil warga tidak ditemukan.", 404);
+        console.log("GET /api/warga/pengajuan SESSION", { wargaFound: Boolean(warga), nikMasked: maskNik(warga.nik) });
 
         const supabase = createSupabaseAdminClient();
         const { data, error } = await supabase
@@ -65,9 +82,13 @@ export async function GET(request: NextRequest) {
             .select(PENGAJUAN_COLUMNS)
             .eq("nik", warga.nik)
             .order("created_at", { ascending: false });
-        if (error) throw error;
+        if (error) {
+            logSupabaseError("PENGAJUAN QUERY ERROR", error);
+            throw error;
+        }
 
         const rows = (data ?? []) as WargaPengajuan[];
+        console.log("PENGAJUAN COUNT:", rows.length);
         const pengajuanIds = rows.map((row) => row.id).filter(Boolean);
         const layananIds = [...new Set(rows.map((row) => row.layanan_id).filter(Boolean))] as string[];
         const related = {
@@ -79,7 +100,10 @@ export async function GET(request: NextRequest) {
 
         if (layananIds.length > 0) {
             const { data: layanan, error: layananError } = await supabase.from("layanan").select("id,nama,deskripsi").in("id", layananIds);
-            if (layananError) throw layananError;
+            if (layananError) {
+                logSupabaseError("LAYANAN QUERY ERROR", layananError);
+                throw layananError;
+            }
             (layanan ?? []).forEach((item) => related.layanan.set(item.id, item));
         }
 
@@ -89,9 +113,18 @@ export async function GET(request: NextRequest) {
                 supabase.from("dokumen_pengajuan").select(DOKUMEN_COLUMNS).in("pengajuan_id", pengajuanIds).order("created_at", { ascending: false }),
                 supabase.from("verifikasi_pengajuan").select(VERIFIKASI_COLUMNS).in("pengajuan_id", pengajuanIds).order("tahap", { ascending: true }),
             ]);
-            if (trackingResult.error) throw trackingResult.error;
-            if (dokumenResult.error) throw dokumenResult.error;
-            if (verifikasiResult.error) throw verifikasiResult.error;
+            if (trackingResult.error) {
+                logSupabaseError("TRACKING QUERY ERROR", trackingResult.error);
+                throw trackingResult.error;
+            }
+            if (dokumenResult.error) {
+                logSupabaseError("DOKUMEN QUERY ERROR", dokumenResult.error);
+                throw dokumenResult.error;
+            }
+            if (verifikasiResult.error) {
+                logSupabaseError("VERIFIKASI QUERY ERROR", verifikasiResult.error);
+                throw verifikasiResult.error;
+            }
 
             (trackingResult.data ?? []).forEach((track) => {
                 const item = track as TrackingPengajuan;
@@ -115,6 +148,7 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json({ ok: true, data: hydrated });
     } catch (error) {
+        console.error("GET /api/warga/pengajuan ERROR", error);
         const message = error instanceof Error ? error.message : "Gagal mengambil data pengajuan warga.";
         return jsonError(message, 500);
     }
