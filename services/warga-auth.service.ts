@@ -227,11 +227,42 @@ export async function logoutWarga() {
 export async function updateWargaProfile(profile: Partial<WargaProfile>) {
     const { user } = await getCurrentWarga();
     if (!user) throw new Error("Silakan login terlebih dahulu.");
-    const blocked = new Set(["id", "role", "status_verifikasi", "user_id", "nik", "nomor_kk", "email", "alasan_penolakan", "created_at", "updated_at"]);
+    const blocked = new Set(["id", "role", "status_verifikasi", "user_id", "nik", "nomor_kk", "email", "alasan_penolakan", "created_at"]);
     const profileData = Object.fromEntries(Object.entries(sanitizeWargaProfileUpdatePayload(profile)).filter(([key]) => !blocked.has(key)));
+    if (Object.keys(profileData).length > 0) profileData.updated_at = new Date().toISOString();
     const { data, error } = await client().from("warga_profiles").update(profileData).eq("id", user.id).select("*").single();
     if (error) throw error;
     return data as WargaProfile;
+}
+
+export async function uploadWargaProfilePhoto(file: File) {
+    if (!file || file.size === 0) throw new Error("Pilih foto profil terlebih dahulu.");
+    const allowed = ["image/jpeg", "image/png", "image/webp"];
+    if (!allowed.includes(file.type)) throw new Error("Format foto harus JPG, JPEG, PNG, atau WebP.");
+    if (file.size > 5 * 1024 * 1024) throw new Error("Ukuran foto maksimal 5 MB.");
+
+    const supabase = client();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError) throw userError;
+    if (!user) throw new Error("Silakan login terlebih dahulu.");
+
+    const ext = file.name.split(".").pop()?.toLowerCase() || (file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg");
+    const path = `${user.id}/profile-${Date.now()}.${ext}`;
+    const buckets = ["avatars", "profile", "profiles", "warga", "surat"];
+    let lastError: unknown = null;
+
+    for (const bucket of buckets) {
+        const upload = await supabase.storage.from(bucket).upload(path, file, { upsert: true, contentType: file.type });
+        if (!upload.error) {
+            const publicUrl = supabase.storage.from(bucket).getPublicUrl(upload.data.path).data.publicUrl;
+            return { bucket, path: upload.data.path, url: publicUrl };
+        }
+        lastError = upload.error;
+        const message = upload.error.message.toLowerCase();
+        if (!message.includes("bucket") && !message.includes("not found") && upload.error.statusCode !== "404") break;
+    }
+
+    throw lastError instanceof Error ? lastError : new Error("Foto profil gagal diunggah.");
 }
 
 export async function updateWargaPassword(password: string) {

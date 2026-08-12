@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { publicRepository } from "@/services/repository";
-import SuratOnlineClient from "@/app/surat-online/surat-online-client";
+import SuratOnlineClient from "@/components/pengajuan/surat-online-client";
 
 export const dynamic = "force-dynamic";
 
