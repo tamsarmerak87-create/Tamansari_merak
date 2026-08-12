@@ -127,17 +127,41 @@ function client() {
 
 const WARGA_PROFILE_COLUMNS = "id,nama_lengkap,nik,nomor_kk,email,nomor_hp,nomor_whatsapp,tempat_lahir,tanggal_lahir,jenis_kelamin,alamat,rt,rw,kelurahan,kecamatan,foto_url,role,status_verifikasi,alasan_penolakan,created_at,updated_at";
 
+type ProfileQueryDebug = {
+    authUserId: string;
+    profileId?: string | null;
+    table: "warga_profiles";
+    filterColumn: "id" | "user_id" | "email";
+    filterValue?: string | null;
+    rowCount: number;
+    operation: "select" | "update";
+};
+
+function debugProfileQuery(info: ProfileQueryDebug) {
+    if (process.env.NODE_ENV === "production") return;
+    console.debug("[warga_profiles:query]", info);
+}
+
+function isRlsDenied(error: SupabaseLikeError) {
+    const message = error.message?.toLowerCase() ?? "";
+    return error.code === "42501" || message.includes("row-level security") || message.includes("permission denied");
+}
+
 async function getProfileForUser(user: User): Promise<WargaProfile | null> {
     const supabase = client();
-    const byId = await supabase.from("warga_profiles").select(WARGA_PROFILE_COLUMNS).eq("id", user.id).returns<WargaProfile>().maybeSingle();
+    const byId = await supabase.from("warga_profiles").select(WARGA_PROFILE_COLUMNS).eq("id", user.id).maybeSingle<WargaProfile>();
     if (byId.error) throw byId.error;
+    debugProfileQuery({ authUserId: user.id, profileId: byId.data?.id, table: "warga_profiles", filterColumn: "id", filterValue: user.id, rowCount: byId.data ? 1 : 0, operation: "select" });
     if (byId.data) return byId.data;
 
-    const byEmail = await supabase.from("warga_profiles").select(WARGA_PROFILE_COLUMNS).eq("email", user.email ?? "").returns<WargaProfile>().maybeSingle();
+    const byUserId = await supabase.from("warga_profiles").select(WARGA_PROFILE_COLUMNS).eq("user_id", user.id).maybeSingle<WargaProfile>();
+    if (byUserId.error && byUserId.error.code !== "42703") throw byUserId.error;
+    debugProfileQuery({ authUserId: user.id, profileId: byUserId.data?.id, table: "warga_profiles", filterColumn: "user_id", filterValue: user.id, rowCount: byUserId.data ? 1 : 0, operation: "select" });
+    if (byUserId.data) return byUserId.data;
+
+    const byEmail = await supabase.from("warga_profiles").select(WARGA_PROFILE_COLUMNS).eq("email", user.email ?? "").maybeSingle<WargaProfile>();
     if (byEmail.error) throw byEmail.error;
-    if (process.env.NODE_ENV !== "production") {
-        console.debug("[warga_profiles] profile lookup", { userId: user.id, email: user.email, found: Boolean(byEmail.data) });
-    }
+    debugProfileQuery({ authUserId: user.id, profileId: byEmail.data?.id, table: "warga_profiles", filterColumn: "email", filterValue: user.email, rowCount: byEmail.data ? 1 : 0, operation: "select" });
     return byEmail.data;
 }
 
@@ -229,13 +253,18 @@ export async function logoutWarga() {
 export async function updateWargaProfile(profile: Partial<WargaProfile>) {
     const { user, profile: currentProfile } = await getCurrentWarga();
     if (!user) throw new Error("Silakan login terlebih dahulu.");
-    if (!currentProfile?.id) throw new Error("Data profil warga belum tersedia. Silakan lengkapi registrasi atau hubungi admin kelurahan.");
+    if (!currentProfile?.id) throw new Error("Profil warga tidak ditemukan untuk akun login ini. Periksa apakah akun Auth sudah memiliki row di public.warga_profiles.");
     const blocked = new Set(["id", "role", "status_verifikasi", "user_id", "nik", "nomor_kk", "email", "alasan_penolakan", "created_at"]);
     const profileData = Object.fromEntries(Object.entries(sanitizeWargaProfileUpdatePayload(profile)).filter(([key]) => !blocked.has(key)));
     if (Object.keys(profileData).length > 0) profileData.updated_at = new Date().toISOString();
     const { data, error } = await client().from("warga_profiles").update(profileData).eq("id", currentProfile.id).select(WARGA_PROFILE_COLUMNS).maybeSingle();
-    if (error) throw error;
-    if (!data) throw new Error("Profil warga tidak ditemukan atau tidak dapat diperbarui untuk akun ini.");
+    debugProfileQuery({ authUserId: user.id, profileId: currentProfile.id, table: "warga_profiles", filterColumn: "id", filterValue: currentProfile.id, rowCount: data ? 1 : 0, operation: "update" });
+    if (error) {
+        const supabaseError = error as SupabaseLikeError;
+        if (isRlsDenied(supabaseError)) throw new Error(`Profil ditemukan, tetapi UPDATE ditolak RLS public.warga_profiles: ${supabaseError.message}`);
+        throw error;
+    }
+    if (!data) throw new Error("Profil ditemukan saat SELECT, tetapi UPDATE tidak mengembalikan row. Periksa policy UPDATE public.warga_profiles untuk akun login ini.");
     return data as WargaProfile;
 }
 

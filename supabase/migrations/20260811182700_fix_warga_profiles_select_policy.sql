@@ -7,6 +7,14 @@ for select
 to authenticated
 using (id = auth.uid() or email = auth.email());
 
+drop policy if exists "warga_profiles_update_own_profile" on public.warga_profiles;
+create policy "warga_profiles_update_own_profile"
+on public.warga_profiles
+for update
+to authenticated
+using (id = auth.uid() or email = auth.email())
+with check (id = auth.uid() or email = auth.email());
+
 do $$
 begin
   if exists (
@@ -22,5 +30,13 @@ begin
     for select
     to authenticated
     using (user_id = auth.uid());
+
+    drop policy if exists "warga_profiles_update_own_profile_user_id" on public.warga_profiles;
+    create policy "warga_profiles_update_own_profile_user_id"
+    on public.warga_profiles
+    for update
+    to authenticated
+    using (user_id = auth.uid())
+    with check (user_id = auth.uid());
   end if;
 end $$;
