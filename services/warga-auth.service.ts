@@ -2,6 +2,9 @@ import type { User } from "@supabase/supabase-js";
 import { z } from "zod";
 import { createSupabaseBrowserClient } from "@/services/supabase";
 
+export const WARGA_PROFILE_PHOTO_BUCKET = "surat";
+export const WARGA_PROFILE_PHOTO_FOLDER = "profile-photos";
+
 export type WargaRole = "admin" | "petugas" | "warga";
 export type WargaVerificationStatus = "Belum Terverifikasi" | "Akun Terverifikasi" | "Terverifikasi" | "Ditolak";
 
@@ -235,6 +238,38 @@ export async function updateWargaProfile(profile: Partial<WargaProfile>) {
     return data as WargaProfile;
 }
 
+type SupabaseLikeError = Error & { code?: string; statusCode?: string | number; status?: string | number };
+
+function logProfilePhotoError(error: unknown, context: string) {
+    if (process.env.NODE_ENV === "production") return;
+    const err = error as Partial<SupabaseLikeError> | null;
+    console.error(`[warga_profile_photo:${context}]`, {
+        message: err?.message ?? "Operasi foto profil gagal.",
+        code: err?.code,
+        statusCode: err?.statusCode ?? err?.status,
+    });
+}
+
+function getStorageObjectPath(value?: string | null) {
+    if (!value || value.startsWith("blob:")) return "";
+    if (!/^https?:\/\//i.test(value)) return value.replace(/^\/+/, "");
+    try {
+        const url = new URL(value);
+        const marker = `/storage/v1/object/public/${WARGA_PROFILE_PHOTO_BUCKET}/`;
+        const index = url.pathname.indexOf(marker);
+        return index >= 0 ? decodeURIComponent(url.pathname.slice(index + marker.length)) : "";
+    } catch {
+        return "";
+    }
+}
+
+export function getWargaProfilePhotoUrl(value?: string | null) {
+    const path = getStorageObjectPath(value);
+    if (!path) return "";
+    if (/^https?:\/\//i.test(value ?? "")) return value ?? "";
+    return client().storage.from(WARGA_PROFILE_PHOTO_BUCKET).getPublicUrl(path).data.publicUrl;
+}
+
 export async function uploadWargaProfilePhoto(file: File) {
     if (!file || file.size === 0) throw new Error("Pilih foto profil terlebih dahulu.");
     const allowed = ["image/jpeg", "image/png", "image/webp"];
@@ -247,22 +282,16 @@ export async function uploadWargaProfilePhoto(file: File) {
     if (!user) throw new Error("Silakan login terlebih dahulu.");
 
     const ext = file.name.split(".").pop()?.toLowerCase() || (file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg");
-    const path = `${user.id}/profile-${Date.now()}.${ext}`;
-    const buckets = ["avatars", "profile", "profiles", "warga", "surat"];
-    let lastError: unknown = null;
+    const path = `${WARGA_PROFILE_PHOTO_FOLDER}/${user.id}/profile-${Date.now()}.${ext}`;
 
-    for (const bucket of buckets) {
-        const upload = await supabase.storage.from(bucket).upload(path, file, { upsert: true, contentType: file.type });
-        if (!upload.error) {
-            const publicUrl = supabase.storage.from(bucket).getPublicUrl(upload.data.path).data.publicUrl;
-            return { bucket, path: upload.data.path, url: publicUrl };
-        }
-        lastError = upload.error;
-        const message = upload.error.message.toLowerCase();
-        if (!message.includes("bucket") && !message.includes("not found") && upload.error.statusCode !== "404") break;
+    const upload = await supabase.storage.from(WARGA_PROFILE_PHOTO_BUCKET).upload(path, file, { upsert: false, contentType: file.type });
+    if (upload.error) {
+        logProfilePhotoError(upload.error, "upload");
+        throw upload.error;
     }
 
-    throw lastError instanceof Error ? lastError : new Error("Foto profil gagal diunggah.");
+    const publicUrl = supabase.storage.from(WARGA_PROFILE_PHOTO_BUCKET).getPublicUrl(upload.data.path).data.publicUrl;
+    return { bucket: WARGA_PROFILE_PHOTO_BUCKET, path: upload.data.path, url: publicUrl };
 }
 
 export async function updateWargaPassword(password: string) {
