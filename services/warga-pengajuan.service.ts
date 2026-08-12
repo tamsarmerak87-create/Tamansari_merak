@@ -122,7 +122,7 @@ function logDokumenPath(label: string, meta: Record<string, unknown>) {
 export function normalizeSuratObjectPath(pathOrUrl?: string | null) {
     const value = pathOrUrl?.trim();
     if (!value) return "";
-    if (!/^https?:\/\//i.test(value)) return value.replace(/^surat\//, "");
+    if (!/^https?:\/\//i.test(value)) return value.replace(/^\/+/, "").replace(/^surat\//, "");
     try {
         const url = new URL(value);
         const marker = `/storage/v1/object/public/${DOKUMEN_BUCKET}/`;
@@ -131,6 +131,9 @@ export function normalizeSuratObjectPath(pathOrUrl?: string | null) {
         const signedMarker = `/storage/v1/object/sign/${DOKUMEN_BUCKET}/`;
         const signedIndex = url.pathname.indexOf(signedMarker);
         if (signedIndex >= 0) return decodeURIComponent(url.pathname.slice(signedIndex + signedMarker.length)).replace(/^surat\//, "");
+        const objectIndex = value.indexOf(`/object/${DOKUMEN_BUCKET}/`);
+        if (objectIndex >= 0) return decodeURIComponent(value.slice(objectIndex + `/object/${DOKUMEN_BUCKET}/`.length)).replace(/^surat\//, "");
+        return decodeURIComponent(value).replace(/^\/+/, "").replace(/^surat\//, "");
     } catch {
         return "";
     }
