@@ -12,10 +12,10 @@ import { buildTrackingNotifications, getMyDocumentsFromPengajuan, getMyNotifikas
 const steps = ["Diajukan", "Verifikasi", "Diproses", "Disetujui", "Selesai"];
 const menus = [
     ["BERANDA", [["Beranda", Home, "home"]]],
-    ["LAYANAN", [["Pengajuan Surat", FileText, "ajukan"], ["Status Pengajuan", ClipboardList, "pengajuan"], ["Tracking Dokumen", Search, "tracking"]]],
+    ["LAYANAN", [["Pengajuan Surat", FileText, "layanan"], ["Status Pengajuan", ClipboardList, "pengajuan"], ["Tracking Dokumen", Search, "tracking"]]],
     ["AKUN SAYA", [["Profil Saya", UserRound, "profile"], ["Dokumen Saya", FolderOpen, "dokumen"], ["Notifikasi", Bell, "notifikasi"], ["Pengaturan", Settings, "pengaturan"], ["Keluar", LogOut, "logout"]]],
 ] as const;
-const quick: ReadonlyArray<readonly [string, string, LucideIcon, string]> = [["Pengajuan Surat", "Ajukan surat secara online", FileText, "ajukan"], ["Status Pengajuan", "Lihat status pengajuan Anda", RefreshCw, "pengajuan"], ["Tracking Dokumen", "Lacak dokumen secara real-time", MapPin, "tracking"], ["Dokumen Saya", "Lihat dokumen tersimpan", FolderOpen, "dokumen"]];
+const quick: ReadonlyArray<readonly [string, string, LucideIcon, string]> = [["Pengajuan Surat", "Pilih layanan surat yang tersedia", FileText, "layanan"], ["Status Pengajuan", "Lihat status pengajuan Anda", RefreshCw, "pengajuan"], ["Tracking Dokumen", "Lacak dokumen secara real-time", MapPin, "tracking"], ["Dokumen Saya", "Lihat dokumen tersimpan", FolderOpen, "dokumen"]];
 const waLink = "https://wa.me/6281234567890";
 
 export default function DashboardPage() {
@@ -49,7 +49,7 @@ export default function DashboardPage() {
     }
 
     async function go(target: string) {
-        if (target === "ajukan") return router.push("/surat-online/ajukan");
+        if (target === "layanan") return router.push("/layanan");
         if (target === "pengajuan") return router.push("/dashboard/pengajuan");
         if (target === "profile" || target === "pengaturan") return router.push("/verify");
         if (target === "logout") { await logoutWarga(); router.push("/login"); return; }
