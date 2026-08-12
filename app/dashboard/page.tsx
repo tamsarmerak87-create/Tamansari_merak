@@ -172,5 +172,5 @@ function date(v?: string | null) { return v ? new Date(v).toLocaleDateString("id
 function time(v?: string | null) { return v ? new Date(v).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "-"; }
 function statusClass(status?: string | null) { const s = (status || "").toLowerCase(); if (s.includes("selesai") || s.includes("setuju")) return "bg-emerald-100 text-emerald-700"; if (s.includes("proses")) return "bg-amber-100 text-amber-700"; return "bg-blue-100 text-blue-700"; }
 function currentStep(item?: WargaPengajuan | null) { const s = (item?.status || "").toLowerCase(); if (s.includes("selesai")) return 4; if (s.includes("setuju")) return 3; if (s.includes("proses")) return 2; if (s.includes("verifikasi")) return 1; return 0; }
-function docName(item?: WargaPengajuan | null) { return item?.layanan?.nama || "Surat Keterangan Domisili"; }
-function agenda(item?: WargaPengajuan | null) { return item?.nomor_pengajuan || "2025/08/12/0007"; }
+function docName(item?: WargaPengajuan | null) { return item?.layanan?.nama || item?.keperluan || "Jenis layanan tidak tersedia"; }
+function agenda(item?: WargaPengajuan | null) { return item?.nomor_pengajuan || item?.id || "-"; }
