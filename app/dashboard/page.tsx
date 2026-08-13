@@ -164,7 +164,7 @@ function Profile({ open, setOpen, profile, onLogout }: { open: boolean; setOpen:
 }
 
 function BottomNav() {
-    const items: Array<[string, string, LucideIcon, boolean]> = [["Beranda", "/dashboard", Home, true], ["Pengajuan", "/layanan", FileText, false], ["Scan Barcode", "/surat-online/tracking", QrCode, false], ["Tracking", "/surat-online/tracking", MapPin, false], ["Akun", "/dashboard/profil", UserRound, false]];
+    const items: Array<[string, string, LucideIcon, boolean]> = [["Beranda", "/dashboard", Home, true], ["Pengajuan", "/layanan", FileText, false], ["Scan Barcode", "/dashboard/tracking/scan", QrCode, false], ["Tracking", "/surat-online/tracking", MapPin, false], ["Akun", "/dashboard/profil", UserRound, false]];
     return <nav className="fixed inset-x-3 bottom-3 z-40 flex h-20 items-center justify-around rounded-[28px] border border-[#E8E8E8] bg-white/95 px-2 shadow-2xl backdrop-blur lg:hidden">{items.map(([label, href, Icon, active], i) => <a key={label} href={href} className={`flex flex-col items-center gap-1 text-[11px] font-black ${active ? "text-[#F0A000]" : "text-slate-600"} ${i === 2 ? "-mt-8" : ""}`}><span className={`${i === 2 ? "flex h-16 w-16 items-center justify-center rounded-full bg-[#16A34A] text-white shadow-xl ring-4 ring-white" : ""}`}><Icon size={i === 2 ? 28 : 22} /></span>{label}</a>)}</nav>;
 }
 
