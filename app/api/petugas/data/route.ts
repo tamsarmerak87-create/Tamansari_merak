@@ -77,7 +77,9 @@ export async function GET(request: NextRequest) {
     const activeStages = (activeResult.data ?? []) as VerificationRow[];
     const allStages = (allStagesResult.data ?? []) as VerificationRow[];
     const activeIds = activeStages.map((stage) => stage.pengajuan_id);
-    const submissionIds = Array.from(new Set([...(isLurah ? (submissionsResult.data ?? []).map((row) => row.id) : activeIds), detailId].filter(Boolean)));
+    const listSubmissionIds = isLurah ? (submissionsResult.data ?? []).map((row) => row.id) : activeIds;
+    const detailStageIds = detailId ? allStages.filter((stage) => stage.pengajuan_id === detailId).map((stage) => stage.pengajuan_id) : [];
+    const submissionIds = Array.from(new Set([...listSubmissionIds, ...detailStageIds].filter(Boolean)));
 
     const [{ data: submissions, error: submissionError }, { data: documents, error: docError }, { data: tracking, error: trackingError }] = await Promise.all([
         submissionIds.length ? supabase.from("pengajuan_surat").select("*, layanan(*)").in("id", submissionIds) : Promise.resolve({ data: [], error: null }),
@@ -89,6 +91,16 @@ export async function GET(request: NextRequest) {
     if (trackingError) { logDetailDebug("error query tracking", { idUrl: detailId, submissionIds, errorQuery: trackingError.message }); return jsonError(trackingError.message, 500); }
 
     const submissionMap = new Map((submissions ?? []).map((row: AnyRow) => [String(row.id), row]));
+    let detailSubmission: AnyRow | null = null;
+    if (detailId && !submissionMap.has(detailId)) {
+        const { data, error } = await supabase.from("pengajuan_surat").select("*, layanan(*)").eq("id", detailId).maybeSingle();
+        if (error) {
+            logDetailDebug("error query detail submission by id", { idUrl: detailId, errorQuery: error.message, status: 500 });
+            return jsonError(error.message, 500);
+        }
+        detailSubmission = data;
+        if (detailSubmission) submissionMap.set(String(detailSubmission.id), detailSubmission);
+    }
     const officerMap = new Map((officersResult.data ?? []).map((row: AnyRow) => [String(row.id), row]));
     const docsByPengajuan = groupBy(documents ?? [], "pengajuan_id");
     const trackingByPengajuan = groupBy(tracking ?? [], "pengajuan_id");
@@ -109,7 +121,7 @@ export async function GET(request: NextRequest) {
     let detail: AnyRow | null = null;
     let detailError: { code: "NOT_FOUND" | "FORBIDDEN"; message: string } | null = null;
     if (detailId) {
-        const submission = submissionMap.get(detailId);
+        const submission = submissionMap.get(detailId) ?? detailSubmission;
         const detailStages = stagesByPengajuan.get(detailId) ?? [];
         const hasAccess = canAccessSubmission(detailStages, workflowRole, session.profile.id);
         logDetailDebug("hasil query detail", { idUrl: detailId, userId: session.profile.id, userName: session.profile.nama_lengkap ?? session.profile.username, userRole: session.profile.role, hasilQuery: { found: Boolean(submission), submissionIds, nomorPengajuan: submission?.nomor_pengajuan ?? null, status: submission?.status ?? null }, stages: detailStages.map((stage) => ({ id: stage.id, tahap: stage.tahap, role_petugas: stage.role_petugas, status: stage.status, petugas_id: stage.petugas_id, user_id: stage.user_id })), hasilPengecekanKewenangan: hasAccess });
