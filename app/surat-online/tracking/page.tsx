@@ -1,10 +1,11 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { AlertCircle, Check, FileSearch, Loader2, RefreshCw, Search } from "lucide-react";
+import { AlertCircle, Check, FileSearch, Loader2, Printer, RefreshCw, Search } from "lucide-react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/card";
+import { QRCodePelayanan } from "@/components/pengajuan/qr-code-pelayanan";
 import { createSupabaseBrowserClient } from "@/services/supabase";
 import { cn } from "@/utils/cn";
 
@@ -133,7 +134,7 @@ function TrackingResult({ data, lastUpdated }: { data: Doc; lastUpdated: Date | 
     const currentStatus = data.status ?? history.at(-1)?.status ?? "Diajukan";
     const current = normalize(currentStatus);
     const activeIndex = steps.reduce((max, step, i) => history.some((h) => step.aliases.some((a) => normalize(h.status).includes(a))) || step.aliases.some((a) => current.includes(a)) ? i : max, 0);
-    return <div className="mt-6 grid gap-5 lg:grid-cols-[.9fr_1.1fr]"><div className="rounded-3xl border border-emerald-300/10 bg-white/[.055] p-5"><p className="text-xs font-black uppercase tracking-[.22em] text-accent-300">STATUS DOKUMEN</p><h3 className="mt-3 text-3xl font-black text-white">{data.nomor_pengajuan}</h3><div className="mt-5 grid gap-3 text-sm font-bold text-emerald-100"><p>Jenis Dokumen: <span className="text-white">{serviceName(data)}</span></p><p>Tanggal Pengajuan: <span className="text-white">{formatDate(data.created_at)}</span></p><p>Status: <span className="rounded-full bg-accent-300 px-3 py-1 text-gov-950">{statusLabel(currentStatus)}</span></p></div><div className="mt-6 rounded-2xl bg-black/25 p-4"><p className="font-black text-accent-300"><span className="mr-2 inline-block size-2 animate-pulse rounded-full bg-emerald-300" />LIVE STATUS</p><p className="mt-3 text-sm font-bold text-emerald-100">Sistem terhubung</p><p className="text-sm font-bold text-emerald-100">Status terakhir diperbarui: {lastUpdated ? lastUpdated.toLocaleTimeString("id-ID") : "-"}</p><p className="mt-2 text-xl font-black text-white">{statusLabel(currentStatus)}</p></div></div><Timeline activeIndex={activeIndex} current={current} /></div>;
+    return <div className="mt-6 grid gap-5 lg:grid-cols-[.9fr_1.1fr]"><div className="rounded-3xl border border-emerald-300/10 bg-white/[.055] p-5"><p className="text-xs font-black uppercase tracking-[.22em] text-accent-300">STATUS DOKUMEN</p><h3 className="mt-3 text-3xl font-black text-white">{data.nomor_pengajuan}</h3><div className="mt-5 grid gap-3 text-sm font-bold text-emerald-100"><p>Jenis Dokumen: <span className="text-white">{serviceName(data)}</span></p><p>Tanggal Pengajuan: <span className="text-white">{formatDate(data.created_at)}</span></p><p>Status: <span className="rounded-full bg-accent-300 px-3 py-1 text-gov-950">{statusLabel(currentStatus)}</span></p></div><div className="mt-6 rounded-2xl bg-black/25 p-4"><p className="font-black text-accent-300"><span className="mr-2 inline-block size-2 animate-pulse rounded-full bg-emerald-300" />LIVE STATUS</p><p className="mt-3 text-sm font-bold text-emerald-100">Sistem terhubung</p><p className="text-sm font-bold text-emerald-100">Status terakhir diperbarui: {lastUpdated ? lastUpdated.toLocaleTimeString("id-ID") : "-"}</p><p className="mt-2 text-xl font-black text-white">{statusLabel(currentStatus)}</p></div></div><div className="space-y-5"><Timeline activeIndex={activeIndex} current={current} /><div className="rounded-3xl bg-white p-2 text-[#172033]"><QRCodePelayanan nomorPengajuan={data.nomor_pengajuan} status={currentStatus} tanggal={formatDate(data.created_at)} layanan={serviceName(data)} size={190} /></div><button type="button" onClick={() => window.print()} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#FFC400] px-5 text-sm font-black text-[#172033] transition hover:bg-[#FFD84D] focus:outline-none focus:ring-4 focus:ring-[#FFC400]/40"><Printer size={18} />Cetak Barcode Pelayanan</button></div></div>;
 }
 
 function Timeline({ activeIndex, current }: { activeIndex: number; current: string }) {
