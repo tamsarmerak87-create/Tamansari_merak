@@ -73,4 +73,18 @@ create table if not exists public.audit_pengajuan (
   created_at timestamptz default now()
 );
 
+alter table public.audit_pengajuan add column if not exists tahap varchar;
+alter table public.audit_pengajuan add column if not exists status varchar;
+alter table public.audit_pengajuan add column if not exists action varchar;
+alter table public.audit_pengajuan add column if not exists aksi varchar;
+alter table public.audit_pengajuan add column if not exists role varchar;
+alter table public.audit_pengajuan add column if not exists status_sebelum varchar;
+alter table public.audit_pengajuan add column if not exists status_sesudah varchar;
+alter table public.audit_pengajuan add column if not exists user_id uuid references public.petugas(id);
+alter table public.audit_pengajuan add column if not exists nama_petugas varchar;
+alter table public.audit_pengajuan add column if not exists jabatan varchar;
+alter table public.audit_pengajuan add column if not exists catatan text;
+alter table public.audit_pengajuan add column if not exists metadata jsonb default '{}'::jsonb;
+alter table public.audit_pengajuan add column if not exists created_at timestamptz default now();
+
 create index if not exists audit_pengajuan_pengajuan_id_idx on public.audit_pengajuan(pengajuan_id, created_at);
