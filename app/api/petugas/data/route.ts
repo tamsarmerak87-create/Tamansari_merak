@@ -18,27 +18,43 @@ type VerificationRow = {
     acted_at: string | null;
 };
 
-function jsonError(message: string, status = 400) { return NextResponse.json({ ok: false, error: message }, { status }); }
+function jsonError(message: string, status = 400) {
+    console.error("[PETUGAS DETAIL DEBUG] response error", { status, message });
+    return NextResponse.json({ ok: false, error: message }, { status });
+}
 function groupBy<T extends AnyRow>(rows: T[], key: keyof T): Map<string, T[]> { const map = new Map<string, T[]>(); for (const row of rows) { const value = String(row[key] ?? ""); if (!map.has(value)) map.set(value, []); map.get(value)?.push(row); } return map; }
 function activeStatusFromStages(stages: AnyRow[] = []) { return stages.find((stage) => stage.status === "Diproses")?.nama_tahap ?? (stages.every((stage) => stage.status === "Disetujui") ? "Selesai" : "Menunggu"); }
 function canAccessSubmission(stages: AnyRow[] = [], role: string, userId: string) {
     return stages.some((stage) => stage.role_petugas === role || stage.petugas_id === userId || stage.user_id === userId);
 }
 
+function logDetailDebug(message: string, data: AnyRow) {
+    console.info("[PETUGAS DETAIL DEBUG]", message, data);
+}
+
 export async function GET(request: NextRequest) {
     const session = await getAdminSession(request, { cookie: "petugas" });
-    if (session.error || !session.profile) return jsonError("Session petugas tidak valid.", 401);
-    if (!isPetugas(session.profile)) return jsonError("Akses khusus petugas.", 403);
+    const detailId = request.nextUrl.searchParams.get("id")?.trim() || null;
+    if (session.error || !session.profile) {
+        logDetailDebug("session/auth petugas tidak ditemukan", { idUrl: detailId, sessionError: session.error, status: 401 });
+        return jsonError("Session petugas tidak valid.", 401);
+    }
+    if (!isPetugas(session.profile)) {
+        logDetailDebug("session ada tetapi bukan role petugas", { idUrl: detailId, userId: session.profile.id, userName: session.profile.nama_lengkap ?? session.profile.username, userRole: session.profile.role, status: 403 });
+        return jsonError("Akses khusus petugas.", 403);
+    }
     const workflowRole = normalizeWorkflowRole(session.profile.role);
-    if (!workflowRole) return jsonError("Role petugas tidak memiliki kewenangan workflow.", 403);
+    if (!workflowRole) {
+        logDetailDebug("role petugas tidak memiliki kewenangan workflow", { idUrl: detailId, userId: session.profile.id, userName: session.profile.nama_lengkap ?? session.profile.username, userRole: session.profile.role, status: 403 });
+        return jsonError("Role petugas tidak memiliki kewenangan workflow.", 403);
+    }
 
     const supabase = createSupabaseAdminClient();
     if (!supabase) return jsonError("Supabase service role belum dikonfigurasi.", 500);
 
-    const detailId = request.nextUrl.searchParams.get("id");
     const isLurah = workflowRole === "lurah";
 
-    console.info("[petugas:data] request", { detailId, userId: session.profile.id, role: session.profile.role, workflowRole });
+    logDetailDebug("request", { idUrl: detailId, userId: session.profile.id, userName: session.profile.nama_lengkap ?? session.profile.username, userRole: session.profile.role, workflowRole });
 
     const [activeResult, processedResult, returnedResult, allStagesResult, submissionsResult, officersResult, auditsResult] = await Promise.all([
         supabase.from("verifikasi_pengajuan").select("*").eq("role_petugas", workflowRole).eq("status", "Diproses").order("created_at", { ascending: false }),
@@ -50,13 +66,13 @@ export async function GET(request: NextRequest) {
         supabase.from("audit_pengajuan").select("*").eq("user_id", session.profile.id).order("created_at", { ascending: false }),
     ]);
 
-    if (activeResult.error) return jsonError(activeResult.error.message, 500);
-    if (processedResult.error) return jsonError(processedResult.error.message, 500);
-    if (returnedResult.error) return jsonError(returnedResult.error.message, 500);
-    if (allStagesResult.error) return jsonError(allStagesResult.error.message, 500);
-    if (submissionsResult.error) return jsonError(submissionsResult.error.message, 500);
-    if (officersResult.error) return jsonError(officersResult.error.message, 500);
-    if (auditsResult.error) return jsonError(auditsResult.error.message, 500);
+    if (activeResult.error) { logDetailDebug("error query active stages", { idUrl: detailId, errorQuery: activeResult.error.message }); return jsonError(activeResult.error.message, 500); }
+    if (processedResult.error) { logDetailDebug("error query processed count", { idUrl: detailId, errorQuery: processedResult.error.message }); return jsonError(processedResult.error.message, 500); }
+    if (returnedResult.error) { logDetailDebug("error query returned count", { idUrl: detailId, errorQuery: returnedResult.error.message }); return jsonError(returnedResult.error.message, 500); }
+    if (allStagesResult.error) { logDetailDebug("error query all stages", { idUrl: detailId, errorQuery: allStagesResult.error.message }); return jsonError(allStagesResult.error.message, 500); }
+    if (submissionsResult.error) { logDetailDebug("error query monitoring submissions", { idUrl: detailId, errorQuery: submissionsResult.error.message }); return jsonError(submissionsResult.error.message, 500); }
+    if (officersResult.error) { logDetailDebug("error query officers", { idUrl: detailId, errorQuery: officersResult.error.message }); return jsonError(officersResult.error.message, 500); }
+    if (auditsResult.error) { logDetailDebug("error query audits", { idUrl: detailId, errorQuery: auditsResult.error.message }); return jsonError(auditsResult.error.message, 500); }
 
     const activeStages = (activeResult.data ?? []) as VerificationRow[];
     const allStages = (allStagesResult.data ?? []) as VerificationRow[];
@@ -68,9 +84,9 @@ export async function GET(request: NextRequest) {
         submissionIds.length ? supabase.from("dokumen_pengajuan").select("*").in("pengajuan_id", submissionIds) : Promise.resolve({ data: [], error: null }),
         submissionIds.length ? supabase.from("tracking_pengajuan").select("*").in("pengajuan_id", submissionIds).order("created_at", { ascending: true }) : Promise.resolve({ data: [], error: null }),
     ]);
-    if (submissionError) return jsonError(submissionError.message, 500);
-    if (docError) return jsonError(docError.message, 500);
-    if (trackingError) return jsonError(trackingError.message, 500);
+    if (submissionError) { logDetailDebug("error query detail submissions", { idUrl: detailId, submissionIds, errorQuery: submissionError.message }); return jsonError(submissionError.message, 500); }
+    if (docError) { logDetailDebug("error query documents", { idUrl: detailId, submissionIds, errorQuery: docError.message }); return jsonError(docError.message, 500); }
+    if (trackingError) { logDetailDebug("error query tracking", { idUrl: detailId, submissionIds, errorQuery: trackingError.message }); return jsonError(trackingError.message, 500); }
 
     const submissionMap = new Map((submissions ?? []).map((row: AnyRow) => [String(row.id), row]));
     const officerMap = new Map((officersResult.data ?? []).map((row: AnyRow) => [String(row.id), row]));
@@ -95,14 +111,18 @@ export async function GET(request: NextRequest) {
     if (detailId) {
         const submission = submissionMap.get(detailId);
         const detailStages = stagesByPengajuan.get(detailId) ?? [];
-        console.info("[petugas:data] detail query", { detailId, found: Boolean(submission), stages: detailStages.map((stage) => ({ id: stage.id, role_petugas: stage.role_petugas, status: stage.status, petugas_id: stage.petugas_id, user_id: stage.user_id })) });
+        const hasAccess = canAccessSubmission(detailStages, workflowRole, session.profile.id);
+        logDetailDebug("hasil query detail", { idUrl: detailId, userId: session.profile.id, userName: session.profile.nama_lengkap ?? session.profile.username, userRole: session.profile.role, hasilQuery: { found: Boolean(submission), submissionIds, nomorPengajuan: submission?.nomor_pengajuan ?? null, status: submission?.status ?? null }, stages: detailStages.map((stage) => ({ id: stage.id, tahap: stage.tahap, role_petugas: stage.role_petugas, status: stage.status, petugas_id: stage.petugas_id, user_id: stage.user_id })), hasilPengecekanKewenangan: hasAccess });
         if (!submission) {
             detailError = { code: "NOT_FOUND", message: "Pengajuan tidak ditemukan." };
-        } else if (!canAccessSubmission(detailStages, workflowRole, session.profile.id)) {
+            logDetailDebug("kondisi A: pengajuan benar-benar tidak ditemukan", { idUrl: detailId, status: 404 });
+        } else if (!hasAccess) {
             detailError = { code: "FORBIDDEN", message: "Pengajuan ada, tetapi bukan kewenangan petugas ini." };
+            logDetailDebug("kondisi B: pengajuan ditemukan tetapi petugas tidak berwenang", { idUrl: detailId, userId: session.profile.id, userRole: session.profile.role, workflowRole, status: 403 });
         } else {
             detail = enrichSubmission(submission);
             detail.active_stage = detailStages.find((stage) => stage.status === "Diproses") ?? detailStages[0] ?? null;
+            logDetailDebug("detail dapat diakses", { idUrl: detailId, userId: session.profile.id, userRole: session.profile.role, activeStage: detail.active_stage ? { id: detail.active_stage.id, tahap: detail.active_stage.tahap, role_petugas: detail.active_stage.role_petugas, status: detail.active_stage.status } : null });
         }
     }
     const stageCounts = [1, 2, 3, 4, 5].reduce<Record<string, number>>((acc, tahap) => { acc[String(tahap)] = allStages.filter((stage) => stage.tahap === tahap && stage.status === "Diproses").length; return acc; }, {});
