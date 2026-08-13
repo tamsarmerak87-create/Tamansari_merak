@@ -32,6 +32,20 @@ function logDetailDebug(message: string, data: AnyRow) {
     console.info("[PETUGAS DETAIL DEBUG]", message, data);
 }
 
+async function withDocumentUrls(supabase: ReturnType<typeof createSupabaseAdminClient>, rows: AnyRow[] = []): Promise<AnyRow[]> {
+    return Promise.all(rows.map(async (doc) => {
+        const storagePath = String(doc.url_file ?? doc.file_path ?? doc.storage_path ?? "").trim();
+        if (!storagePath || /^https?:\/\//i.test(storagePath)) return { ...doc, file_url: storagePath, storage_path: storagePath, status: doc.status ?? "Tersedia" };
+
+        const { data, error } = await supabase.storage.from("surat").createSignedUrl(storagePath, 60 * 10);
+        if (error) {
+            logDetailDebug("error signed url dokumen", { pengajuanId: doc.pengajuan_id, dokumenId: doc.id, storagePath, bucket: "surat", errorQuery: error.message });
+            return { ...doc, file_url: "", storage_path: storagePath, storage_error: "File tidak ditemukan di storage.", status: doc.status ?? "File tidak ditemukan" };
+        }
+        return { ...doc, file_url: data.signedUrl, signed_url: data.signedUrl, storage_path: storagePath, status: doc.status ?? "Tersedia" };
+    }));
+}
+
 export async function GET(request: NextRequest) {
     const session = await getAdminSession(request, { cookie: "petugas" });
     const detailId = request.nextUrl.searchParams.get("id")?.trim() || null;
@@ -79,7 +93,7 @@ export async function GET(request: NextRequest) {
     const activeIds = activeStages.map((stage) => stage.pengajuan_id);
     const listSubmissionIds = isLurah ? (submissionsResult.data ?? []).map((row) => row.id) : activeIds;
     const detailStageIds = detailId ? allStages.filter((stage) => stage.pengajuan_id === detailId).map((stage) => stage.pengajuan_id) : [];
-    const submissionIds = Array.from(new Set([...listSubmissionIds, ...detailStageIds].filter(Boolean)));
+    const submissionIds = Array.from(new Set([...listSubmissionIds, ...detailStageIds, detailId].filter(Boolean)));
 
     const [{ data: submissions, error: submissionError }, { data: documents, error: docError }, { data: tracking, error: trackingError }] = await Promise.all([
         submissionIds.length ? supabase.from("pengajuan_surat").select("*, layanan(*)").in("id", submissionIds) : Promise.resolve({ data: [], error: null }),
@@ -90,6 +104,7 @@ export async function GET(request: NextRequest) {
     if (docError) { logDetailDebug("error query documents", { idUrl: detailId, submissionIds, errorQuery: docError.message }); return jsonError(docError.message, 500); }
     if (trackingError) { logDetailDebug("error query tracking", { idUrl: detailId, submissionIds, errorQuery: trackingError.message }); return jsonError(trackingError.message, 500); }
 
+    const signedDocuments = await withDocumentUrls(supabase, documents ?? []);
     const submissionMap = new Map((submissions ?? []).map((row: AnyRow) => [String(row.id), row]));
     let detailSubmission: AnyRow | null = null;
     if (detailId && !submissionMap.has(detailId)) {
@@ -102,7 +117,7 @@ export async function GET(request: NextRequest) {
         if (detailSubmission) submissionMap.set(String(detailSubmission.id), detailSubmission);
     }
     const officerMap = new Map((officersResult.data ?? []).map((row: AnyRow) => [String(row.id), row]));
-    const docsByPengajuan = groupBy(documents ?? [], "pengajuan_id");
+    const docsByPengajuan = groupBy(signedDocuments, "pengajuan_id");
     const trackingByPengajuan = groupBy(tracking ?? [], "pengajuan_id");
     const stagesByPengajuan = groupBy(allStages.map((stage) => ({ ...stage, nama_petugas: stage.petugas_id ? officerMap.get(String(stage.petugas_id))?.nama_lengkap ?? officerMap.get(String(stage.petugas_id))?.username ?? null : null })), "pengajuan_id");
 
@@ -124,7 +139,8 @@ export async function GET(request: NextRequest) {
         const submission = submissionMap.get(detailId) ?? detailSubmission;
         const detailStages = stagesByPengajuan.get(detailId) ?? [];
         const hasAccess = canAccessSubmission(detailStages, workflowRole, session.profile.id);
-        logDetailDebug("hasil query detail", { idUrl: detailId, userId: session.profile.id, userName: session.profile.nama_lengkap ?? session.profile.username, userRole: session.profile.role, hasilQuery: { found: Boolean(submission), submissionIds, nomorPengajuan: submission?.nomor_pengajuan ?? null, status: submission?.status ?? null }, stages: detailStages.map((stage) => ({ id: stage.id, tahap: stage.tahap, role_petugas: stage.role_petugas, status: stage.status, petugas_id: stage.petugas_id, user_id: stage.user_id })), hasilPengecekanKewenangan: hasAccess });
+        const detailDocs = docsByPengajuan.get(detailId) ?? [];
+        logDetailDebug("DETAIL PENGAJUAN DEBUG", { urlId: detailId, userId: session.profile.id, userName: session.profile.nama_lengkap ?? session.profile.username, userRole: session.profile.role, queryId: detailId, hasilQuery: { found: Boolean(submission), table: "pengajuan_surat", fieldId: "id", submissionIds, nomorPengajuan: submission?.nomor_pengajuan ?? null, namaPemohon: submission?.nama_lengkap ?? null, nik: submission?.nik ?? null, status: submission?.status ?? null }, errorQuery: null, jumlahDokumen: detailDocs.length, dokumen: detailDocs.map((doc) => ({ id: doc.id, jenis: doc.jenis, nama_file: doc.nama_file, storage_path: doc.storage_path, hasSignedUrl: Boolean(doc.signed_url), storage_error: doc.storage_error ?? null })), stages: detailStages.map((stage) => ({ id: stage.id, tahap: stage.tahap, role_petugas: stage.role_petugas, status: stage.status, petugas_id: stage.petugas_id, user_id: stage.user_id })), hasilPengecekanKewenangan: hasAccess });
         if (!submission) {
             detailError = { code: "NOT_FOUND", message: "Pengajuan tidak ditemukan." };
             logDetailDebug("kondisi A: pengajuan benar-benar tidak ditemukan", { idUrl: detailId, status: 404 });
