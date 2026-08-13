@@ -10,7 +10,7 @@ import { site } from "@/constants/site";
 import { cn } from "@/utils/cn";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useWargaAuth } from "@/components/auth/warga-auth-provider";
-import { isVerified, logoutWarga } from "@/services/warga-auth.service";
+import { getWargaProfilePhotoUrl, isVerified, logoutWarga } from "@/services/warga-auth.service";
 
 const nav = [
     { label: "Beranda", href: "/" },
@@ -23,10 +23,10 @@ const vehicleTaxUrl = "https://infopkb.bantenprov.go.id/";
 const mobileNav: { label: string; href: Route; }[] = [...nav];
 
 const wargaMenu = [
-    { label: "Layanan", href: "/layanan", icon: LayoutDashboard },
-    { label: "Pengajuan Saya", href: "/dashboard/pengajuan", icon: FileText },
-    { label: "Tracking Dokumen", href: "/dashboard/dokumen", icon: MapPinned },
     { label: "Profil Saya", href: "/dashboard/profil", icon: UserRound },
+    { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+    { label: "Dokumen Saya", href: "/dashboard/dokumen", icon: FileText },
+    { label: "Notifikasi", href: "/dashboard/notifikasi", icon: MapPinned },
 ] as const;
 
 export function Navbar() {
@@ -39,6 +39,8 @@ export function Navbar() {
     const [searchOpen, setSearchOpen] = useState(false);
     const [query, setQuery] = useState("");
     const { user, profile, refresh } = useWargaAuth();
+    const wargaName = profile?.nama_lengkap?.trim() || "Warga";
+    const wargaPhoto = getWargaProfilePhotoUrl(profile?.foto_url);
 
     const isActive = (href: string) =>
         href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
@@ -125,24 +127,28 @@ export function Navbar() {
 
                     {/* Menu akun */}
                     <div ref={accountRef} className="relative">
-                        <button type="button" onClick={() => { setAccountOpen(false); router.push("/dashboard"); }} className={cn("inline-flex min-h-10 items-center gap-1.5 rounded-full border border-border-soft bg-white px-2.5 py-2 text-xs font-black text-gov-950 shadow-soft transition duration-200 hover:-translate-y-0.5 hover:bg-gov-50 hover:text-gov-800 focus:outline-none focus:ring-4 focus:ring-gov-100 min-[390px]:min-h-11 min-[390px]:gap-2 min-[390px]:text-sm sm:px-4", accountOpen && "bg-gov-50 text-gov-800 ring-4 ring-gov-100")} aria-label="Menu Akun" aria-expanded={accountOpen}>
-                            <UserRound size={16} /> <span className="hidden min-[375px]:inline">Akun</span> <ChevronDown size={14} className={cn("transition duration-200", accountOpen && "rotate-180")} />
+                        <button type="button" onClick={() => setAccountOpen((value) => !value)} className={cn("inline-flex min-h-10 items-center gap-1.5 rounded-full border border-border-soft bg-white px-2.5 py-2 text-xs font-black text-gov-950 shadow-soft transition duration-200 hover:-translate-y-0.5 hover:bg-amber-50 hover:text-gov-800 focus:outline-none focus:ring-4 focus:ring-amber-100 min-[390px]:min-h-11 min-[390px]:gap-2 min-[390px]:text-sm sm:px-4", accountOpen && "bg-amber-50 text-gov-800 ring-4 ring-amber-100")} aria-label={user ? "Menu profil warga" : "Menu akun"} aria-expanded={accountOpen}>
+                            {user ? <span className="grid size-7 shrink-0 place-items-center overflow-hidden rounded-full bg-emerald-50 text-gov-800 ring-1 ring-emerald-100">{wargaPhoto ? <Image src={wargaPhoto} alt={wargaName} width={28} height={28} className="h-full w-full object-cover" unoptimized /> : <UserRound size={15} />}</span> : <UserRound size={16} />}
+                            <span className={cn("hidden min-[375px]:inline", user && "max-w-28 truncate sm:max-w-36")}>{user ? wargaName : "Akun"}</span> <ChevronDown size={14} className={cn("transition duration-200", accountOpen && "rotate-180")} />
                         </button>
                         {accountOpen && (
                             <div className="absolute right-0 top-14 z-[60] w-[min(18.5rem,calc(100vw-1.5rem))] rounded-[20px] border border-border-soft bg-white p-3 shadow-[0_22px_70px_rgba(8,47,73,.18)]">
                                 {user ? (
                                     <>
-                                        <div className="my-2 h-px bg-gov-100" />
-                                        <p className="rounded-2xl bg-cream-50 px-4 py-3 text-sm font-black text-gov-950">{profile?.nama_lengkap ?? "Pengguna"}</p>
+                                        <Link href="/dashboard/profil" onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-2xl bg-amber-50 px-4 py-3 text-sm font-black text-gov-950 transition hover:bg-emerald-50">
+                                            <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-full bg-white text-gov-800 ring-1 ring-amber-100">{wargaPhoto ? <Image src={wargaPhoto} alt={wargaName} width={40} height={40} className="h-full w-full object-cover" unoptimized /> : <UserRound size={18} />}</span>
+                                            <span className="min-w-0"><span className="block truncate">{wargaName}</span><span className="block text-xs font-bold text-slate-500">Lihat profil warga</span></span>
+                                        </Link>
                                         {!isVerified(profile) ? <p className="mt-2 rounded-2xl bg-amber-50 px-4 py-3 text-xs font-bold leading-5 text-amber-700">Akun Anda sedang menunggu verifikasi.</p> : null}
                                         <div className="my-2 h-px bg-gov-100" />
-                                        {wargaMenu.map(({ label, href, icon: Icon }) => <Link key={href} href={href as Route} onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-gov-50 hover:text-gov-800"><Icon size={16} className="text-gov-800" />{label}</Link>)}
-                                        <button type="button" onClick={signOut} className="mt-1 flex w-full items-center gap-2 rounded-2xl px-4 py-3 text-left text-sm font-bold text-red-600 transition hover:bg-red-50"><LogOut size={16} />Keluar</button>
+                                        {wargaMenu.map(({ label, href, icon: Icon }) => <Link key={href} href={href as Route} onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-emerald-50 hover:text-gov-800"><Icon size={16} className="text-gov-800" />{label}</Link>)}
+                                        <div className="my-2 h-px bg-gov-100" />
+                                        <button type="button" onClick={signOut} className="mt-1 flex w-full items-center gap-2 rounded-2xl px-4 py-3 text-left text-sm font-bold text-red-600 transition hover:bg-red-50 focus:outline-none focus:ring-4 focus:ring-red-100"><LogOut size={16} />Keluar</button>
                                     </>
                                 ) : (
                                     <>
-                                        <Link href="/login" onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-gov-50 hover:text-gov-800"><LogIn size={16} className="text-gov-800" />Akun</Link>
-                                        <Link href="/register" onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-gov-50 hover:text-gov-800"><UserPlus size={16} className="text-gov-800" />Daftar Akun</Link>
+                                        <Link href="/login" onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-amber-50 hover:text-gov-800"><LogIn size={16} className="text-gov-800" />Masuk / Login</Link>
+                                        <Link href="/register" onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-emerald-50 hover:text-gov-800"><UserPlus size={16} className="text-gov-800" />Daftar</Link>
                                         <Link href="/login?mode=forgot" onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-gov-950 transition hover:bg-gov-50 hover:text-gov-800"><KeyRound size={16} className="text-gov-800" />Lupa Password</Link>
                                     </>
                                 )}
@@ -197,11 +203,11 @@ export function Navbar() {
                                         <ChevronRight size={18} className="text-slate-400" />
                                     </a>
                                     <Link
-                                        href="/dashboard"
+                                        href={user ? "/dashboard/profil" : "/login"}
                                         onClick={() => setOpen(false)}
                                         className="flex items-center justify-between rounded-2xl border border-border-soft px-4 py-4 text-base font-bold text-gov-950 transition hover:border-gov-100 hover:bg-gov-50"
                                     >
-                                        Akun
+                                        <span className="inline-flex items-center gap-3">{user ? <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-full bg-emerald-50 text-gov-800 ring-1 ring-emerald-100">{wargaPhoto ? <Image src={wargaPhoto} alt={wargaName} width={32} height={32} className="h-full w-full object-cover" unoptimized /> : <UserRound size={16} />}</span> : null}{user ? wargaName : "Akun"}</span>
                                         <ChevronRight size={18} className="text-slate-400" />
                                     </Link>
                                 </div>
@@ -226,6 +232,7 @@ export function Navbar() {
         </header>
     );
 }
+
 
 
 
