@@ -35,9 +35,11 @@ export const ROLE_STAGE_STATUS: Record<WorkflowRole, WorkflowStatus> = {
 };
 
 export function normalizeWorkflowRole(role?: string | null): WorkflowRole | null {
-    const normalized = String(role ?? "").toLowerCase().trim();
+    const normalized = String(role ?? "").toLowerCase().trim().replace(/[\s-]+/g, "_");
+    if (["staff", "staff_pelayanan", "pelayanan"].includes(normalized)) return "staff_pelayanan";
+    if (["petugas_lapangan", "lapangan"].includes(normalized)) return "petugas_lapangan";
     if (["kasi", "kepala_seksi"].includes(normalized)) return "kepala_seksi";
-    if (["seklur", "sekretaris_lurah", "sekretaris lurah"].includes(normalized)) return "seklur";
+    if (["seklur", "sekretaris_lurah"].includes(normalized)) return "seklur";
     if (isWorkflowRole(normalized)) return normalized;
     return null;
 }
