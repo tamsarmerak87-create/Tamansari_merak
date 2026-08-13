@@ -20,6 +20,7 @@
     "embla-carousel-react": "^8.6.0",
     "framer-motion": "latest",
     "gsap": "latest",
+    "html5-qrcode": "^2.3.8",
     "jspdf": "^4.2.1",
     "lenis": "latest",
     "lucide-react": "^1.28.0",
