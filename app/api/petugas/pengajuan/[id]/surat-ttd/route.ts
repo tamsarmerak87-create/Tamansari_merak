@@ -16,13 +16,14 @@ function buildPdf(row: AnyRow, version: number) {
     doc.text("PEMERINTAH KOTA CILEGON", 105, 18, { align: "center" });
     doc.text("KELURAHAN TAMANSARI", 105, 28, { align: "center" });
     doc.line(20, 38, 190, 38);
-    doc.setFontSize(13); doc.text(String(layanan).toUpperCase(), 105, 54, { align: "center" });
+    doc.setFontSize(16); doc.text("DRAFT - BELUM DITANDATANGANI", 105, 50, { align: "center" });
+    doc.setFontSize(13); doc.text(String(layanan).toUpperCase(), 105, 62, { align: "center" });
     doc.setFont("helvetica", "normal"); doc.setFontSize(11);
     doc.text(`Nomor Pengajuan: ${row.nomor_pengajuan ?? row.id}`, 20, 72);
     [["Nama", pickName(row)], ["NIK", row.nik], ["Alamat", row.alamat], ["Jenis Layanan", layanan], ["Keperluan", row.keperluan ?? row.keterangan ?? "-"]].forEach(([k, v], i) => {
         const y = 88 + i * 10; doc.text(String(k), 25, y); doc.text(":", 65, y); doc.text(String(v ?? "-"), 70, y, { maxWidth: 115 });
     });
-    doc.text("Surat ini dibuat berdasarkan data pengajuan yang sedang dibuka dan dokumen pemohon yang telah diverifikasi Staff.", 20, 150, { maxWidth: 170 });
+    doc.text("Dokumen ini adalah draft surat hasil pelayanan. Tidak berlaku sebagai dokumen resmi sebelum ditandatangani dan diterbitkan.", 20, 150, { maxWidth: 170 });
     doc.text(`Cilegon, ${new Date().toLocaleDateString("id-ID")}`, 140, 190);
     doc.text("Lurah Tamansari", 140, 202);
     doc.setFont("helvetica", "bold"); doc.text("(Menunggu TTD Lurah)", 140, 225);
@@ -41,27 +42,22 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const supabase = createSupabaseAdminClient();
     if (!supabase) return jsonError("Supabase service role belum dikonfigurasi.", 500);
 
-    const { data: activeStage, error: stageError } = await supabase.from("verifikasi_pengajuan").select("id,role_petugas,status").eq("pengajuan_id", id).eq("role_petugas", workflowRole).eq("status", "Disetujui").maybeSingle();
-    if (stageError) return jsonError(stageError.message, 500);
-    if (!activeStage) return jsonError("Surat hanya dapat dibuat setelah seluruh pemeriksaan Staff selesai.", 403);
-
     const body = await request.json().catch(() => ({})) as { action?: "generate" | "confirm" };
     const { data: existingDocs } = await supabase.from("dokumen_pengajuan").select("*").eq("pengajuan_id", id).ilike("jenis", "%Surat Hasil Pelayanan%");
-    const activeDraft = (existingDocs ?? []).find((d: AnyRow) => d.status === "DRAFT");
-    const activeReady = (existingDocs ?? []).find((d: AnyRow) => ["SIAP_DIVERIFIKASI", "FINAL", "TERBIT"].includes(String(d.status)));
+    const activeDraft = (existingDocs ?? []).find((d: AnyRow) => ["DRAFT", "DRAFT_DIVERIFIKASI_STAFF", "DRAFT_DIVERIFIKASI_LAPANGAN", "DRAFT_DIVERIFIKASI_KASI", "DRAFT_DIVERIFIKASI_SEKLUR", "SIAP_TTD"].includes(String(d.status)) && d.metadata?.active !== false);
+    const activeReady = (existingDocs ?? []).find((d: AnyRow) => ["SIGNED", "TERBIT", "FINAL"].includes(String(d.status)));
 
     const now = new Date().toISOString();
     if (body.action === "confirm") {
         if (!activeDraft) return jsonError("Draft surat belum tersedia.");
-        await supabase.from("dokumen_pengajuan").update({ status: "SIAP_DIVERIFIKASI" }).eq("id", activeDraft.id);
-        await supabase.from("audit_pengajuan").insert({ pengajuan_id: id, user_id: session.profile.id, nama_petugas: session.profile.nama_lengkap ?? session.profile.username, role: workflowRole, aksi: "SURAT_DIKONFIRMASI", action: "SURAT_DIKONFIRMASI", status: "SIAP_DIVERIFIKASI", catatan: "Surat dikonfirmasi Staff untuk verifikasi berjenjang.", metadata: { dokumen_id: activeDraft.id }, created_at: now });
-        return NextResponse.json({ ok: true, data: { ...activeDraft, status: "SIAP_DIVERIFIKASI" } });
+        return NextResponse.json({ ok: true, data: activeDraft });
     }
 
     if (activeDraft || activeReady) return jsonError("Surat aktif sudah tersedia. Tidak dapat membuat surat ganda.", 409);
     const { data: pengajuan, error: pengajuanError } = await supabase.from("pengajuan_surat").select("*, layanan(*)").eq("id", id).maybeSingle();
     if (pengajuanError) return jsonError(pengajuanError.message, 500);
     if (!pengajuan) return jsonError("Pengajuan tidak ditemukan.", 404);
+    if (!pickName(pengajuan) || !pickLayanan(pengajuan)) return jsonError("Data belum lengkap untuk membuat draft surat.", 422);
     const { count } = await supabase.from("dokumen_pengajuan").select("id", { count: "exact", head: true }).eq("pengajuan_id", id).ilike("jenis", "%Surat Hasil Pelayanan%");
     const version = (count ?? 0) + 1;
     const path = `surat-hasil-pelayanan/${id}/v${version}-${Date.now()}-surat-hasil-pelayanan.pdf`;
@@ -71,7 +67,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const { data: doc, error: insertError } = await supabase.from("dokumen_pengajuan").insert({ pengajuan_id: id, nama_file: "surat-hasil-pelayanan.pdf", jenis: `Surat Hasil Pelayanan v${version}`, url_file: uploaded.path, status: "DRAFT", metadata: { version, active: true, generated_at: now, generated_by: session.profile.id } }).select("*").single();
     if (insertError) return jsonError(insertError.message, 500);
 
-    await supabase.from("audit_pengajuan").insert({ pengajuan_id: id, user_id: session.profile.id, nama_petugas: session.profile.nama_lengkap ?? session.profile.username, role: workflowRole, aksi: "SURAT_DRAFT_DIBUAT", action: "SURAT_DRAFT_DIBUAT", status: "DRAFT", catatan: `Draft surat hasil pelayanan versi ${version} dibuat otomatis.`, metadata: { dokumen_id: doc.id, version, file_path: uploaded.path }, created_at: now });
+    await supabase.from("audit_pengajuan").insert({ pengajuan_id: id, user_id: session.profile.id, nama_petugas: session.profile.nama_lengkap ?? session.profile.username, role: workflowRole, aksi: "DRAFT_CREATED", action: "DRAFT_CREATED", status: "DRAFT", catatan: `Draft surat hasil pelayanan versi ${version} dibuat otomatis.`, metadata: { dokumen_id: doc.id, version, file_path: uploaded.path }, created_at: now });
     const { data: signed } = await supabase.storage.from("surat").createSignedUrl(uploaded.path, 60 * 10);
     return NextResponse.json({ ok: true, data: { ...doc, file_url: signed?.signedUrl ?? "", signed_url: signed?.signedUrl ?? "", version } });
 }

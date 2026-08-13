@@ -8,12 +8,16 @@ type StageRow = { id: string; pengajuan_id: string; tahap: number; nama_tahap: s
 
 const NEXT_STAGE_LABEL: Record<number, string> = { 1: "Petugas Lapangan", 2: "Kepala Seksi", 3: "Seklur", 4: "Lurah" };
 const CURRENT_STAGE_LABEL: Record<number, string> = { 1: "Staff Pelayanan", 2: "Petugas Lapangan", 3: "Kepala Seksi", 4: "Seklur", 5: "Lurah" };
+const DRAFT_ROLE_STATUSES: Record<string, string> = { staff_pelayanan: "DRAFT_DIVERIFIKASI_STAFF", petugas_lapangan: "DRAFT_DIVERIFIKASI_LAPANGAN", kepala_seksi: "DRAFT_DIVERIFIKASI_KASI", seklur: "DRAFT_DIVERIFIKASI_SEKLUR", lurah: "SIGNED" };
+const REQUIRED_DRAFT_ROLES = ["staff_pelayanan", "petugas_lapangan", "kepala_seksi", "seklur"];
 
 function jsonError(message: string, status = 400) { return NextResponse.json({ ok: false, error: message }, { status }); }
 function trackingMessage(stage: StageRow) { return stage.tahap === 5 ? "Pengajuan telah divalidasi Lurah dan surat diterbitkan." : `Pengajuan telah diverifikasi ${CURRENT_STAGE_LABEL[stage.tahap] ?? stage.nama_tahap} dan diteruskan ke ${NEXT_STAGE_LABEL[stage.tahap] ?? "tahap berikutnya"}.`; }
 function safeNik(nik?: string | null) { const raw = String(nik ?? ""); return raw.length > 6 ? `${raw.slice(0, 4)}********${raw.slice(-4)}` : "-"; }
 function pickName(row: Record<string, any>) { return row.nama_pemohon ?? row.nama_lengkap ?? row.nama ?? "-"; }
 function pickLayanan(row: Record<string, any>) { const l = Array.isArray(row.layanan) ? row.layanan[0] : row.layanan; return l?.nama ?? row.jenis_surat ?? "Surat Keterangan"; }
+function latestDraft(docs: Record<string, any>[] = []) { return docs.find((d) => ["DRAFT", "DRAFT_DIVERIFIKASI_STAFF", "DRAFT_DIVERIFIKASI_LAPANGAN", "DRAFT_DIVERIFIKASI_KASI", "DRAFT_DIVERIFIKASI_SEKLUR", "SIAP_TTD", "SIGNED"].includes(String(d.status)) && d.metadata?.active !== false) ?? null; }
+function draftOk(meta: Record<string, any> = {}) { return REQUIRED_DRAFT_ROLES.every((role) => meta?.draft_verification?.[role]?.result === "SESUAI"); }
 function finalPdf(row: Record<string, any>, token: string, version: number, petugasName: string) {
     const doc = new jsPDF({ unit: "mm", format: "a4" });
     doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.text("PEMERINTAH KOTA CILEGON", 105, 18, { align: "center" }); doc.text("KELURAHAN TAMANSARI", 105, 28, { align: "center" }); doc.line(20, 38, 190, 38);
@@ -56,7 +60,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     if (activeStage.role_petugas !== workflowRole) return jsonError(`Tahap aktif adalah ${activeStage.nama_tahap}; akun ini tidak berwenang memproses tahap tersebut.`, 403);
 
     const { data: suratDocs } = await supabase.from("dokumen_pengajuan").select("*").eq("pengajuan_id", id).ilike("jenis", "%Surat Hasil Pelayanan%").order("created_at", { ascending: false });
-    const activeSurat = (suratDocs ?? []).find((d: any) => ["SIAP_DIVERIFIKASI", "FINAL", "TERBIT"].includes(String(d.status)));
+    const activeSurat = latestDraft((suratDocs ?? []) as Record<string, any>[]);
 
     if (body?.action === "revisi" || body?.action === "tolak") {
         if (!body.catatan?.trim()) return jsonError("Alasan wajib diisi.");
@@ -68,7 +72,16 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         return NextResponse.json({ ok: true });
     }
 
-    if (activeStage.tahap > 1 && !activeSurat) return jsonError("Surat hasil pelayanan belum tersedia.", 409);
+    if (activeStage.tahap > 1 && !activeSurat) return jsonError("Draft surat hasil pelayanan belum tersedia.", 409);
+
+    if (activeSurat && !["simpan", "revisi", "tolak"].includes(String(body?.action ?? ""))) {
+        const meta = activeSurat.metadata ?? {};
+        const draftVerification = { ...(meta.draft_verification ?? {}), [workflowRole]: { result: "SESUAI", petugas_id: petugasId, petugas: petugasName, acted_at: now, catatan, tahap: activeStage.tahap } };
+        const nextDraftStatus = workflowRole === "lurah" ? "SIGNED" : (workflowRole === "seklur" && draftOk({ draft_verification: draftVerification }) ? "SIAP_TTD" : DRAFT_ROLE_STATUSES[workflowRole] ?? activeSurat.status);
+        if (workflowRole === "lurah" && !draftOk({ draft_verification: draftVerification })) return jsonError("Surat belum disetujui semua tahap sebelum TTD Lurah.", 409);
+        await supabase.from("dokumen_pengajuan").update({ status: nextDraftStatus, metadata: { ...meta, draft_verification: draftVerification, status_updated_at: now } }).eq("id", activeSurat.id);
+        await supabase.from("audit_pengajuan").insert({ pengajuan_id: id, user_id: petugasId, nama_petugas: petugasName, role: workflowRole, tahap: `${activeStage.tahap} - ${activeStage.nama_tahap}`, aksi: workflowRole === "lurah" ? "DRAFT_SIGNED" : "DRAFT_VERIFIED", action: workflowRole === "lurah" ? "DRAFT_SIGNED" : "DRAFT_VERIFIED", status: nextDraftStatus, catatan, metadata: { dokumen_id: activeSurat.id, pemeriksaan: body?.pemeriksaan ?? null, draft_verification: draftVerification }, created_at: now });
+    }
 
     if (body?.action === "simpan") {
         const { error: auditError } = await supabase.from("audit_pengajuan").insert({ pengajuan_id: id, user_id: petugasId, nama_petugas: petugasName, role: workflowRole, tahap: `${activeStage.tahap} - ${activeStage.nama_tahap}`, aksi: "SIMPAN_PEMERIKSAAN", action: "SIMPAN_PEMERIKSAAN", status: "Draft", status_sebelum: "Diproses", status_sesudah: "Diproses", catatan, metadata: { pemeriksaan: body?.pemeriksaan ?? null, petugas_id: petugasId, petugas: petugasName, saved_at: now }, created_at: now });
@@ -93,6 +106,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
 
     let finalInfo: Record<string, string> = {};
     if (activeStage.tahap === 5 && activeSurat) {
+        if (!draftOk(activeSurat.metadata ?? {})) return jsonError("Surat belum disetujui semua tahap sebelum TTD Lurah.", 409);
         const { data: fullPengajuan } = await supabase.from("pengajuan_surat").select("*, layanan(*)").eq("id", id).maybeSingle();
         const token = crypto.randomUUID().replace(/-/g, "");
         const version = Number(activeSurat.metadata?.version ?? 1);
