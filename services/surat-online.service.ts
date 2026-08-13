@@ -62,6 +62,13 @@ type SubmissionRequest = SubmissionInput & {
     pendukung_name?: string | null;
     pendukung_type?: string | null;
     pendukung_size?: number | string | null;
+    consent?: boolean;
+    declaration?: boolean;
+    physical_proof_generated?: boolean;
+    physical_proof_viewed?: boolean;
+    physical_proof_approved?: boolean;
+    physical_proof_generated_at?: string | null;
+    materai_status?: string | null;
 };
 
 type SubmissionPathKey = "file_ktp" | "file_kk" | "file_pendukung";
@@ -327,6 +334,7 @@ export async function createSubmission(formData: SubmissionRequest) {
         pendukungMeta = readPath("file_pendukung") ? { path: readPath("file_pendukung") ?? "", url: null, name: "Dokumen pendukung", type: "application/pdf", size: 0 } : readMeta("pendukung");
         if (Number.isNaN(Date.parse(payload.tanggal_lahir))) throw new Error("Tanggal lahir tidak valid.");
         if (!ktpMeta || !kkMeta) throw new Error("Upload KTP dan KK wajib diisi.");
+        if (formData.consent !== true || formData.declaration !== true || formData.physical_proof_generated !== true || formData.physical_proof_viewed !== true || formData.physical_proof_approved !== true) throw new Error("Persetujuan, pernyataan tanggung jawab, dan bukti fisik wajib diselesaikan sebelum permohonan dikirim.");
         [ktpMeta, kkMeta, pendukungMeta].filter(Boolean).forEach((file) => {
             if (!file?.path || file.path.includes("..")) throw new Error("Path dokumen tidak valid.");
         });
@@ -411,6 +419,17 @@ export async function createSubmission(formData: SubmissionRequest) {
             file_ktp: ktpUpload?.path ?? null,
             file_kk: kkUpload?.path ?? null,
             file_pendukung: pendukungUpload?.path ?? null,
+            consent_given: true,
+            declaration_accepted: true,
+            physical_proof_generated: true,
+            physical_proof_viewed: true,
+            physical_proof_approved: true,
+            physical_proof_generated_at: formData.physical_proof_generated_at || new Date().toISOString(),
+            materai_status: formData.materai_status || "NOT_CONFIGURED",
+            materai_provider: null,
+            materai_document_id: null,
+            materai_applied_at: null,
+            materai_reference: null,
         };
 
         logUploadStage("[surat-online:pengajuan-insert:start]", { stage: "pengajuan_insert", hasKtpPath: Boolean(pengajuanPayload.file_ktp), hasKkPath: Boolean(pengajuanPayload.file_kk), hasPendukungPath: Boolean(pengajuanPayload.file_pendukung) });
@@ -464,6 +483,8 @@ export async function createSubmission(formData: SubmissionRequest) {
             logSupabaseStageError("[surat-online:tracking-insert:error]", trackingError, { stage: "tracking_insert" });
             throw new SupabaseOperationError("PENGAJUAN TRACKING ERROR", trackingError, "tracking_insert");
         }
+
+        await client.from("pengajuan_audit_logs").insert(["CONSENT_GIVEN", "DECLARATION_ACCEPTED", "PHYSICAL_PROOF_GENERATED", "APPLICATION_SUBMITTED"].map((action) => ({ pengajuan_id: pengajuan.id, user_id: null, action })));
 
         try {
             const n8nResult = await forwardToN8n("surat-online/created", { nomor_pengajuan, nomor_tiket, tracking_url, email: payload.email, nomor_hp: payload.nomor_hp, status: "Menunggu Verifikasi" });

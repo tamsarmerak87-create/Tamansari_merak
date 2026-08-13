@@ -12,6 +12,8 @@ import {
     CheckCircle2,
     Clock,
     CloudUpload,
+    Download,
+    Eye,
     FileCheck2,
     FileText,
     HelpCircle,
@@ -20,6 +22,7 @@ import {
     Phone,
     Printer,
     QrCode,
+    RefreshCw,
     Scale,
     Search,
     Send,
@@ -61,6 +64,11 @@ function createEmptyForm(serviceId = "") {
         purpose: "",
         note: "",
         consent: false,
+        responsibility: false,
+        physicalProofGenerated: false,
+        physicalProofViewed: false,
+        physicalProofApproved: false,
+        physicalProofGeneratedAt: "",
     };
 }
 
@@ -71,7 +79,7 @@ const stats = [
     { label: "Respon Cepat", icon: Bell },
 ];
 
-const steps = ["Data Pemohon", "Data Pengajuan", "Upload Dokumen", "Review", "Kirim Permohonan"];
+const steps = ["Data Pemohon", "Data Pengajuan", "Upload Dokumen", "Review", "Persetujuan", "Bukti Fisik", "Konfirmasi", "Kirim"];
 const timeline = ["Permohonan Diterima", "Verifikasi", "Diproses", "Ditandatangani", "Selesai"];
 const statusList = ["Menunggu", "Diproses", "Verifikasi", "Ditolak", "Selesai"];
 const allowedTypes = ["application/pdf", "image/jpeg", "image/png"];
@@ -129,6 +137,7 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
     const [statusError, setStatusError] = useState("");
     const [statusResults, setStatusResults] = useState<StatusItem[]>([]);
     const [lastStatusQuery, setLastStatusQuery] = useState("");
+    const [proofPreviewOpen, setProofPreviewOpen] = useState(false);
     const { user, profile } = useWargaAuth();
 
     const selectedService = useMemo(() => serviceCatalog.find((item) => item.id === selectedId) ?? serviceCatalog[0], [serviceCatalog, selectedId]);
@@ -201,7 +210,10 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
         const support = files.support;
         if (support && !allowedTypes.includes(support.type)) next.support = "Format harus PDF, JPG, atau PNG";
         else if (support && support.size > 5 * 1024 * 1024) next.support = "Ukuran maksimal 5MB";
-        if (!form.consent) next.consent = "Checklist persetujuan wajib dicentang";
+        if (!form.consent) next.consent = "Pernyataan persetujuan wajib dicentang";
+        if (!form.responsibility) next.responsibility = "Pernyataan tanggung jawab wajib dicentang";
+        if (!form.physicalProofGenerated) next.physicalProofGenerated = "Bukti fisik permohonan wajib dibuat";
+        if (!form.physicalProofViewed || !form.physicalProofApproved) next.physicalProofApproved = "Bukti fisik wajib dilihat dan disetujui";
         setErrors(next);
         return Object.keys(next).length === 0;
     }
@@ -215,6 +227,8 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
                 return;
             }
             if (!validate()) return;
+            const confirmationMessage = `Apakah Anda yakin ingin mengirim permohonan?\n\nNama: ${form.name || "-"}\nLayanan: ${selectedService?.title ?? "-"}\nDokumen: ${[files.ktp, files.kk, files.support].filter(Boolean).length} berkas\nPernyataan: Disetujui\nTanggung jawab: Disetujui`;
+            if (!window.confirm(confirmationMessage)) return;
             setIsSubmitting(true);
             const payload = {
                 layanan_id: form.serviceId,
@@ -263,6 +277,13 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
                     file_ktp: ktpUpload?.path ?? null,
                     file_kk: kkUpload?.path ?? null,
                     file_pendukung: pendukungUpload?.path ?? null,
+                    consent: form.consent,
+                    declaration: form.responsibility,
+                    physical_proof_generated: form.physicalProofGenerated,
+                    physical_proof_viewed: form.physicalProofViewed,
+                    physical_proof_approved: form.physicalProofApproved,
+                    physical_proof_generated_at: form.physicalProofGeneratedAt,
+                    materai_status: "NOT_CONFIGURED",
                 }) as SubmissionResult;
                 uploadedPaths.length = 0;
                 setTicket(result.nomor_pengajuan);
@@ -396,7 +417,7 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
 
             {!formOnly ? <section id="layanan" className="px-5 py-14 sm:px-10 lg:px-20"><div className="mx-auto max-w-[1440px]"><div className="max-w-3xl"><span className="font-black uppercase tracking-[.2em] text-accent-600">Pilih pelayanan</span><h2 className="mt-3 font-display text-4xl font-black text-gov-950 md:text-5xl">Satu portal untuk seluruh pengajuan warga.</h2></div><div className="mt-8 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">{serviceCatalog.map((item, i) => <motion.button key={item.id} type="button" onClick={() => pickService(item.id)} initial={{ opacity: 0, y: 18 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: Math.min(i * 0.02, 0.25) }} whileHover={{ scale: 1.03 }} className={cn("min-h-[280px] rounded-[24px] border bg-white p-5 text-left shadow-soft transition focus:outline-none focus:ring-4 focus:ring-accent-200", selectedId === item.id ? "border-accent-400" : "border-white")}><div className="grid size-12 place-items-center rounded-2xl bg-gov-950 text-white"><FileText size={22} /></div><h3 className="mt-5 text-xl font-black text-gov-950">{item.title}</h3><p className="mt-3 line-clamp-3 leading-7 text-slate-650">{item.description}</p><p className="mt-4 inline-flex items-center gap-2 rounded-full bg-accent-100 px-3 py-1 text-sm font-black text-gov-950"><Clock size={15} />{item.estimate}</p><span className="mt-5 flex min-h-11 items-center justify-center rounded-2xl bg-gov-950 px-4 text-sm font-black text-white">Ajukan</span></motion.button>)}</div></div></section> : null}
 
-            <section id="form-pengajuan" className={cn("px-5 sm:px-10 lg:px-20", formOnly ? "py-10 pt-28 lg:py-14 lg:pt-32" : "py-14")}><div className={cn("mx-auto grid gap-6", formOnly ? "max-w-5xl" : "max-w-[1440px] lg:grid-cols-[1fr_360px]")}>{formOnly ? <div className="text-center"><span className="font-black uppercase tracking-[.2em] text-accent-600">Pengajuan Layanan</span><h1 className="mt-3 font-display text-3xl font-black text-gov-950 md:text-5xl">{selectedService?.title ?? "Layanan"}</h1></div> : null}<GlassCard className="rounded-[24px] bg-white/90"><Stepper />{submitted ? <Success ticket={ticket} data={successData} service={successData?.jenis_surat ?? selectedService?.title ?? "-"} estimate={selectedService?.estimate ?? "-"} /> : <form onSubmit={submit} className="mt-8 space-y-8"><ApplicantForm form={form} errors={errors} serviceCatalog={serviceCatalog} update={update} setSelectedId={setSelectedId} /><UploadDocs files={files} errors={errors} setFile={setFile} /><Review form={form} service={selectedService?.title ?? "-"} error={errors.consent} update={update} /><Button type="submit" variant="gold" disabled={isSubmitting}>{isSubmitting ? "Mengirim..." : "Kirim Permohonan"} <Send size={18} /></Button></form>}</GlassCard>{!formOnly ? <InfoSidebar /> : null}</div></section>
+            <section id="form-pengajuan" className={cn("px-5 sm:px-10 lg:px-20", formOnly ? "py-10 pt-28 lg:py-14 lg:pt-32" : "py-14")}><div className={cn("mx-auto grid gap-6", formOnly ? "max-w-5xl" : "max-w-[1440px] lg:grid-cols-[1fr_360px]")}>{formOnly ? <div className="text-center"><span className="font-black uppercase tracking-[.2em] text-accent-600">Pengajuan Layanan</span><h1 className="mt-3 font-display text-3xl font-black text-gov-950 md:text-5xl">{selectedService?.title ?? "Layanan"}</h1></div> : null}<GlassCard className="rounded-[24px] bg-white/90"><Stepper />{submitted ? <Success ticket={ticket} data={successData} service={successData?.jenis_surat ?? selectedService?.title ?? "-"} estimate={selectedService?.estimate ?? "-"} /> : <form onSubmit={submit} className="mt-8 space-y-8"><ApplicantForm form={form} errors={errors} serviceCatalog={serviceCatalog} update={update} setSelectedId={setSelectedId} /><UploadDocs files={files} errors={errors} setFile={setFile} /><Review form={form} service={selectedService?.title ?? "-"} /><AgreementCard form={form} service={selectedService?.title ?? "-"} files={files} errors={errors} update={update} previewOpen={proofPreviewOpen} setPreviewOpen={setProofPreviewOpen} /><Button type="submit" variant="gold" disabled={isSubmitting || !form.consent || !form.responsibility || !form.physicalProofGenerated || !form.physicalProofViewed || !form.physicalProofApproved}>{isSubmitting ? "Mengirim..." : "✓ Saya Setuju & Kirim Permohonan"} <Send size={18} /></Button></form>}</GlassCard>{!formOnly ? <InfoSidebar /> : null}</div></section>
 
             {!formOnly ? <section id="cek-status" className="px-5 py-16 sm:px-10 lg:px-20"><div className="mx-auto grid max-w-[1440px] gap-6 lg:grid-cols-2"><GlassCard className="rounded-[24px] bg-white/90"><span className="font-black uppercase tracking-[.2em] text-accent-600">Cek Status Permohonan</span><h2 className="mt-3 text-3xl font-black text-gov-950">Pantau progres dengan nomor tiket atau NIK.</h2><div className="mt-6 flex flex-col gap-3 sm:flex-row"><input className={cn(inputClass, "flex-1")} placeholder="Contoh: TMS-2026-123456 atau NIK" value={statusQuery} onChange={(e) => setStatusQuery(e.target.value)} /><Button type="button" onClick={checkStatus} disabled={statusLoading}><Search size={18} />{statusLoading ? "Memuat..." : "Cek Status"}</Button></div>{statusChecked ? <StatusResult results={statusResults} loading={statusLoading} error={statusError} /> : <div className="mt-6 rounded-[24px] border border-dashed border-slate-200 p-6 text-center text-sm font-bold text-slate-500">Empty state: masukkan nomor tiket atau NIK untuk melihat progres permohonan.</div>}</GlassCard><GlassCard className="rounded-[24px] bg-white/90"><h3 className="text-2xl font-black text-gov-950">Status yang tersedia</h3><div className="mt-5 grid gap-3 sm:grid-cols-2">{statusList.map((item) => <div key={item} className="rounded-2xl bg-gov-50 p-4 font-black text-gov-950">{item}</div>)}</div><div className="mt-6 rounded-2xl bg-red-50 p-4 text-sm font-bold text-red-700">Error state: nomor tiket tidak ditemukan akan tampil di area ini.</div><div className="mt-3 animate-pulse rounded-2xl bg-slate-100 p-4 text-sm font-bold text-slate-500">Loading skeleton: digunakan saat sistem mengambil data status.</div></GlassCard></div></section> : null}
         </main>
@@ -417,8 +438,23 @@ function UploadDocs({ files, errors, setFile }: { files: UploadState; errors: Re
     return <div><h2 className="text-2xl font-black text-gov-950">Upload Dokumen</h2><div className="mt-5 grid gap-4 md:grid-cols-3">{docs.map(([key, label]) => <label key={key} className="block rounded-[24px] border-2 border-dashed border-slate-200 bg-white p-5 text-center transition hover:border-accent-400 focus-within:ring-4 focus-within:ring-accent-200"><CloudUpload className="mx-auto text-accent-500" size={34} /><span className="mt-3 block font-black text-gov-950">{label}</span><span className="mt-1 block text-xs font-bold text-slate-500">PDF, JPG, PNG maks. 5MB</span><input type="file" accept=".pdf,.jpg,.jpeg,.png" className="sr-only" onChange={(e) => setFile(key, e)} />{files[key] ? <span className="mt-4 block truncate rounded-xl bg-gov-50 px-3 py-2 text-sm font-bold text-gov-950">{files[key]?.name}</span> : <span className="mt-4 block rounded-xl bg-slate-50 px-3 py-2 text-sm font-bold text-slate-500">Drag & drop / klik upload</span>}{files[key] ? <span className="mt-3 block h-2 overflow-hidden rounded-full bg-slate-100"><span className="block h-full w-full bg-emerald-500" /></span> : null}{errors[key] ? <span className="mt-2 block text-xs font-bold text-red-600">{errors[key]}</span> : null}</label>)}</div></div>;
 }
 
-function Review({ form, service, error, update }: { form: FormState; service: string; error?: string; update: (name: keyof FormState, value: string | boolean) => void }) {
-    return <div className="rounded-[24px] bg-gov-50 p-5"><h2 className="text-2xl font-black text-gov-950">Review</h2><div className="mt-4 grid gap-2 text-sm md:grid-cols-2"><p><b>Pelayanan:</b> {service}</p><p><b>Nama:</b> {form.name || "-"}</p><p><b>NIK:</b> {form.nik || "-"}</p><p><b>Nomor HP:</b> {form.phone || "-"}</p></div><label className="mt-5 flex items-start gap-3 text-sm font-bold text-gov-950"><input type="checkbox" className="mt-1 size-5 rounded border-slate-300 accent-gov-950" checked={form.consent} onChange={(e) => update("consent", e.target.checked)} />Saya menyatakan data benar.</label>{error ? <p className="mt-2 text-sm font-bold text-red-600">{error}</p> : null}</div>;
+function Review({ form, service }: { form: FormState; service: string }) {
+    return <div className="rounded-[24px] bg-gov-50 p-5"><h2 className="text-2xl font-black text-gov-950">Review</h2><div className="mt-4 grid gap-2 text-sm md:grid-cols-2"><p><b>Pelayanan:</b> {service}</p><p><b>Nama:</b> {form.name || "-"}</p><p><b>NIK:</b> {form.nik || "-"}</p><p><b>Nomor HP:</b> {form.phone || "-"}</p></div></div>;
+}
+
+function proofHtml(form: FormState, service: string, id: string) {
+    const ts = form.physicalProofGeneratedAt || new Date().toISOString();
+    return `<!doctype html><html><head><title>Bukti Fisik Permohonan</title><style>body{font-family:Arial,sans-serif;color:#0f172a;padding:32px}.sheet{max-width:760px;margin:auto;border:1px solid #cbd5e1;padding:32px}.center{text-align:center}.row{display:grid;grid-template-columns:180px 1fr;margin:8px 0}.box{border:1px solid #94a3b8;padding:14px;margin:18px 0}.sign{text-align:right;margin-top:42px}</style></head><body><main class="sheet"><p class="center"><b>PEMERINTAH KOTA CILEGON</b><br/>KECAMATAN PULOMERAK<br/>KELURAHAN TAMANSARI</p><h1 class="center">BUKTI FISIK PERMOHONAN</h1><div class="row"><b>Nomor Pengajuan:</b><span>${id}</span></div><div class="row"><b>Jenis Layanan:</b><span>${service}</span></div><h2>DATA PEMOHON</h2><div class="row"><b>Nama:</b><span>${form.name}</span></div><div class="row"><b>NIK:</b><span>${form.nik}</span></div><div class="row"><b>Alamat:</b><span>${form.address}, RT ${form.rt}/RW ${form.rw}, ${form.village}, ${form.district}</span></div><div class="row"><b>Nomor HP:</b><span>${form.phone}</span></div><div class="row"><b>Tanggal Pengajuan:</b><span>${new Date(ts).toLocaleDateString("id-ID")}</span></div><div class="box"><b>PERNYATAAN</b><br/>Saya menyatakan bahwa seluruh data dan dokumen yang saya sampaikan adalah benar dan dapat dipertanggungjawabkan.</div><div class="box"><b>STATUS PERSETUJUAN</b><br/>Data disetujui pemohon<br/>Pemohon menyatakan bertanggung jawab<br/><br/>Tanggal persetujuan: ${new Date(ts).toLocaleString("id-ID")}<br/>Nama pemohon: ${form.name}</div><div class="box"><b>METERAI ELEKTRONIK</b><br/>Status: MENUNGGU METERAI<br/>Meterai elektronik belum dikonfigurasi.</div><div class="sign">Tamansari, ${new Date(ts).toLocaleDateString("id-ID")}<br/><br/><br/><b>${form.name}</b></div></main></body></html>`;
+}
+
+function AgreementCard({ form, service, files, errors, update, previewOpen, setPreviewOpen }: { form: FormState; service: string; files: UploadState; errors: Record<string, string>; update: (name: keyof FormState, value: string | boolean) => void; previewOpen: boolean; setPreviewOpen: (value: boolean) => void }) {
+    const draftId = `DRAFT-${form.nik || "PEMOHON"}-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}`;
+    const canGenerate = form.consent && form.responsibility;
+    const html = proofHtml(form, service, draftId);
+    const download = () => { const win = window.open("", "_blank"); if (!win) return; win.document.write(html); win.document.close(); win.focus(); setTimeout(() => win.print(), 250); };
+    const generate = () => { if (!canGenerate) return; update("physicalProofGenerated", true); update("physicalProofGeneratedAt", new Date().toISOString()); update("physicalProofViewed", false); update("physicalProofApproved", false); };
+    const view = () => { update("physicalProofViewed", true); setPreviewOpen(true); };
+    return <div className="rounded-[28px] border bg-white p-5 shadow-sm sm:p-6"><p className="text-xs font-black uppercase tracking-[.22em] text-accent-600">Persetujuan & Pernyataan</p><h2 className="mt-2 text-2xl font-black text-gov-950">Persetujuan Permohonan</h2><div className="mt-4 grid gap-2 rounded-2xl bg-gov-50 p-4 text-sm font-bold text-gov-950 sm:grid-cols-2"><p>Nama Pemohon: {form.name || "-"}</p><p>NIK: {form.nik || "-"}</p><p>Jenis Layanan: {service}</p><p>Nomor/ID Permohonan: {draftId}</p><p>Tanggal Pengajuan: {new Date().toLocaleDateString("id-ID")}</p><p>Dokumen: {[files.ktp, files.kk, files.support].filter(Boolean).length} berkas</p></div><div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold leading-7"><p>Saya menyatakan bahwa seluruh data dan dokumen yang saya sampaikan dalam permohonan ini adalah benar, lengkap, dan dapat dipertanggungjawabkan.</p><p className="mt-3">Saya bertanggung jawab atas kebenaran data dan dokumen yang saya berikan serta bersedia menerima konsekuensi sesuai ketentuan yang berlaku apabila terdapat data atau dokumen yang tidak benar.</p></div><div className="mt-5 grid gap-3"><label className="flex gap-3 rounded-2xl border p-4 text-sm font-black"><input type="checkbox" checked={form.consent} onChange={(e) => update("consent", e.target.checked)} className="mt-1 size-5 accent-gov-950" />Saya telah membaca dan menyetujui pernyataan di atas.</label>{errors.consent ? <p className="text-sm font-bold text-red-600">{errors.consent}</p> : null}<label className="flex gap-3 rounded-2xl border p-4 text-sm font-black"><input type="checkbox" checked={form.responsibility} onChange={(e) => update("responsibility", e.target.checked)} className="mt-1 size-5 accent-gov-950" />Saya menyatakan bertanggung jawab atas kebenaran data dan dokumen yang saya ajukan.</label>{errors.responsibility ? <p className="text-sm font-bold text-red-600">{errors.responsibility}</p> : null}</div><div className="mt-5 rounded-2xl bg-slate-50 p-4 text-sm font-bold"><p className="text-base font-black text-gov-950">Pernyataan Bermaterai</p><p className="mt-2">Untuk permohonan yang memerlukan pernyataan bermaterai, dokumen pernyataan akan diproses menggunakan mekanisme meterai elektronik yang sah sesuai ketentuan yang berlaku.</p><p className="mt-2 text-amber-700">Status: Menunggu proses meterai elektronik / belum dikonfigurasi.</p></div><div className="mt-5 rounded-2xl bg-gov-50 p-4"><p className="font-black text-gov-950">Status Persetujuan</p><div className="mt-3 grid gap-2 text-sm font-bold"><span>{form.consent ? "✓ Pernyataan disetujui" : "○ Belum menyetujui"}</span><span>{form.responsibility ? "✓ Tanggung jawab disetujui" : "○ Belum menyatakan tanggung jawab"}</span><span>{form.physicalProofGenerated ? "✓ Bukti fisik dibuat" : "○ Bukti fisik belum dibuat"}</span><span>{form.physicalProofViewed && form.physicalProofApproved ? "✓ Bukti fisik dilihat dan disetujui" : "○ Bukti fisik belum disetujui"}</span></div><div className="mt-4 flex flex-col gap-2 sm:flex-row"><Button type="button" variant="primary" disabled={!canGenerate} onClick={generate}><FileText size={18} />📝 Buat Bukti Fisik Permohonan</Button>{form.physicalProofGenerated ? <><Button type="button" variant="glass" onClick={view}><Eye size={18} />Lihat</Button><Button type="button" variant="glass" onClick={download}><Download size={18} />Download</Button><Button type="button" variant="glass" onClick={generate}><RefreshCw size={18} />Buat Ulang</Button></> : null}</div>{errors.physicalProofGenerated ? <p className="mt-2 text-sm font-bold text-red-600">{errors.physicalProofGenerated}</p> : null}{errors.physicalProofApproved ? <p className="mt-2 text-sm font-bold text-red-600">{errors.physicalProofApproved}</p> : null}</div>{form.physicalProofGenerated ? <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-black text-emerald-800"><p>✓ Bukti Fisik Permohonan berhasil dibuat.</p><label className="mt-3 flex gap-3"><input type="checkbox" checked={form.physicalProofApproved} onChange={(e) => update("physicalProofApproved", e.target.checked)} className="mt-1 size-5 accent-emerald-700" />Saya sudah melihat dan menyetujui bukti fisik permohonan.</label></div> : null}{previewOpen ? <div className="fixed inset-0 z-[80] overflow-y-auto bg-slate-950/70 p-4"><div className="mx-auto max-w-4xl rounded-[28px] bg-white p-4 shadow-2xl"><div className="mb-4 flex justify-between gap-3"><h3 className="text-2xl font-black text-gov-950">Bukti Fisik Permohonan</h3><Button type="button" variant="glass" onClick={() => setPreviewOpen(false)}>Tutup</Button></div><iframe title="Bukti Fisik Permohonan" className="h-[70vh] w-full rounded-2xl border" srcDoc={html} /></div></div> : null}</div>;
 }
 
 function Success({ ticket, service, estimate, data }: { ticket: string; service: string; estimate: string; data: SubmissionResult | null }) {
