@@ -95,14 +95,16 @@ export async function GET(request: NextRequest) {
     const detailStageIds = detailId ? allStages.filter((stage) => stage.pengajuan_id === detailId).map((stage) => stage.pengajuan_id) : [];
     const submissionIds = Array.from(new Set([...listSubmissionIds, ...detailStageIds, detailId].filter(Boolean)));
 
-    const [{ data: submissions, error: submissionError }, { data: documents, error: docError }, { data: tracking, error: trackingError }] = await Promise.all([
+    const [{ data: submissions, error: submissionError }, { data: documents, error: docError }, { data: tracking, error: trackingError }, { data: submissionAudits, error: submissionAuditError }] = await Promise.all([
         submissionIds.length ? supabase.from("pengajuan_surat").select("*, layanan(*)").in("id", submissionIds) : Promise.resolve({ data: [], error: null }),
         submissionIds.length ? supabase.from("dokumen_pengajuan").select("*").in("pengajuan_id", submissionIds) : Promise.resolve({ data: [], error: null }),
         submissionIds.length ? supabase.from("tracking_pengajuan").select("*").in("pengajuan_id", submissionIds).order("created_at", { ascending: true }) : Promise.resolve({ data: [], error: null }),
+        submissionIds.length ? supabase.from("audit_pengajuan").select("*").in("pengajuan_id", submissionIds).order("created_at", { ascending: true }) : Promise.resolve({ data: [], error: null }),
     ]);
     if (submissionError) { logDetailDebug("error query detail submissions", { idUrl: detailId, submissionIds, errorQuery: submissionError.message }); return jsonError(submissionError.message, 500); }
     if (docError) { logDetailDebug("error query documents", { idUrl: detailId, submissionIds, errorQuery: docError.message }); return jsonError(docError.message, 500); }
     if (trackingError) { logDetailDebug("error query tracking", { idUrl: detailId, submissionIds, errorQuery: trackingError.message }); return jsonError(trackingError.message, 500); }
+    if (submissionAuditError) { logDetailDebug("error query submission audits", { idUrl: detailId, submissionIds, errorQuery: submissionAuditError.message }); return jsonError(submissionAuditError.message, 500); }
 
     const signedDocuments = await withDocumentUrls(supabase, documents ?? []);
     const submissionMap = new Map((submissions ?? []).map((row: AnyRow) => [String(row.id), row]));
@@ -119,16 +121,17 @@ export async function GET(request: NextRequest) {
     const officerMap = new Map((officersResult.data ?? []).map((row: AnyRow) => [String(row.id), row]));
     const docsByPengajuan = groupBy(signedDocuments, "pengajuan_id");
     const trackingByPengajuan = groupBy(tracking ?? [], "pengajuan_id");
+    const auditsByPengajuan = groupBy(submissionAudits ?? [], "pengajuan_id");
     const stagesByPengajuan = groupBy(allStages.map((stage) => ({ ...stage, nama_petugas: stage.petugas_id ? officerMap.get(String(stage.petugas_id))?.nama_lengkap ?? officerMap.get(String(stage.petugas_id))?.username ?? null : null })), "pengajuan_id");
 
     function enrichStage(stage: VerificationRow): AnyRow {
         const pengajuan = submissionMap.get(stage.pengajuan_id);
-        return { ...pengajuan, ...stage, id: stage.pengajuan_id, verifikasi_id: stage.id, active_stage: stage, workflow_status: stage.status, dokumen_pengajuan: docsByPengajuan.get(stage.pengajuan_id) ?? [], verifikasi_pengajuan: stagesByPengajuan.get(stage.pengajuan_id) ?? [], tracking_pengajuan: trackingByPengajuan.get(stage.pengajuan_id) ?? [] };
+        return { ...pengajuan, ...stage, id: stage.pengajuan_id, verifikasi_id: stage.id, active_stage: stage, workflow_status: stage.status, dokumen_pengajuan: docsByPengajuan.get(stage.pengajuan_id) ?? [], verifikasi_pengajuan: stagesByPengajuan.get(stage.pengajuan_id) ?? [], tracking_pengajuan: trackingByPengajuan.get(stage.pengajuan_id) ?? [], audit_pengajuan: auditsByPengajuan.get(stage.pengajuan_id) ?? [] };
     }
 
     function enrichSubmission(row: AnyRow): AnyRow {
         const stages = stagesByPengajuan.get(String(row.id)) ?? [];
-        return { ...row, workflow_status: activeStatusFromStages(stages), verifikasi_pengajuan: stages, dokumen_pengajuan: docsByPengajuan.get(String(row.id)) ?? [], tracking_pengajuan: trackingByPengajuan.get(String(row.id)) ?? [] };
+        return { ...row, workflow_status: activeStatusFromStages(stages), verifikasi_pengajuan: stages, dokumen_pengajuan: docsByPengajuan.get(String(row.id)) ?? [], tracking_pengajuan: trackingByPengajuan.get(String(row.id)) ?? [], audit_pengajuan: auditsByPengajuan.get(String(row.id)) ?? [] };
     }
 
     const tasks = activeStages.map(enrichStage).filter((row) => row.nomor_pengajuan || row.nama_lengkap);

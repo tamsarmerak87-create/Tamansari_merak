@@ -21,7 +21,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const workflowRole = normalizeWorkflowRole(session.profile.role);
     if (!workflowRole) return jsonError("Role petugas tidak memiliki kewenangan workflow verifikasi.", 403);
 
-    const body = await request.json().catch(() => null) as { catatan?: string; pemeriksaan?: unknown } | null;
+    const body = await request.json().catch(() => null) as { action?: string; catatan?: string; pemeriksaan?: unknown } | null;
     const catatan = body?.catatan?.trim() || "Dokumen telah diverifikasi dan lengkap";
     const supabase = createSupabaseAdminClient();
     if (!supabase) return jsonError("Supabase service role belum dikonfigurasi.", 500);
@@ -41,6 +41,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const activeStage = orderedStages.find((stage) => stage.status === "Diproses");
     if (!activeStage) return jsonError("Tidak ada tahap aktif yang dapat diproses.", 409);
     if (activeStage.role_petugas !== workflowRole) return jsonError(`Tahap aktif adalah ${activeStage.nama_tahap}; akun ini tidak berwenang memproses tahap tersebut.`, 403);
+
+    if (body?.action === "simpan") {
+        const { error: auditError } = await supabase.from("audit_pengajuan").insert({ pengajuan_id: id, user_id: petugasId, nama_petugas: petugasName, role: workflowRole, tahap: `${activeStage.tahap} - ${activeStage.nama_tahap}`, aksi: "SIMPAN_PEMERIKSAAN", action: "SIMPAN_PEMERIKSAAN", status: "Draft", status_sebelum: "Diproses", status_sesudah: "Diproses", catatan, metadata: { pemeriksaan: body?.pemeriksaan ?? null, petugas_id: petugasId, petugas: petugasName, saved_at: now }, created_at: now });
+        if (auditError) return jsonError(auditError.message, 500);
+        return NextResponse.json({ ok: true, saved: true });
+    }
 
     const nextStage = orderedStages.find((stage) => stage.tahap === activeStage.tahap + 1) ?? null;
     const { data: updatedStage, error: updateStageError } = await supabase
