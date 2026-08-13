@@ -1,4 +1,4 @@
-"use client";
+git "use client";
 
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";

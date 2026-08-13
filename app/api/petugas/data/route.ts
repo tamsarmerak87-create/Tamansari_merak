@@ -20,6 +20,9 @@ type VerificationRow = {
 function jsonError(message: string, status = 400) { return NextResponse.json({ ok: false, error: message }, { status }); }
 function groupBy<T extends AnyRow>(rows: T[], key: keyof T): Map<string, T[]> { const map = new Map<string, T[]>(); for (const row of rows) { const value = String(row[key] ?? ""); if (!map.has(value)) map.set(value, []); map.get(value)?.push(row); } return map; }
 function activeStatusFromStages(stages: AnyRow[] = []) { return stages.find((stage) => stage.status === "Diproses")?.nama_tahap ?? (stages.every((stage) => stage.status === "Disetujui") ? "Selesai" : "Menunggu"); }
+function canAccessSubmission(stages: AnyRow[] = [], role: string, userId: string) {
+    return stages.some((stage) => stage.role_petugas === role || stage.petugas_id === userId || stage.user_id === userId);
+}
 
 export async function GET(request: NextRequest) {
     const session = await getAdminSession(request, { cookie: "petugas" });
@@ -33,6 +36,8 @@ export async function GET(request: NextRequest) {
 
     const detailId = request.nextUrl.searchParams.get("id");
     const isLurah = workflowRole === "lurah";
+
+    console.info("[petugas:data] request", { detailId, userId: session.profile.id, role: session.profile.role, workflowRole });
 
     const [activeResult, processedResult, returnedResult, allStagesResult, submissionsResult, officersResult, auditsResult] = await Promise.all([
         supabase.from("verifikasi_pengajuan").select("*").eq("role_petugas", workflowRole).eq("status", "Diproses").order("created_at", { ascending: false }),
@@ -84,10 +89,24 @@ export async function GET(request: NextRequest) {
 
     const tasks = activeStages.map(enrichStage).filter((row) => row.nomor_pengajuan || row.nama_lengkap);
     const monitoring = isLurah ? (submissionsResult.data ?? []).map(enrichSubmission) : [];
-    const detail = detailId ? (tasks.find((row) => row.id === detailId) ?? (submissionMap.get(detailId) ? enrichSubmission(submissionMap.get(detailId)!) : null)) : null;
+    let detail: AnyRow | null = null;
+    let detailError: { code: "NOT_FOUND" | "FORBIDDEN"; message: string } | null = null;
+    if (detailId) {
+        const submission = submissionMap.get(detailId);
+        const detailStages = stagesByPengajuan.get(detailId) ?? [];
+        console.info("[petugas:data] detail query", { detailId, found: Boolean(submission), stages: detailStages.map((stage) => ({ id: stage.id, role_petugas: stage.role_petugas, status: stage.status, petugas_id: stage.petugas_id, user_id: stage.user_id })) });
+        if (!submission) {
+            detailError = { code: "NOT_FOUND", message: "Pengajuan tidak ditemukan." };
+        } else if (!canAccessSubmission(detailStages, workflowRole, session.profile.id)) {
+            detailError = { code: "FORBIDDEN", message: "Pengajuan ada, tetapi bukan kewenangan petugas ini." };
+        } else {
+            detail = enrichSubmission(submission);
+            detail.active_stage = detailStages.find((stage) => stage.status === "Diproses") ?? detailStages[0] ?? null;
+        }
+    }
     const stageCounts = [1, 2, 3, 4, 5].reduce<Record<string, number>>((acc, tahap) => { acc[String(tahap)] = allStages.filter((stage) => stage.tahap === tahap && stage.status === "Diproses").length; return acc; }, {});
     const totalResult = isLurah ? { total: (submissionsResult.data ?? []).length, selesai: (submissionsResult.data ?? []).filter((row: AnyRow) => row.status === "Selesai").length } : { total: 0, selesai: 0 };
     const stats = { menunggu: activeStages.length, diproses: processedResult.count ?? 0, dikembalikan: returnedResult.count ?? 0, lurah: { total: totalResult.total, staff: stageCounts["1"] ?? 0, lapangan: stageCounts["2"] ?? 0, kasi: stageCounts["3"] ?? 0, seklur: stageCounts["4"] ?? 0, lurah: stageCounts["5"] ?? 0, selesai: totalResult.selesai } };
 
-    return NextResponse.json({ ok: true, petugas: session.profile, stats, tugas: tasks, data: { tasks, history: auditsResult.data ?? [], detail, officers: officersResult.data ?? [], monitoring, stats } });
+    return NextResponse.json({ ok: true, petugas: session.profile, stats, tugas: tasks, data: { tasks, history: auditsResult.data ?? [], detail, detailError, officers: officersResult.data ?? [], monitoring, stats } });
 }
