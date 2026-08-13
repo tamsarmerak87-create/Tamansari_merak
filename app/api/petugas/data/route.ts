@@ -12,6 +12,7 @@ type VerificationRow = {
     role_petugas: string;
     status: string;
     petugas_id: string | null;
+    user_id?: string | null;
     catatan: string | null;
     created_at: string | null;
     acted_at: string | null;
