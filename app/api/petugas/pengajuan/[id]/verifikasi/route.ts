@@ -21,7 +21,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const workflowRole = normalizeWorkflowRole(session.profile.role);
     if (!workflowRole) return jsonError("Role petugas tidak memiliki kewenangan workflow verifikasi.", 403);
 
-    const body = await request.json().catch(() => null) as { catatan?: string } | null;
+    const body = await request.json().catch(() => null) as { catatan?: string; pemeriksaan?: unknown } | null;
     const catatan = body?.catatan?.trim() || "Dokumen telah diverifikasi dan lengkap";
     const supabase = createSupabaseAdminClient();
     if (!supabase) return jsonError("Supabase service role belum dikonfigurasi.", 500);
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const { error: trackingError } = await supabase.from("tracking_pengajuan").insert({ pengajuan_id: id, status: activeStage.tahap === 5 ? "Selesai" : "Diproses", keterangan: trackingMessage(activeStage), petugas: petugasName, created_at: now });
     if (trackingError) return jsonError(trackingError.message, 500);
 
-    const { error: auditError } = await supabase.from("audit_pengajuan").insert({ pengajuan_id: id, user_id: petugasId, nama_petugas: petugasName, role: workflowRole, tahap: `${activeStage.tahap} - ${activeStage.nama_tahap}`, aksi: "VERIFIKASI", action: "VERIFIKASI", status: "Disetujui", status_sebelum: "Diproses", status_sesudah: "Disetujui", catatan, created_at: now });
+    const { error: auditError } = await supabase.from("audit_pengajuan").insert({ pengajuan_id: id, user_id: petugasId, nama_petugas: petugasName, role: workflowRole, tahap: `${activeStage.tahap} - ${activeStage.nama_tahap}`, aksi: "VERIFIKASI", action: "VERIFIKASI", status: "Disetujui", status_sebelum: "Diproses", status_sesudah: "Disetujui", catatan, metadata: { pemeriksaan: body?.pemeriksaan ?? null, petugas_id: petugasId, petugas: petugasName, verified_at: now }, created_at: now });
     if (auditError) return jsonError(auditError.message, 500);
 
     return NextResponse.json({ ok: true, data: updatedPengajuan, verifikasi: updatedStage });
