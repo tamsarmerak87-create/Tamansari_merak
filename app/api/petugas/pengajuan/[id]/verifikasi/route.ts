@@ -16,6 +16,10 @@ function jsonError(message: string, status = 400) { return NextResponse.json({ o
 function publicSaveError() { return jsonError("Data belum dapat disimpan. Silakan coba lagi.", 500); }
 function logDbError(operation: string, error: unknown) { console.error(`[CHECK_PENGAJUAN] ${operation} ERROR`, error); }
 function logFields(operation: string, payload: Record<string, unknown>) { console.log(`[CHECK_PENGAJUAN] ${operation} fields:`, Object.keys(payload)); }
+function logQueryError(operation: string, error: { message?: string; details?: string; hint?: string; code?: string } | null) {
+    if (!error) return;
+    console.error(`[CHECK_PENGAJUAN] ${operation} failed`, { message: error.message, details: error.details, hint: error.hint, code: error.code });
+}
 async function writeAudit(supabase: NonNullable<ReturnType<typeof createSupabaseAdminClient>>, payload: AuditPayload) {
     try {
         const auditPayload = { action: payload.action ?? payload.aksi ?? payload.status, aksi: payload.aksi ?? payload.action ?? payload.status, ...payload };
@@ -101,9 +105,11 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
 
     if (body?.action === "simpan") {
         const { error: checkError } = await supabase.from("verifikasi_pengajuan").update({ user_id: petugasId, petugas_id: petugasId, nama_petugas: petugasName, catatan, hasil_verifikasi: encodeInspection(body?.pemeriksaan, catatan), updated_at: now }).eq("id", activeStage.id).eq("status", "Diproses");
-        if (checkError) { console.error("Pemeriksaan gagal disimpan:", checkError.message); return publicSaveError(); }
-        await supabase.from("tracking_pengajuan").insert({ pengajuan_id: id, status: "Diproses", keterangan: "Pengajuan sudah diperiksa petugas pelayanan.", petugas: petugasName, created_at: now });
-        await writeAudit(supabase, { pengajuan_id: id, status: "Draft", catatan, created_at: now });
+        if (checkError) { logQueryError("SAVE CHECK", checkError); return publicSaveError(); }
+
+        // Pemeriksaan awal hanya menyimpan checklist agar tombol Buat Surat aktif; tracking/audit tidak boleh menggagalkan UX utama.
+        const { error: trackingError } = await supabase.from("tracking_pengajuan").insert({ pengajuan_id: id, status: "Diproses", keterangan: "Pengajuan sudah diperiksa petugas pelayanan.", petugas: petugasName, created_at: now });
+        logQueryError("SAVE CHECK TRACKING", trackingError);
         return NextResponse.json({ ok: true, saved: true });
     }
 
