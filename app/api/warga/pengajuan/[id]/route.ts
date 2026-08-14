@@ -7,6 +7,9 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 const WARGA_PROFILE_SAFE_COLUMNS = "id,nama_lengkap,nik,nomor_kk,email,nomor_hp,nomor_whatsapp,tempat_lahir,tanggal_lahir,jenis_kelamin,alamat,rt,rw,kelurahan,kecamatan,foto_url,role,status_verifikasi,alasan_penolakan,created_at,updated_at";
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const TRACKING_COLUMNS = "id,pengajuan_id,status,keterangan,petugas,created_at";
+const DOKUMEN_COLUMNS = "id,pengajuan_id,nama_file,jenis,url_file,created_at";
+const VERIFIKASI_COLUMNS = "id,pengajuan_id,tahap,nama_tahap,role_petugas,status,nama_petugas,catatan,hasil_verifikasi,created_at,updated_at,acted_at,approved_at";
 
 function jsonError(message: string, status = 400) {
     return NextResponse.json({ ok: false, error: message }, { status });
@@ -30,6 +33,28 @@ function logDetailError(error: unknown) {
         details: supabaseError.details,
         hint: supabaseError.hint,
     });
+}
+
+async function hydrateDetail(supabase: ReturnType<typeof createSupabaseAdminClient>, pengajuan: Record<string, any>) {
+    const [layananResult, trackingResult, dokumenResult, verifikasiResult] = await Promise.all([
+        pengajuan.layanan_id ? supabase.from("layanan").select("id,nama,deskripsi").eq("id", pengajuan.layanan_id).maybeSingle() : Promise.resolve({ data: null, error: null }),
+        supabase.from("tracking_pengajuan").select(TRACKING_COLUMNS).eq("pengajuan_id", pengajuan.id).order("created_at", { ascending: true }),
+        supabase.from("dokumen_pengajuan").select(DOKUMEN_COLUMNS).eq("pengajuan_id", pengajuan.id).order("created_at", { ascending: false }),
+        supabase.from("verifikasi_pengajuan").select(VERIFIKASI_COLUMNS).eq("pengajuan_id", pengajuan.id).order("tahap", { ascending: true }),
+    ]);
+
+    if (layananResult.error) logSupabaseError("DETAIL LAYANAN QUERY ERROR", layananResult.error);
+    if (trackingResult.error) logSupabaseError("DETAIL TRACKING QUERY ERROR", trackingResult.error);
+    if (dokumenResult.error) logSupabaseError("DETAIL DOKUMEN QUERY ERROR", dokumenResult.error);
+    if (verifikasiResult.error) logSupabaseError("DETAIL VERIFIKASI QUERY ERROR", verifikasiResult.error);
+
+    return {
+        ...pengajuan,
+        layanan: layananResult.data ?? { nama: pengajuan.jenis_surat ?? "Layanan tidak tersedia" },
+        tracking_pengajuan: trackingResult.data ?? [],
+        dokumen_pengajuan: dokumenResult.data ?? [],
+        verifikasi_pengajuan: verifikasiResult.data ?? [],
+    };
 }
 
 async function getValidatedWarga(request: NextRequest): Promise<ValidatedWarga> {
@@ -115,7 +140,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
 
         return NextResponse.json({
             ok: true,
-            data: pengajuan,
+            data: await hydrateDetail(supabase, pengajuan),
         });
     } catch (error) {
         logDetailError(error);

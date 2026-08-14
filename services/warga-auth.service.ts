@@ -278,8 +278,13 @@ export async function updateWargaProfile(profile: Partial<WargaProfile>) {
     const { user, profile: currentProfile } = await getCurrentWarga();
     if (!user) throw new Error("Silakan login terlebih dahulu.");
     if (!currentProfile?.id) throw new Error("Profil warga tidak ditemukan untuk akun login ini. Periksa apakah akun Auth sudah memiliki row di public.warga_profiles.");
-    const blocked = new Set(["id", "role", "status_verifikasi", "user_id", "nik", "nomor_kk", "alasan_penolakan", "created_at"]);
+    const editable = new Set(["nomor_hp", "nomor_whatsapp", "email", "alamat", "rt", "rw", "foto_url"]);
+    const blocked = new Set(["id", "role", "status_verifikasi", "user_id", "nik", "nomor_kk", "nama_lengkap", "tempat_lahir", "tanggal_lahir", "jenis_kelamin", "kelurahan", "kecamatan", "alasan_penolakan", "created_at"]);
     const profileData = Object.fromEntries(Object.entries(sanitizeWargaProfileUpdatePayload(profile)).filter(([key]) => !blocked.has(key)));
+    const invalidColumns = Object.keys(profileData).filter((key) => !editable.has(key));
+    if (invalidColumns.length > 0) throw new Error(`Field profil tidak boleh diubah langsung: ${invalidColumns.join(", ")}.`);
+    if (typeof profileData.nomor_whatsapp === "string" && profileData.nomor_whatsapp.trim().length < 8) throw new Error("Nomor WhatsApp tidak valid.");
+    if (typeof profileData.email === "string" && !z.string().email().safeParse(profileData.email.trim()).success) throw new Error("Email tidak valid.");
     if (Object.keys(profileData).length > 0) profileData.updated_at = new Date().toISOString();
     const { data, error } = await client().from("warga_profiles").update(profileData).eq("id", currentProfile.id).select(WARGA_PROFILE_COLUMNS).maybeSingle();
     debugProfileQuery({ authUserId: user.id, profileId: currentProfile.id, table: "warga_profiles", filterColumn: "id", filterValue: currentProfile.id, rowCount: data ? 1 : 0, operation: "update" });
