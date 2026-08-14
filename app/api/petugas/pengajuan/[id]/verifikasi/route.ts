@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getAdminSession, isPetugas } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
-import { ROLE_STAGE_STATUS, STAGE_WAITING_STATUS, getActiveStage, isFinalSubmissionStatus, normalizeSubmissionStatus, normalizeWorkflowRole } from "@/services/verification-workflow";
+import { ROLE_STAGE_STATUS, STAGE_WAITING_STATUS, VERIFICATION_STAGES, getActiveStage, isFinalSubmissionStatus, normalizeSubmissionStatus, normalizeWorkflowRole } from "@/services/verification-workflow";
 
 type RouteContext = { params: Promise<{ id: string }> };
 type SupabaseError = { message?: string; details?: string; hint?: string; code?: string };
@@ -28,8 +28,22 @@ function logSupabaseError(operation: string, error: SupabaseError | null) {
     });
 }
 
+function logSupabaseNoRows(operation: string, context: Record<string, unknown>) {
+    console.error(`[VERIFIKASI PETUGAS] Supabase gagal: ${operation}`, {
+        message: "Operasi tidak mengubah/mengembalikan baris apa pun.",
+        details: context,
+        hint: "Periksa filter id/status, RLS policy, trigger, atau data workflow yang tidak sinkron.",
+        code: "NO_ROWS",
+    });
+}
+
+function workflowStatusMatches(actualStatus: string, requiredStatus: string, activeStage: StageRow) {
+    if (actualStatus === requiredStatus) return true;
+    return activeStage.tahap === 1 && ["MENUNGGU_STAFF", "MENUNGGU_VERIFIKASI"].includes(actualStatus);
+}
+
 function stageShortName(stage: StageRow) {
-    return stage.nama_tahap.replace(/^Verifikasi\s+|^Persetujuan\s+/, "");
+    return VERIFICATION_STAGES.find((item) => item.tahap === stage.tahap)?.nama_tahap.replace(/^Verifikasi\s+|^Persetujuan\s+/, "") ?? stage.nama_tahap.replace(/^Verifikasi\s+|^Persetujuan\s+/, "");
 }
 
 export async function POST(request: NextRequest, context: RouteContext) {
@@ -47,6 +61,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
         const workflowRole = normalizeWorkflowRole(session.profile.role);
         if (!workflowRole) return jsonError("Role petugas tidak memiliki kewenangan workflow verifikasi.", 403);
+        if (workflowRole !== "staff_pelayanan") {
+            // Endpoint ini dipakai tombol Verifikasi tahap 1 di portal petugas.
+            return jsonError("Tombol Verifikasi hanya dapat diproses oleh Staff Pelayanan.", 403);
+        }
 
         const supabase = createSupabaseAdminClient();
         if (!supabase) return publicSaveError();
@@ -89,7 +107,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
         const normalizedSubmissionStatus = normalizeSubmissionStatus(String(pengajuan.workflow_status ?? pengajuan.status));
         const requiredStatus = ROLE_STAGE_STATUS[workflowRole];
-        if (normalizedSubmissionStatus !== requiredStatus) return jsonError(`${activeStage.nama_tahap} hanya boleh memproses status ${requiredStatus}.`, 403);
+        if (!workflowStatusMatches(String(normalizedSubmissionStatus), requiredStatus, activeStage)) return jsonError(`${activeStage.nama_tahap} hanya boleh memproses status ${requiredStatus}.`, 403);
         if (STAGE_WAITING_STATUS[activeStage.tahap] !== requiredStatus) return jsonError("Tahap workflow aktif tidak sesuai dengan status pengajuan.", 409);
 
         const nextStage = orderedStages.find((stage) => stage.tahap === activeStage.tahap + 1) ?? null;
@@ -121,7 +139,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
             logSupabaseError("update verifikasi_pengajuan tahap aktif", updateStageError);
             throw updateStageError;
         }
-        if (!updatedStage) return jsonError("Tahap aktif sudah diproses. Muat ulang data pengajuan.", 409);
+        if (!updatedStage) {
+            logSupabaseNoRows("update verifikasi_pengajuan tahap aktif", { pengajuanId, stageId: activeStage.id, allowedStatus: ["Menunggu", "Diproses"] });
+            return jsonError("Tahap aktif sudah diproses. Muat ulang data pengajuan.", 409);
+        }
 
         if (nextStage) {
             const { error: nextStageError } = await supabase
@@ -155,7 +176,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
             logSupabaseError("update pengajuan_surat", updatePengajuanError);
             throw updatePengajuanError;
         }
-        if (!updatedPengajuan) return jsonError("Pengajuan tidak ditemukan.", 404);
+        if (!updatedPengajuan) {
+            logSupabaseNoRows("update pengajuan_surat", { pengajuanId, nextWorkflowStatus, petugasId });
+            throw new Error("Update pengajuan_surat tidak mengembalikan data.");
+        }
 
         const trackingRows = [{
             pengajuan_id: pengajuanId,
