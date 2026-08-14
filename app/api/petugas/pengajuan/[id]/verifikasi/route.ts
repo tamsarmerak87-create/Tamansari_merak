@@ -5,7 +5,7 @@ import { createSupabaseAdminClient } from "@/services/supabase";
 import { normalizeWorkflowRole } from "@/services/verification-workflow";
 
 type StageRow = { id: string; pengajuan_id: string; tahap: number; nama_tahap: string; role_petugas: string; status: string };
-type AuditPayload = { pengajuan_id: string; status: string; catatan: string; created_at: string };
+type AuditPayload = { pengajuan_id: string; status: string; action?: string; aksi?: string; user_id?: string; nama_petugas?: string; role?: string; tahap?: string; catatan: string | null; created_at: string };
 
 const NEXT_STAGE_LABEL: Record<number, string> = { 1: "Petugas Lapangan", 2: "Kepala Seksi", 3: "Seklur", 4: "Lurah" };
 const CURRENT_STAGE_LABEL: Record<number, string> = { 1: "Staff Pelayanan", 2: "Petugas Lapangan", 3: "Kepala Seksi", 4: "Seklur", 5: "Lurah" };
@@ -14,9 +14,18 @@ const REQUIRED_DRAFT_ROLES = ["staff_pelayanan", "petugas_lapangan", "kepala_sek
 
 function jsonError(message: string, status = 400) { return NextResponse.json({ ok: false, error: message }, { status }); }
 function publicSaveError() { return jsonError("Data belum dapat disimpan. Silakan coba lagi.", 500); }
+function logDbError(operation: string, error: unknown) { console.error(`[CHECK_PENGAJUAN] ${operation} ERROR`, error); }
+function logFields(operation: string, payload: Record<string, unknown>) { console.log(`[CHECK_PENGAJUAN] ${operation} fields:`, Object.keys(payload)); }
 async function writeAudit(supabase: NonNullable<ReturnType<typeof createSupabaseAdminClient>>, payload: AuditPayload) {
-    const { error } = await supabase.from("audit_pengajuan").insert(payload);
-    if (error) console.error("Audit pengajuan gagal disimpan:", error.message);
+    try {
+        const auditPayload = { action: payload.action ?? payload.aksi ?? payload.status, aksi: payload.aksi ?? payload.action ?? payload.status, ...payload };
+        logFields("AUDIT INSERT", auditPayload);
+        const response = await supabase.from("audit_pengajuan").insert(auditPayload);
+        console.error("[CHECK_PENGAJUAN] AUDIT Response:", { error: response.error, status: response.status, statusText: response.statusText });
+        if (response.error) logDbError("AUDIT", response.error);
+    } catch (auditError) {
+        logDbError("AUDIT", auditError);
+    }
 }
 function encodeInspection(pemeriksaan: unknown, fallback: string) { return JSON.stringify({ pemeriksaan: pemeriksaan ?? null, catatan: fallback }); }
 function trackingMessage(stage: StageRow) { return stage.tahap === 5 ? "Pengajuan telah divalidasi Lurah dan surat diterbitkan." : `Pengajuan telah diverifikasi ${CURRENT_STAGE_LABEL[stage.tahap] ?? stage.nama_tahap} dan diteruskan ke ${NEXT_STAGE_LABEL[stage.tahap] ?? "tahap berikutnya"}.`; }
