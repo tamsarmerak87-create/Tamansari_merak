@@ -157,8 +157,10 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
         const fromQuery = new URLSearchParams(window.location.search).get("layanan");
         const nextId = initialServiceId || fromQuery || "";
         if (!nextId || !serviceCatalog.some((item) => item.id === nextId)) return;
-        setSelectedId(nextId);
-        setForm((prev) => ({ ...prev, serviceId: nextId }));
+        queueMicrotask(() => {
+            setSelectedId(nextId);
+            setForm((prev) => ({ ...prev, serviceId: nextId }));
+        });
     }, [initialServiceId, serviceCatalog]);
 
     function setFile(key: FileKey, event: ChangeEvent<HTMLInputElement>) {
