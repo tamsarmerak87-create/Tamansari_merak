@@ -27,7 +27,13 @@ function logError(error: SupabaseError | null | undefined) {
 }
 function logQueryError(operation: string, error: SupabaseError | null) {
     if (!error) return;
-    console.error("[VERIFIKASI_PENGAJUAN] QUERY ERROR", { operation, code: error.code, message: error.message, details: error.details, hint: error.hint });
+    console.error("[VERIFIKASI_PENGAJUAN] QUERY ERROR", {
+        operation,
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+    });
 }
 function trackingMessage(stage: StageRow) { return stage.tahap === 5 ? "Pengajuan telah divalidasi Lurah dan surat diterbitkan." : `Pengajuan telah diverifikasi ${CURRENT_STAGE_LABEL[stage.tahap] ?? stage.nama_tahap} dan diteruskan ke ${NEXT_STAGE_LABEL[stage.tahap] ?? "tahap berikutnya"}.`; }
 function safeNik(nik?: string | null) { const raw = String(nik ?? ""); return raw.length > 6 ? `${raw.slice(0, 4)}********${raw.slice(-4)}` : "-"; }
@@ -109,15 +115,37 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         }
 
         if (body?.action === "simpan") {
-            const result = await supabase
+            const { data: savedStage, error: saveStageError } = await supabase
                 .from("verifikasi_pengajuan")
-                .update({ petugas_id: petugasId, nama_petugas: petugasName, catatan, updated_at: now })
+                .update({
+                    petugas_id: petugasId,
+                    user_id: petugasId,
+                    nama_petugas: petugasName,
+                    jabatan: activeStage.nama_tahap,
+                    catatan,
+                    hasil_verifikasi: "Data dan dokumen dinyatakan lengkap.",
+                    updated_at: now
+                })
                 .eq("id", activeStage.id)
-                .eq("status", "Diproses")
                 .select("id")
-                .single();
-            if (result.error) { logQueryError("UPDATE verifikasi_pengajuan simpan", result.error); throw result.error; }
-            if (!result.data) return publicSaveError();
+                .maybeSingle();
+            if (saveStageError) { logQueryError("UPDATE verifikasi_pengajuan simpan", saveStageError); throw saveStageError; }
+            if (!savedStage) {
+                console.error("[VERIFIKASI_PENGAJUAN] SIMPAN TANPA ROW", { pengajuan_id: id, stage_id: activeStage.id, role_petugas: workflowRole });
+                return publicSaveError();
+            }
+
+            const { error: savePengajuanError } = await supabase
+                .from("pengajuan_surat")
+                .update({ workflow_status: activeStage.nama_tahap, updated_at: now })
+                .eq("id", id);
+            if (savePengajuanError) { logQueryError("UPDATE pengajuan_surat simpan", savePengajuanError); throw savePengajuanError; }
+
+            const { error: saveTrackingError } = await supabase
+                .from("tracking_pengajuan")
+                .insert({ pengajuan_id: id, status: "Diproses", keterangan: `Pengajuan sudah diperiksa ${CURRENT_STAGE_LABEL[activeStage.tahap] ?? activeStage.nama_tahap}.`, created_at: now });
+            if (saveTrackingError) { logQueryError("INSERT tracking_pengajuan simpan", saveTrackingError); throw saveTrackingError; }
+
             return NextResponse.json({ ok: true });
         }
 
