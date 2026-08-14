@@ -18,6 +18,15 @@ function publicSaveError() {
     return jsonError("Data belum dapat disimpan. Silakan coba lagi.", 500);
 }
 
+function logConfigError(operation: string, message: string, context?: Record<string, unknown>) {
+    console.error(`[VERIFIKASI PETUGAS] Konfigurasi gagal: ${operation}`, {
+        message,
+        details: context,
+        hint: "Pastikan SUPABASE_URL dan SUPABASE_SERVICE_ROLE_KEY tersedia untuk route server.",
+        code: "CONFIG_ERROR",
+    });
+}
+
 function logSupabaseError(operation: string, error: SupabaseError | null) {
     if (!error) return;
     console.error(`[VERIFIKASI PETUGAS] Supabase gagal: ${operation}`, {
@@ -67,7 +76,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
         }
 
         const supabase = createSupabaseAdminClient();
-        if (!supabase) return publicSaveError();
+        if (!supabase) {
+            logConfigError("create supabase admin client", "Supabase service role belum dikonfigurasi.", { pengajuanId, petugasId: session.profile.id });
+            return publicSaveError();
+        }
 
         const body = await request.json().catch(() => null) as VerificationBody | null;
         const now = new Date().toISOString();
@@ -159,11 +171,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
         const pengajuanUpdate = {
             workflow_status: nextWorkflowStatus,
             status: nextStage ? "Diproses" : "Selesai",
-            catatan_admin: catatan,
-            verified_at: now,
-            verified_by: petugasId,
-            diproses_at: now,
-            diproses_by: petugasId,
             updated_at: now,
         };
         const { data: updatedPengajuan, error: updatePengajuanError } = await supabase
