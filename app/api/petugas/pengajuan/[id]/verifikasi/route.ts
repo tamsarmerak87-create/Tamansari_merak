@@ -5,7 +5,6 @@ import { createSupabaseAdminClient } from "@/services/supabase";
 import { normalizeWorkflowRole } from "@/services/verification-workflow";
 
 type StageRow = { id: string; pengajuan_id: string; tahap: number; nama_tahap: string; role_petugas: string; status: string };
-type AuditPayload = { pengajuan_id: string; status: string; action?: string; aksi?: string; user_id?: string; nama_petugas?: string; role?: string; tahap?: string; catatan: string | null; created_at: string };
 
 const NEXT_STAGE_LABEL: Record<number, string> = { 1: "Petugas Lapangan", 2: "Kepala Seksi", 3: "Seklur", 4: "Lurah" };
 const CURRENT_STAGE_LABEL: Record<number, string> = { 1: "Staff Pelayanan", 2: "Petugas Lapangan", 3: "Kepala Seksi", 4: "Seklur", 5: "Lurah" };
@@ -14,22 +13,10 @@ const REQUIRED_DRAFT_ROLES = ["staff_pelayanan", "petugas_lapangan", "kepala_sek
 
 function jsonError(message: string, status = 400) { return NextResponse.json({ ok: false, error: message }, { status }); }
 function publicSaveError() { return jsonError("Data belum dapat disimpan. Silakan coba lagi.", 500); }
-function logDbError(operation: string, error: unknown) { console.error(`[CHECK_PENGAJUAN] ${operation} ERROR`, error); }
-function logFields(operation: string, payload: Record<string, unknown>) { console.log(`[CHECK_PENGAJUAN] ${operation} fields:`, Object.keys(payload)); }
+function logError(error: unknown) { console.error("[VERIFIKASI_PENGAJUAN] ERROR", error); }
 function logQueryError(operation: string, error: { message?: string; details?: string; hint?: string; code?: string } | null) {
     if (!error) return;
-    console.error(`[CHECK_PENGAJUAN] ${operation} failed`, { message: error.message, details: error.details, hint: error.hint, code: error.code });
-}
-async function writeAudit(supabase: NonNullable<ReturnType<typeof createSupabaseAdminClient>>, payload: AuditPayload) {
-    try {
-        const auditPayload = { action: payload.action ?? payload.aksi ?? payload.status, aksi: payload.aksi ?? payload.action ?? payload.status, ...payload };
-        logFields("AUDIT INSERT", auditPayload);
-        const response = await supabase.from("audit_pengajuan").insert(auditPayload);
-        console.error("[CHECK_PENGAJUAN] AUDIT Response:", { error: response.error, status: response.status, statusText: response.statusText });
-        if (response.error) logDbError("AUDIT", response.error);
-    } catch (auditError) {
-        logDbError("AUDIT", auditError);
-    }
+    console.error(`[VERIFIKASI_PENGAJUAN] QUERY ERROR ${operation}`, { code: error.code, message: error.message, details: error.details, hint: error.hint });
 }
 function encodeInspection(pemeriksaan: unknown, fallback: string) { return JSON.stringify({ pemeriksaan: pemeriksaan ?? null, catatan: fallback }); }
 function trackingMessage(stage: StageRow) { return stage.tahap === 5 ? "Pengajuan telah divalidasi Lurah dan surat diterbitkan." : `Pengajuan telah diverifikasi ${CURRENT_STAGE_LABEL[stage.tahap] ?? stage.nama_tahap} dan diteruskan ke ${NEXT_STAGE_LABEL[stage.tahap] ?? "tahap berikutnya"}.`; }
@@ -49,107 +36,119 @@ function finalPdf(row: Record<string, any>, token: string, version: number, petu
 }
 
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
-    const { id } = await context.params;
-    const session = await getAdminSession(request, { cookie: "petugas" });
-    if (session.error || !session.profile) return jsonError("Session petugas tidak valid.", 401);
-    if (!isPetugas(session.profile)) return jsonError("Akses khusus petugas.", 403);
-    if (session.profile.is_active === false) return jsonError("Akun petugas tidak aktif.", 403);
+    try {
+        const { id } = await context.params;
+        if (!id) return jsonError("Pengajuan tidak ditemukan.", 404);
+        const session = await getAdminSession(request, { cookie: "petugas" });
+        if (session.error || !session.profile) return jsonError("Sesi petugas tidak valid.", 401);
+        if (!isPetugas(session.profile)) return jsonError("Akses khusus petugas.", 403);
+        if (session.profile.is_active === false) return jsonError("Akun petugas tidak aktif.", 403);
 
-    const workflowRole = normalizeWorkflowRole(session.profile.role);
-    if (!workflowRole) return jsonError("Role petugas tidak memiliki kewenangan workflow verifikasi.", 403);
+        const workflowRole = normalizeWorkflowRole(session.profile.role);
+        if (!workflowRole) return jsonError("Role petugas tidak memiliki kewenangan workflow verifikasi.", 403);
 
-    const body = await request.json().catch(() => null) as { action?: string; catatan?: string; pemeriksaan?: unknown } | null;
-    const catatan = body?.catatan?.trim() || "Dokumen telah diverifikasi dan lengkap";
-    const supabase = createSupabaseAdminClient();
-    if (!supabase) return jsonError("Supabase service role belum dikonfigurasi.", 500);
+        const body = await request.json().catch(() => null) as { action?: string; catatan?: string; pemeriksaan?: unknown } | null;
+        const catatan = body?.catatan?.trim() || "Dokumen telah diverifikasi dan lengkap";
+        const supabase = createSupabaseAdminClient();
+        if (!supabase) return jsonError("Supabase service role belum dikonfigurasi.", 500);
 
-    const now = new Date().toISOString();
-    const petugasId = session.profile.id;
-    const petugasName = session.profile.nama_lengkap ?? session.profile.username ?? "Petugas Kelurahan";
+        const now = new Date().toISOString();
+        const petugasId = session.profile.id;
+        const petugasName = session.profile.nama_lengkap ?? session.profile.username ?? "Petugas Kelurahan";
 
-    const { data: pengajuan, error: pengajuanError } = await supabase.from("pengajuan_surat").select("id,status").eq("id", id).maybeSingle();
-    if (pengajuanError) return jsonError(pengajuanError.message, 500);
-    if (!pengajuan) return jsonError("Pengajuan tidak ditemukan.", 404);
-    if (String(pengajuan.status).toLowerCase() === "selesai") return jsonError("Pengajuan sudah selesai.", 409);
+        const { data: pengajuan, error: pengajuanError } = await supabase.from("pengajuan_surat").select("id,status").eq("id", id).maybeSingle();
+        if (pengajuanError) { logQueryError("SELECT pengajuan_surat", pengajuanError); return publicSaveError(); }
+        if (!pengajuan) return jsonError("Pengajuan tidak ditemukan.", 404);
+        if (String(pengajuan.status).toLowerCase() === "selesai") return jsonError("Pengajuan sudah selesai.", 409);
 
-    const { data: stages, error: stageError } = await supabase.from("verifikasi_pengajuan").select("id,pengajuan_id,tahap,nama_tahap,role_petugas,status").eq("pengajuan_id", id).order("tahap", { ascending: true });
-    if (stageError) return jsonError(stageError.message, 500);
-    const orderedStages = (stages ?? []) as StageRow[];
-    const activeStage = orderedStages.find((stage) => stage.status === "Diproses");
-    if (!activeStage) return jsonError("Tidak ada tahap aktif yang dapat diproses.", 409);
-    if (activeStage.role_petugas !== workflowRole) return jsonError(`Tahap aktif adalah ${activeStage.nama_tahap}; akun ini tidak berwenang memproses tahap tersebut.`, 403);
+        const { data: stages, error: stageError } = await supabase.from("verifikasi_pengajuan").select("id,pengajuan_id,tahap,nama_tahap,role_petugas,status").eq("pengajuan_id", id).order("tahap", { ascending: true });
+        if (stageError) { logQueryError("SELECT verifikasi_pengajuan", stageError); return publicSaveError(); }
+        const orderedStages = (stages ?? []) as StageRow[];
+        const activeStage = orderedStages.find((stage) => stage.status === "Diproses");
+        if (!activeStage) return jsonError("Tidak ada tahap aktif yang dapat diproses.", 409);
+        if (activeStage.role_petugas !== workflowRole) return jsonError(`Tahap aktif adalah ${activeStage.nama_tahap}; akun ini tidak berwenang memproses tahap tersebut.`, 403);
 
-    const { data: suratDocs } = await supabase.from("dokumen_pengajuan").select("*").eq("pengajuan_id", id).ilike("jenis", "%Surat Hasil Pelayanan%").order("created_at", { ascending: false });
-    const activeSurat = latestDraft((suratDocs ?? []) as Record<string, any>[]);
+        const { data: suratDocs, error: suratDocsError } = await supabase.from("dokumen_pengajuan").select("*").eq("pengajuan_id", id).ilike("jenis", "%Surat Hasil Pelayanan%").order("created_at", { ascending: false });
+        if (suratDocsError) { logQueryError("SELECT dokumen_pengajuan surat", suratDocsError); return publicSaveError(); }
+        const activeSurat = latestDraft((suratDocs ?? []) as Record<string, any>[]);
 
-    if (body?.action === "revisi" || body?.action === "tolak") {
-        if (!body.catatan?.trim()) return jsonError("Alasan wajib diisi.");
-        await supabase.from("verifikasi_pengajuan").update({ status: body.action === "tolak" ? "Ditolak" : "Menunggu", catatan, petugas_id: petugasId, acted_at: now }).eq("id", activeStage.id);
-        await supabase.from("verifikasi_pengajuan").update({ status: "Diproses" }).eq("pengajuan_id", id).eq("role_petugas", "staff_pelayanan");
-        if (activeSurat) await supabase.from("dokumen_pengajuan").update({ status: "DIKEMBALIKAN", metadata: { ...(activeSurat.metadata ?? {}), active: false, returned_at: now, returned_by: petugasId, return_reason: catatan } }).eq("id", activeSurat.id);
-        await supabase.from("tracking_pengajuan").insert({ pengajuan_id: id, status: body.action === "tolak" ? "Ditolak" : "Dikembalikan", keterangan: catatan, petugas: petugasName, created_at: now });
-        await writeAudit(supabase, { pengajuan_id: id, status: body.action === "tolak" ? "Ditolak" : "Dikembalikan", catatan, created_at: now });
-        return NextResponse.json({ ok: true });
+        if (body?.action === "revisi" || body?.action === "tolak") {
+            if (!body.catatan?.trim()) return jsonError("Alasan wajib diisi.");
+            const { error: currentError } = await supabase.from("verifikasi_pengajuan").update({ status: body.action === "tolak" ? "Ditolak" : "Menunggu", catatan, petugas_id: petugasId, acted_at: now }).eq("id", activeStage.id);
+            if (currentError) { logQueryError("UPDATE verifikasi_pengajuan revisi/tolak", currentError); return publicSaveError(); }
+            const { error: staffError } = await supabase.from("verifikasi_pengajuan").update({ status: "Diproses" }).eq("pengajuan_id", id).eq("role_petugas", "staff_pelayanan");
+            if (staffError) { logQueryError("UPDATE verifikasi_pengajuan staff active", staffError); return publicSaveError(); }
+            if (activeSurat) {
+                const { error: returnedError } = await supabase.from("dokumen_pengajuan").update({ status: "DIKEMBALIKAN", metadata: { ...(activeSurat.metadata ?? {}), active: false, returned_at: now, returned_by: petugasId, return_reason: catatan } }).eq("id", activeSurat.id);
+                if (returnedError) { logQueryError("UPDATE dokumen_pengajuan dikembalikan", returnedError); return publicSaveError(); }
+            }
+            const { error: trackingError } = await supabase.from("tracking_pengajuan").insert({ pengajuan_id: id, status: body.action === "tolak" ? "Ditolak" : "Dikembalikan", keterangan: catatan, created_at: now });
+            if (trackingError) logQueryError("INSERT tracking_pengajuan revisi/tolak", trackingError);
+            return NextResponse.json({ ok: true });
+        }
+
+        if (activeStage.tahap > 1 && !activeSurat) return jsonError("Draft surat hasil pelayanan belum tersedia.", 409);
+
+        if (activeSurat && !["simpan", "revisi", "tolak"].includes(String(body?.action ?? ""))) {
+            const meta = activeSurat.metadata ?? {};
+            const draftVerification = { ...(meta.draft_verification ?? {}), [workflowRole]: { result: "SESUAI", petugas_id: petugasId, petugas: petugasName, acted_at: now, catatan, tahap: activeStage.tahap } };
+            const nextDraftStatus = workflowRole === "lurah" ? "SIGNED" : (workflowRole === "seklur" && draftOk({ draft_verification: draftVerification }) ? "SIAP_TTD" : DRAFT_ROLE_STATUSES[workflowRole] ?? activeSurat.status);
+            if (workflowRole === "lurah" && !draftOk({ draft_verification: draftVerification })) return jsonError("Surat belum disetujui semua tahap sebelum TTD Lurah.", 409);
+            const { error: draftUpdateError } = await supabase.from("dokumen_pengajuan").update({ status: nextDraftStatus, metadata: { ...meta, draft_verification: draftVerification, status_updated_at: now } }).eq("id", activeSurat.id);
+            if (draftUpdateError) { logQueryError("UPDATE dokumen_pengajuan draft", draftUpdateError); return publicSaveError(); }
+        }
+
+        if (body?.action === "simpan") {
+            const { error: checkError } = await supabase.from("verifikasi_pengajuan").update({ user_id: petugasId, petugas_id: petugasId, nama_petugas: petugasName, catatan, hasil_verifikasi: encodeInspection(body?.pemeriksaan, catatan), updated_at: now }).eq("id", activeStage.id).eq("status", "Diproses");
+            if (checkError) { logQueryError("SAVE CHECK", checkError); return publicSaveError(); }
+
+            // Pemeriksaan awal hanya menyimpan checklist agar tombol Buat Surat aktif; tracking/audit tidak boleh menggagalkan UX utama.
+            const { error: trackingError } = await supabase.from("tracking_pengajuan").insert({ pengajuan_id: id, status: "Diproses", keterangan: "Data & Dokumen Diperiksa", created_at: now });
+            logQueryError("SAVE CHECK TRACKING", trackingError);
+            return NextResponse.json({ ok: true, saved: true });
+        }
+
+        const nextStage = orderedStages.find((stage) => stage.tahap === activeStage.tahap + 1) ?? null;
+        const { data: updatedStage, error: updateStageError } = await supabase
+            .from("verifikasi_pengajuan")
+            .update({ status: "Disetujui", petugas_id: petugasId, catatan, acted_at: now })
+            .eq("id", activeStage.id)
+            .eq("status", "Diproses")
+            .select("*")
+            .single();
+        if (updateStageError) { logQueryError("UPDATE verifikasi_pengajuan active", updateStageError); return publicSaveError(); }
+
+        if (nextStage) {
+            const { error: nextError } = await supabase.from("verifikasi_pengajuan").update({ status: "Diproses" }).eq("id", nextStage.id).eq("status", "Menunggu");
+            if (nextError) { logQueryError("UPDATE verifikasi_pengajuan next", nextError); return publicSaveError(); }
+        }
+
+        let finalInfo: Record<string, string> = {};
+        if (activeStage.tahap === 5 && activeSurat) {
+            if (!draftOk(activeSurat.metadata ?? {})) return jsonError("Surat belum disetujui semua tahap sebelum TTD Lurah.", 409);
+            const { data: fullPengajuan, error: fullPengajuanError } = await supabase.from("pengajuan_surat").select("*, layanan(*)").eq("id", id).maybeSingle();
+            if (fullPengajuanError) { logQueryError("SELECT pengajuan_surat final", fullPengajuanError); return publicSaveError(); }
+            const token = crypto.randomUUID().replace(/-/g, "");
+            const version = Number(activeSurat.metadata?.version ?? 1);
+            const path = `surat-hasil-pelayanan/${id}/final-v${version}-${Date.now()}.pdf`;
+            const { error: uploadError } = await supabase.storage.from("surat").upload(path, finalPdf(fullPengajuan ?? {}, token, version, petugasName), { contentType: "application/pdf", upsert: false });
+            if (uploadError) { logQueryError("UPLOAD surat final", uploadError); return publicSaveError(); }
+            const { error: finalDocError } = await supabase.from("dokumen_pengajuan").update({ status: "TERBIT", metadata: { ...(activeSurat.metadata ?? {}), active: false, final_path: path, token, qr_url: `/verifikasi/${token}`, signed_at: now, signed_by: petugasId } }).eq("id", activeSurat.id);
+            if (finalDocError) { logQueryError("UPDATE dokumen_pengajuan final", finalDocError); return publicSaveError(); }
+            finalInfo = { verification_token: token, verification_url: `/verifikasi/${token}`, final_pdf_url: path };
+        }
+        const pengajuanUpdate = activeStage.tahap === 5
+            ? { status: "Selesai", selesai_at: now, selesai_by: petugasId, updated_at: now, ...finalInfo }
+            : { status: "Diproses", diproses_at: now, diproses_by: petugasId, updated_at: now };
+        const { data: updatedPengajuan, error: updatePengajuanError } = await supabase.from("pengajuan_surat").update(pengajuanUpdate).eq("id", id).select("*").single();
+        if (updatePengajuanError) { logQueryError("UPDATE pengajuan_surat", updatePengajuanError); return publicSaveError(); }
+
+        const { error: trackingError } = await supabase.from("tracking_pengajuan").insert({ pengajuan_id: id, status: activeStage.tahap === 5 ? "Selesai" : "Diproses", keterangan: trackingMessage(activeStage), created_at: now });
+        if (trackingError) { logQueryError("INSERT tracking_pengajuan", trackingError); return publicSaveError(); }
+
+        return NextResponse.json({ ok: true, data: updatedPengajuan, verifikasi: updatedStage });
+    } catch (error) {
+        logError(error);
+        return publicSaveError();
     }
-
-    if (activeStage.tahap > 1 && !activeSurat) return jsonError("Draft surat hasil pelayanan belum tersedia.", 409);
-
-    if (activeSurat && !["simpan", "revisi", "tolak"].includes(String(body?.action ?? ""))) {
-        const meta = activeSurat.metadata ?? {};
-        const draftVerification = { ...(meta.draft_verification ?? {}), [workflowRole]: { result: "SESUAI", petugas_id: petugasId, petugas: petugasName, acted_at: now, catatan, tahap: activeStage.tahap } };
-        const nextDraftStatus = workflowRole === "lurah" ? "SIGNED" : (workflowRole === "seklur" && draftOk({ draft_verification: draftVerification }) ? "SIAP_TTD" : DRAFT_ROLE_STATUSES[workflowRole] ?? activeSurat.status);
-        if (workflowRole === "lurah" && !draftOk({ draft_verification: draftVerification })) return jsonError("Surat belum disetujui semua tahap sebelum TTD Lurah.", 409);
-        await supabase.from("dokumen_pengajuan").update({ status: nextDraftStatus, metadata: { ...meta, draft_verification: draftVerification, status_updated_at: now } }).eq("id", activeSurat.id);
-        await writeAudit(supabase, { pengajuan_id: id, status: nextDraftStatus, catatan, created_at: now });
-    }
-
-    if (body?.action === "simpan") {
-        const { error: checkError } = await supabase.from("verifikasi_pengajuan").update({ user_id: petugasId, petugas_id: petugasId, nama_petugas: petugasName, catatan, hasil_verifikasi: encodeInspection(body?.pemeriksaan, catatan), updated_at: now }).eq("id", activeStage.id).eq("status", "Diproses");
-        if (checkError) { logQueryError("SAVE CHECK", checkError); return publicSaveError(); }
-
-        // Pemeriksaan awal hanya menyimpan checklist agar tombol Buat Surat aktif; tracking/audit tidak boleh menggagalkan UX utama.
-        const { error: trackingError } = await supabase.from("tracking_pengajuan").insert({ pengajuan_id: id, status: "Diproses", keterangan: "Pengajuan sudah diperiksa petugas pelayanan.", petugas: petugasName, created_at: now });
-        logQueryError("SAVE CHECK TRACKING", trackingError);
-        return NextResponse.json({ ok: true, saved: true });
-    }
-
-    const nextStage = orderedStages.find((stage) => stage.tahap === activeStage.tahap + 1) ?? null;
-    const { data: updatedStage, error: updateStageError } = await supabase
-        .from("verifikasi_pengajuan")
-        .update({ status: "Disetujui", petugas_id: petugasId, catatan, acted_at: now })
-        .eq("id", activeStage.id)
-        .eq("status", "Diproses")
-        .select("*")
-        .single();
-    if (updateStageError) { console.error("Workflow pemeriksaan gagal diperbarui:", updateStageError.message); return publicSaveError(); }
-
-    if (nextStage) {
-        const { error: nextError } = await supabase.from("verifikasi_pengajuan").update({ status: "Diproses" }).eq("id", nextStage.id).eq("status", "Menunggu");
-        if (nextError) { console.error("Tahap berikutnya gagal diaktifkan:", nextError.message); return publicSaveError(); }
-    }
-
-    let finalInfo: Record<string, string> = {};
-    if (activeStage.tahap === 5 && activeSurat) {
-        if (!draftOk(activeSurat.metadata ?? {})) return jsonError("Surat belum disetujui semua tahap sebelum TTD Lurah.", 409);
-        const { data: fullPengajuan } = await supabase.from("pengajuan_surat").select("*, layanan(*)").eq("id", id).maybeSingle();
-        const token = crypto.randomUUID().replace(/-/g, "");
-        const version = Number(activeSurat.metadata?.version ?? 1);
-        const path = `surat-hasil-pelayanan/${id}/final-v${version}-${Date.now()}.pdf`;
-        const { error: uploadError } = await supabase.storage.from("surat").upload(path, finalPdf(fullPengajuan ?? {}, token, version, petugasName), { contentType: "application/pdf", upsert: false });
-        if (uploadError) return jsonError(uploadError.message, 500);
-        await supabase.from("dokumen_pengajuan").update({ status: "TERBIT", metadata: { ...(activeSurat.metadata ?? {}), active: false, final_path: path, token, qr_url: `/verifikasi/${token}`, signed_at: now, signed_by: petugasId } }).eq("id", activeSurat.id);
-        finalInfo = { verification_token: token, verification_url: `/verifikasi/${token}`, final_pdf_url: path };
-    }
-    const pengajuanUpdate = activeStage.tahap === 5
-        ? { status: "Selesai", selesai_at: now, selesai_by: petugasId, updated_at: now, ...finalInfo }
-        : { status: "Diproses", diproses_at: now, diproses_by: petugasId, updated_at: now };
-    const { data: updatedPengajuan, error: updatePengajuanError } = await supabase.from("pengajuan_surat").update(pengajuanUpdate).eq("id", id).select("*").single();
-    if (updatePengajuanError) { console.error("Status pengajuan gagal diperbarui:", updatePengajuanError.message); return publicSaveError(); }
-
-    const { error: trackingError } = await supabase.from("tracking_pengajuan").insert({ pengajuan_id: id, status: activeStage.tahap === 5 ? "Selesai" : "Diproses", keterangan: trackingMessage(activeStage), petugas: petugasName, created_at: now });
-    if (trackingError) { console.error("Tracking pengajuan gagal disimpan:", trackingError.message); return publicSaveError(); }
-
-    await writeAudit(supabase, { pengajuan_id: id, status: "Disetujui", catatan, created_at: now });
-
-    return NextResponse.json({ ok: true, data: updatedPengajuan, verifikasi: updatedStage });
 }
