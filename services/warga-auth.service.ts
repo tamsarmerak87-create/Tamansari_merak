@@ -254,7 +254,7 @@ export async function updateWargaProfile(profile: Partial<WargaProfile>) {
     const { user, profile: currentProfile } = await getCurrentWarga();
     if (!user) throw new Error("Silakan login terlebih dahulu.");
     if (!currentProfile?.id) throw new Error("Profil warga tidak ditemukan untuk akun login ini. Periksa apakah akun Auth sudah memiliki row di public.warga_profiles.");
-    const blocked = new Set(["id", "role", "status_verifikasi", "user_id", "nik", "nomor_kk", "email", "alasan_penolakan", "created_at"]);
+    const blocked = new Set(["id", "role", "status_verifikasi", "user_id", "nik", "nomor_kk", "alasan_penolakan", "created_at"]);
     const profileData = Object.fromEntries(Object.entries(sanitizeWargaProfileUpdatePayload(profile)).filter(([key]) => !blocked.has(key)));
     if (Object.keys(profileData).length > 0) profileData.updated_at = new Date().toISOString();
     const { data, error } = await client().from("warga_profiles").update(profileData).eq("id", currentProfile.id).select(WARGA_PROFILE_COLUMNS).maybeSingle();
