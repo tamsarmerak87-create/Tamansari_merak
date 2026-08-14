@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createSupabaseBrowserClient } from "@/services/supabase";
 
 export const WARGA_PROFILE_PHOTO_BUCKET = "avatars";
+export const WARGA_PROFILE_CHANGE_DOCUMENT_BUCKET = "profile-change-documents";
 
 export type WargaRole = "admin" | "petugas" | "warga";
 export type WargaVerificationStatus = "Belum Terverifikasi" | "Akun Terverifikasi" | "Terverifikasi" | "Ditolak";
@@ -30,6 +31,24 @@ export type WargaProfile = {
     alasan_penolakan?: string | null;
     created_at?: string;
     updated_at?: string;
+};
+
+export type WargaProfileChangeStatus = "pending" | "approved" | "rejected";
+export type WargaProfileChangeRequest = {
+    id: string;
+    change_request_id?: string | null;
+    user_id: string;
+    profile_id: string;
+    jenis_perubahan: string;
+    data_lama?: string | null;
+    data_baru: string;
+    alasan: string;
+    dokumen_pendukung?: string | null;
+    status: WargaProfileChangeStatus;
+    alasan_petugas?: string | null;
+    created_at: string;
+    verified_at?: string | null;
+    verified_by?: string | null;
 };
 
 export const wargaRegisterSchema = z.object({
@@ -266,6 +285,59 @@ export async function updateWargaProfile(profile: Partial<WargaProfile>) {
     }
     if (!data) throw new Error("Profil ditemukan saat SELECT, tetapi UPDATE tidak mengembalikan row. Periksa policy UPDATE public.warga_profiles untuk akun login ini.");
     return data as WargaProfile;
+}
+
+const WARGA_PROFILE_CHANGE_COLUMNS = "id,change_request_id,user_id,profile_id,jenis_perubahan,data_lama,data_baru,alasan,dokumen_pendukung,status,alasan_petugas,created_at,verified_at,verified_by";
+
+export async function getWargaProfileChangeRequests() {
+    const { user, profile } = await getCurrentWarga();
+    if (!user || !profile?.id) return [];
+    const { data, error } = await client()
+        .from("warga_profile_change_requests")
+        .select(WARGA_PROFILE_CHANGE_COLUMNS)
+        .eq("user_id", user.id)
+        .eq("profile_id", profile.id)
+        .order("created_at", { ascending: false });
+    if (error) throw error;
+    return (data ?? []) as WargaProfileChangeRequest[];
+}
+
+export async function uploadWargaProfileChangeDocument(file: File) {
+    if (!file || file.size === 0) return null;
+    const allowed = ["image/jpeg", "image/png", "application/pdf"];
+    if (!allowed.includes(file.type)) throw new Error("Format dokumen harus JPG, PNG, atau PDF.");
+    if (file.size > 1024 * 1024) throw new Error("Ukuran dokumen maksimal 1 MB.");
+    const supabase = client();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError) throw userError;
+    if (!user) throw new Error("Silakan login terlebih dahulu.");
+    const ext = file.name.split(".").pop()?.toLowerCase() || (file.type === "application/pdf" ? "pdf" : "jpg");
+    const path = `${user.id}/change-${Date.now()}.${ext}`;
+    const upload = await supabase.storage.from(WARGA_PROFILE_CHANGE_DOCUMENT_BUCKET).upload(path, file, { upsert: false, contentType: file.type });
+    if (upload.error) throw upload.error;
+    return upload.data.path;
+}
+
+export async function submitWargaProfileChangeRequest(input: { jenis_perubahan: string; data_lama?: string | null; data_baru: string; alasan: string; dokumen_pendukung?: string | null }) {
+    const { user, profile } = await getCurrentWarga();
+    if (!user) throw new Error("Silakan login terlebih dahulu.");
+    if (!profile?.id) throw new Error("Profil warga tidak ditemukan.");
+    const payload = {
+        user_id: user.id,
+        profile_id: profile.id,
+        jenis_perubahan: input.jenis_perubahan,
+        data_lama: input.data_lama ?? null,
+        data_baru: input.data_baru.trim(),
+        alasan: input.alasan.trim(),
+        dokumen_pendukung: input.dokumen_pendukung ?? null,
+        status: "pending" as const,
+    };
+    if (!payload.jenis_perubahan) throw new Error("Pilih data yang ingin diubah.");
+    if (!payload.data_baru) throw new Error("Isi data yang benar.");
+    if (!payload.alasan) throw new Error("Isi alasan perubahan.");
+    const { data, error } = await client().from("warga_profile_change_requests").insert(payload).select(WARGA_PROFILE_CHANGE_COLUMNS).single();
+    if (error) throw error;
+    return data as WargaProfileChangeRequest;
 }
 
 type SupabaseLikeError = Error & { code?: string; statusCode?: string | number; status?: string | number };
