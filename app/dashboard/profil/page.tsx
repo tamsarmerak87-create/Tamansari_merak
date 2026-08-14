@@ -11,6 +11,8 @@ import { getWargaProfilePhotoUrl, updateWargaProfile, uploadWargaProfilePhoto, t
 
 const maxPhoto = 5 * 1024 * 1024;
 const allowedPhoto = ["image/jpeg", "image/png", "image/webp"];
+type ToastKind = "success" | "error" | "warning" | "info" | "loading";
+type ToastItem = { id: number; kind: ToastKind; title: string; detail?: string; closing?: boolean };
 
 export default function WargaProfilPage() {
     const router = useRouter();
@@ -24,8 +26,7 @@ export default function WargaProfilPage() {
     const [preview, setPreview] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
     const [changeOpen, setChangeOpen] = useState(false);
-    const [message, setMessage] = useState("");
-    const [error, setError] = useState("");
+    const [toasts, setToasts] = useState<ToastItem[]>([]);
 
     useEffect(() => { if (!loading && !user) router.push("/login"); }, [loading, user, router]);
     useEffect(() => {
@@ -41,37 +42,66 @@ export default function WargaProfilPage() {
 
     const avatar = useMemo(() => preview || getWargaProfilePhotoUrl(profile?.foto_url), [preview, profile?.foto_url]);
 
+    function closeToast(id: number) {
+        setToasts((items) => items.map((item) => item.id === id ? { ...item, closing: true } : item));
+        window.setTimeout(() => setToasts((items) => items.filter((item) => item.id !== id)), 220);
+    }
+
+    function showToast(kind: ToastKind, title: string, detail?: string, duration = kind === "error" ? 5000 : 3000) {
+        const id = Date.now() + Math.random();
+        setToasts((items) => [...items, { id, kind, title, detail }].slice(-4));
+        if (kind !== "loading") window.setTimeout(() => closeToast(id), duration);
+        return id;
+    }
+
+    function replaceToast(id: number, kind: ToastKind, title: string, detail?: string, duration = kind === "error" ? 5000 : 3000) {
+        setToasts((items) => items.map((item) => item.id === id ? { id, kind, title, detail } : item));
+        window.setTimeout(() => closeToast(id), duration);
+    }
+
     function choosePhoto(event: ChangeEvent<HTMLInputElement>) {
         const selected = event.target.files?.[0] ?? null;
-        setError(""); setMessage(""); setFile(null);
+        setFile(null);
         if (preview) URL.revokeObjectURL(preview);
         setPreview(null);
         if (!selected) return;
-        if (!allowedPhoto.includes(selected.type)) return setError("Format foto salah. Gunakan JPG, PNG, atau WebP.");
-        if (selected.size > maxPhoto) return setError("File terlalu besar. Ukuran foto maksimal 5 MB.");
+        if (!allowedPhoto.includes(selected.type)) return void showToast("warning", "⚠ Format foto tidak didukung", "Gunakan JPG, PNG, atau WebP.");
+        if (selected.size > maxPhoto) return void showToast("warning", "⚠ Foto terlalu besar", "Ukuran foto maksimal 5 MB.");
         setFile(selected);
         setPreview(URL.createObjectURL(selected));
+        showToast("info", "Foto siap disimpan", "Preview sudah tampil. Klik Simpan Perubahan.");
     }
 
     async function submitProfile(event: FormEvent) {
         event.preventDefault();
-        if (!telepon.trim() || telepon.trim().length < 8) return setError("Nomor WhatsApp / Telepon wajib diisi.");
-        if (!email.trim() || !email.includes("@")) return setError("Email wajib diisi dengan format yang benar.");
+        if (saving) return;
+        if (!telepon.trim() || telepon.trim().length < 8) return void showToast("warning", "⚠ Nomor WhatsApp tidak valid", "Periksa data Anda.");
+        if (!email.trim() || !email.includes("@")) return void showToast("warning", "⚠ Email tidak valid", "Periksa data Anda.");
+        const toastId = showToast("loading", "⏳ Menyimpan perubahan...");
         try {
-            setSaving(true); setError(""); setMessage("");
+            setSaving(true);
             let foto_url = profile?.foto_url ?? null;
+            const hadPhoto = Boolean(file);
             if (file) foto_url = (await uploadWargaProfilePhoto(file)).path;
             await updateWargaProfile({ nomor_whatsapp: telepon.trim(), nomor_hp: telepon.trim(), email: email.trim(), alamat: alamat.trim(), rt: rt.trim(), rw: rw.trim(), foto_url });
             await refresh();
-            setFile(null); setMessage("✓ Profil berhasil diperbarui.");
-        } catch (err) { setError(getErrorMessage(err, "Profil gagal diperbarui. Silakan coba lagi.")); } finally { setSaving(false); }
+            setFile(null);
+            replaceToast(toastId, "success", "✓ Profil berhasil diperbarui");
+            if (hadPhoto) showToast("success", "✓ Foto profil berhasil diperbarui");
+        } catch (err) {
+            console.error("Gagal menyimpan profil warga", err);
+            replaceToast(toastId, "error", file ? "✕ Perubahan gagal disimpan" : "✕ Perubahan gagal disimpan", file ? "Foto gagal diperbarui. Silakan coba lagi." : "Silakan coba lagi.");
+        } finally { setSaving(false); }
     }
 
     if (loading || !user) return <main className="min-h-screen bg-[#F7F9FC] p-10 font-black text-gov-950">Memuat profil...</main>;
     if (!profile) return <State title="Data belum dapat dimuat." onRetry={refresh} />;
 
-    return <main className="min-h-screen bg-[#F7F9FC] px-4 py-6 text-slate-800 sm:px-8 lg:px-16"><form onSubmit={submitProfile} className="mx-auto max-w-6xl space-y-5"><Header />{message ? <p className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-black text-emerald-700">{message}</p> : null}{error ? <p className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-black text-red-700">{error}</p> : null}<div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]"><ProfileCard profile={profile} avatar={avatar} file={file} saving={saving} onPhoto={choosePhoto} /><EditableData saving={saving} telepon={telepon} email={email} alamat={alamat} rt={rt} rw={rw} onTelepon={setTelepon} onEmail={setEmail} onAlamat={setAlamat} onRt={setRt} onRw={setRw} /></div><IdentityData profile={profile} onChangeClick={() => { setChangeOpen(true); setMessage(""); setError(""); }} /><Button type="submit" variant="gold" disabled={saving} className="min-h-[56px] w-full text-base shadow-[0_14px_35px_rgba(245,179,1,.24)]">{saving ? "Menyimpan perubahan..." : <><Save size={20} /> 💾 SIMPAN PERUBAHAN</>}</Button></form>{changeOpen ? <OfficialDataNoticeModal onCancel={() => setChangeOpen(false)} /> : null}</main>;
+    return <main className="min-h-screen bg-[#F7F9FC] px-4 py-6 text-slate-800 sm:px-8 lg:px-16"><ToastViewport items={toasts} onClose={closeToast} /><form onSubmit={submitProfile} className="mx-auto max-w-6xl space-y-5"><Header /><div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]"><ProfileCard profile={profile} avatar={avatar} file={file} saving={saving} onPhoto={choosePhoto} /><EditableData saving={saving} telepon={telepon} email={email} alamat={alamat} rt={rt} rw={rw} onTelepon={setTelepon} onEmail={setEmail} onAlamat={setAlamat} onRt={setRt} onRw={setRw} /></div><IdentityData profile={profile} onChangeClick={() => { setChangeOpen(true); showToast("info", "🔒 Data identitas terkunci", "Data ini telah diverifikasi petugas."); }} /><Button type="submit" variant="gold" disabled={saving} className="min-h-[56px] w-full text-base shadow-[0_14px_35px_rgba(245,179,1,.24)]">{saving ? "⏳ Menyimpan..." : <><Save size={20} /> 💾 Simpan Perubahan</>}</Button></form>{changeOpen ? <OfficialDataNoticeModal onCancel={() => setChangeOpen(false)} /> : null}</main>;
 }
+
+function ToastViewport({ items, onClose }: { items: ToastItem[]; onClose: (id: number) => void }) { return <div className="pointer-events-none fixed left-0 right-0 top-[max(0.75rem,env(safe-area-inset-top))] z-[80] flex flex-col gap-2 px-3 sm:left-auto sm:right-5 sm:top-5 sm:w-[360px] sm:px-0">{items.map((item) => <ToastCard key={item.id} item={item} onClose={() => onClose(item.id)} />)}</div>; }
+function ToastCard({ item, onClose }: { item: ToastItem; onClose: () => void }) { const tone = item.kind === "success" ? "border-emerald-200 text-emerald-700" : item.kind === "error" ? "border-red-200 text-red-700" : item.kind === "warning" ? "border-amber-200 text-amber-700" : item.kind === "loading" ? "border-sky-200 text-sky-700" : "border-sky-200 text-sky-700"; return <div className={`pointer-events-auto flex items-start gap-3 rounded-2xl border bg-white/95 p-4 shadow-[0_18px_45px_rgba(15,23,42,.16)] backdrop-blur transition-all duration-200 ${tone} ${item.closing ? "translate-y-[-8px] opacity-0" : "translate-y-0 opacity-100 animate-[toast-in_.22s_ease-out]"}`}><p className="min-w-0 flex-1 text-sm font-black leading-5 text-slate-800"><span className={tone}>{item.title}</span>{item.detail ? <span className="mt-1 block font-bold text-slate-500">{item.detail}</span> : null}</p><button type="button" onClick={onClose} aria-label="Tutup notifikasi" className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X size={16} /></button></div>; }
 
 function Header() { return <section className="rounded-[28px] bg-white p-6 shadow-soft ring-1 ring-slate-100"><div className="flex flex-wrap items-start justify-between gap-4"><div><h1 className="text-3xl font-black uppercase tracking-tight text-gov-950 sm:text-4xl">PROFIL WARGA</h1><p className="mt-2 max-w-2xl text-sm font-bold text-slate-600 sm:text-base">Kelola data profil Anda. Data ini digunakan otomatis untuk pengajuan layanan.</p></div><p className="rounded-full bg-emerald-100 px-4 py-2 text-sm font-black text-emerald-700">✓ Profil Terverifikasi</p></div></section>; }
 function ProfileCard({ profile, avatar, file, saving, onPhoto }: { profile: WargaProfile; avatar: string | null; file: File | null; saving: boolean; onPhoto: (e: ChangeEvent<HTMLInputElement>) => void }) { return <section className="rounded-[28px] border border-white bg-white p-6 text-center shadow-soft"><div className="mx-auto grid h-36 w-36 place-items-center overflow-hidden rounded-full bg-amber-100 text-amber-600 ring-4 ring-amber-50">{avatar ? <img src={avatar} alt="Foto profil" className="h-full w-full object-cover" onError={(event) => { event.currentTarget.style.display = "none"; }} /> : <UserRound size={68} />}</div><h2 className="mt-5 text-2xl font-black text-gov-950">{profile.nama_lengkap}</h2><p className="mt-1 text-sm font-bold text-slate-500">NIK: {mask(profile.nik)}</p><p className="mt-3 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-sm font-black text-emerald-700">✓ Data Profil Terverifikasi</p><label className="mx-auto mt-5 flex min-h-[48px] w-full cursor-pointer items-center justify-center gap-2 rounded-2xl bg-accent-400 px-5 py-3 text-sm font-black text-gov-950 shadow-soft hover:bg-accent-200 sm:w-auto"><Camera size={18} /> Ubah Foto<input type="file" accept="image/jpeg,image/png,image/webp" onChange={onPhoto} className="hidden" disabled={saving} /></label><p className="mt-3 text-xs font-bold text-slate-500">JPG / PNG / WebP, maksimal 5 MB. {file ? `Preview siap: ${file.name}` : "Preview tampil sebelum disimpan."}</p></section>; }
