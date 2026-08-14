@@ -6,6 +6,7 @@ import { normalizeWorkflowRole } from "@/services/verification-workflow";
 
 type AnyRow = Record<string, any>;
 function jsonError(message: string, status = 400) { return NextResponse.json({ ok: false, error: message }, { status }); }
+async function writeAudit(supabase: NonNullable<ReturnType<typeof createSupabaseAdminClient>>, payload: { pengajuan_id: string; status: string; catatan: string; created_at: string }) { const { error } = await supabase.from("audit_pengajuan").insert(payload); if (error) console.error("Audit draft surat gagal disimpan:", error.message); }
 function pickName(row: AnyRow) { return row.nama_pemohon ?? row.nama_lengkap ?? row.nama ?? "-"; }
 function pickLayanan(row: AnyRow) { const l = Array.isArray(row.layanan) ? row.layanan[0] : row.layanan; return l?.nama ?? row.jenis_surat ?? "Surat Keterangan"; }
 
@@ -67,7 +68,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const { data: doc, error: insertError } = await supabase.from("dokumen_pengajuan").insert({ pengajuan_id: id, nama_file: "surat-hasil-pelayanan.pdf", jenis: `Surat Hasil Pelayanan v${version}`, url_file: uploaded.path, status: "DRAFT", metadata: { version, active: true, generated_at: now, generated_by: session.profile.id } }).select("*").single();
     if (insertError) return jsonError(insertError.message, 500);
 
-    await supabase.from("audit_pengajuan").insert({ pengajuan_id: id, user_id: session.profile.id, nama_petugas: session.profile.nama_lengkap ?? session.profile.username, role: workflowRole, aksi: "DRAFT_CREATED", status: "DRAFT", catatan: `Draft surat hasil pelayanan versi ${version} dibuat otomatis.`, metadata: { dokumen_id: doc.id, version, file_path: uploaded.path }, created_at: now });
+    await writeAudit(supabase, { pengajuan_id: id, status: "DRAFT", catatan: `Draft surat hasil pelayanan versi ${version} dibuat otomatis.`, created_at: now });
     const { data: signed } = await supabase.storage.from("surat").createSignedUrl(uploaded.path, 60 * 10);
     return NextResponse.json({ ok: true, data: { ...doc, file_url: signed?.signedUrl ?? "", signed_url: signed?.signedUrl ?? "", version } });
 }

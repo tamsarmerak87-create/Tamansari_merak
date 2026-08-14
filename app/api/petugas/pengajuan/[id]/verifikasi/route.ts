@@ -5,6 +5,7 @@ import { createSupabaseAdminClient } from "@/services/supabase";
 import { normalizeWorkflowRole } from "@/services/verification-workflow";
 
 type StageRow = { id: string; pengajuan_id: string; tahap: number; nama_tahap: string; role_petugas: string; status: string };
+type AuditPayload = { pengajuan_id: string; status: string; catatan: string; created_at: string };
 
 const NEXT_STAGE_LABEL: Record<number, string> = { 1: "Petugas Lapangan", 2: "Kepala Seksi", 3: "Seklur", 4: "Lurah" };
 const CURRENT_STAGE_LABEL: Record<number, string> = { 1: "Staff Pelayanan", 2: "Petugas Lapangan", 3: "Kepala Seksi", 4: "Seklur", 5: "Lurah" };
@@ -12,6 +13,12 @@ const DRAFT_ROLE_STATUSES: Record<string, string> = { staff_pelayanan: "DRAFT_DI
 const REQUIRED_DRAFT_ROLES = ["staff_pelayanan", "petugas_lapangan", "kepala_seksi", "seklur"];
 
 function jsonError(message: string, status = 400) { return NextResponse.json({ ok: false, error: message }, { status }); }
+function publicSaveError() { return jsonError("Data belum dapat disimpan. Silakan coba lagi.", 500); }
+async function writeAudit(supabase: NonNullable<ReturnType<typeof createSupabaseAdminClient>>, payload: AuditPayload) {
+    const { error } = await supabase.from("audit_pengajuan").insert(payload);
+    if (error) console.error("Audit pengajuan gagal disimpan:", error.message);
+}
+function encodeInspection(pemeriksaan: unknown, fallback: string) { return JSON.stringify({ pemeriksaan: pemeriksaan ?? null, catatan: fallback }); }
 function trackingMessage(stage: StageRow) { return stage.tahap === 5 ? "Pengajuan telah divalidasi Lurah dan surat diterbitkan." : `Pengajuan telah diverifikasi ${CURRENT_STAGE_LABEL[stage.tahap] ?? stage.nama_tahap} dan diteruskan ke ${NEXT_STAGE_LABEL[stage.tahap] ?? "tahap berikutnya"}.`; }
 function safeNik(nik?: string | null) { const raw = String(nik ?? ""); return raw.length > 6 ? `${raw.slice(0, 4)}********${raw.slice(-4)}` : "-"; }
 function pickName(row: Record<string, any>) { return row.nama_pemohon ?? row.nama_lengkap ?? row.nama ?? "-"; }
@@ -68,7 +75,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         await supabase.from("verifikasi_pengajuan").update({ status: "Diproses" }).eq("pengajuan_id", id).eq("role_petugas", "staff_pelayanan");
         if (activeSurat) await supabase.from("dokumen_pengajuan").update({ status: "DIKEMBALIKAN", metadata: { ...(activeSurat.metadata ?? {}), active: false, returned_at: now, returned_by: petugasId, return_reason: catatan } }).eq("id", activeSurat.id);
         await supabase.from("tracking_pengajuan").insert({ pengajuan_id: id, status: body.action === "tolak" ? "Ditolak" : "Dikembalikan", keterangan: catatan, petugas: petugasName, created_at: now });
-        await supabase.from("audit_pengajuan").insert({ pengajuan_id: id, user_id: petugasId, nama_petugas: petugasName, role: workflowRole, tahap: `${activeStage.tahap} - ${activeStage.nama_tahap}`, aksi: body.action === "tolak" ? "TOLAK_SURAT" : "KEMBALIKAN_SURAT", status: body.action === "tolak" ? "Ditolak" : "Dikembalikan", status_sebelum: "Diproses", status_sesudah: body.action === "tolak" ? "Ditolak" : "Dikembalikan", catatan, metadata: { pemeriksaan: body?.pemeriksaan ?? null, dokumen_id: activeSurat?.id ?? null }, created_at: now });
+        await writeAudit(supabase, { pengajuan_id: id, status: body.action === "tolak" ? "Ditolak" : "Dikembalikan", catatan, created_at: now });
         return NextResponse.json({ ok: true });
     }
 
@@ -80,12 +87,14 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         const nextDraftStatus = workflowRole === "lurah" ? "SIGNED" : (workflowRole === "seklur" && draftOk({ draft_verification: draftVerification }) ? "SIAP_TTD" : DRAFT_ROLE_STATUSES[workflowRole] ?? activeSurat.status);
         if (workflowRole === "lurah" && !draftOk({ draft_verification: draftVerification })) return jsonError("Surat belum disetujui semua tahap sebelum TTD Lurah.", 409);
         await supabase.from("dokumen_pengajuan").update({ status: nextDraftStatus, metadata: { ...meta, draft_verification: draftVerification, status_updated_at: now } }).eq("id", activeSurat.id);
-        await supabase.from("audit_pengajuan").insert({ pengajuan_id: id, user_id: petugasId, nama_petugas: petugasName, role: workflowRole, tahap: `${activeStage.tahap} - ${activeStage.nama_tahap}`, aksi: workflowRole === "lurah" ? "DRAFT_SIGNED" : "DRAFT_VERIFIED", status: nextDraftStatus, catatan, metadata: { dokumen_id: activeSurat.id, pemeriksaan: body?.pemeriksaan ?? null, draft_verification: draftVerification }, created_at: now });
+        await writeAudit(supabase, { pengajuan_id: id, status: nextDraftStatus, catatan, created_at: now });
     }
 
     if (body?.action === "simpan") {
-        const { error: auditError } = await supabase.from("audit_pengajuan").insert({ pengajuan_id: id, user_id: petugasId, nama_petugas: petugasName, role: workflowRole, tahap: `${activeStage.tahap} - ${activeStage.nama_tahap}`, aksi: "SIMPAN_PEMERIKSAAN", status: "Draft", status_sebelum: "Diproses", status_sesudah: "Diproses", catatan, metadata: { pemeriksaan: body?.pemeriksaan ?? null, petugas_id: petugasId, petugas: petugasName, saved_at: now }, created_at: now });
-        if (auditError) return jsonError(auditError.message, 500);
+        const { error: checkError } = await supabase.from("verifikasi_pengajuan").update({ user_id: petugasId, petugas_id: petugasId, nama_petugas: petugasName, catatan, hasil_verifikasi: encodeInspection(body?.pemeriksaan, catatan), updated_at: now }).eq("id", activeStage.id).eq("status", "Diproses");
+        if (checkError) { console.error("Pemeriksaan gagal disimpan:", checkError.message); return publicSaveError(); }
+        await supabase.from("tracking_pengajuan").insert({ pengajuan_id: id, status: "Diproses", keterangan: "Pengajuan sudah diperiksa petugas pelayanan.", petugas: petugasName, created_at: now });
+        await writeAudit(supabase, { pengajuan_id: id, status: "Draft", catatan, created_at: now });
         return NextResponse.json({ ok: true, saved: true });
     }
 
@@ -97,11 +106,11 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         .eq("status", "Diproses")
         .select("*")
         .single();
-    if (updateStageError) return jsonError(updateStageError.message, 500);
+    if (updateStageError) { console.error("Workflow pemeriksaan gagal diperbarui:", updateStageError.message); return publicSaveError(); }
 
     if (nextStage) {
         const { error: nextError } = await supabase.from("verifikasi_pengajuan").update({ status: "Diproses" }).eq("id", nextStage.id).eq("status", "Menunggu");
-        if (nextError) return jsonError(nextError.message, 500);
+        if (nextError) { console.error("Tahap berikutnya gagal diaktifkan:", nextError.message); return publicSaveError(); }
     }
 
     let finalInfo: Record<string, string> = {};
@@ -120,13 +129,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         ? { status: "Selesai", selesai_at: now, selesai_by: petugasId, updated_at: now, ...finalInfo }
         : { status: "Diproses", diproses_at: now, diproses_by: petugasId, updated_at: now };
     const { data: updatedPengajuan, error: updatePengajuanError } = await supabase.from("pengajuan_surat").update(pengajuanUpdate).eq("id", id).select("*").single();
-    if (updatePengajuanError) return jsonError(updatePengajuanError.message, 500);
+    if (updatePengajuanError) { console.error("Status pengajuan gagal diperbarui:", updatePengajuanError.message); return publicSaveError(); }
 
     const { error: trackingError } = await supabase.from("tracking_pengajuan").insert({ pengajuan_id: id, status: activeStage.tahap === 5 ? "Selesai" : "Diproses", keterangan: trackingMessage(activeStage), petugas: petugasName, created_at: now });
-    if (trackingError) return jsonError(trackingError.message, 500);
+    if (trackingError) { console.error("Tracking pengajuan gagal disimpan:", trackingError.message); return publicSaveError(); }
 
-    const { error: auditError } = await supabase.from("audit_pengajuan").insert({ pengajuan_id: id, user_id: petugasId, nama_petugas: petugasName, role: workflowRole, tahap: `${activeStage.tahap} - ${activeStage.nama_tahap}`, aksi: "VERIFIKASI", status: "Disetujui", status_sebelum: "Diproses", status_sesudah: "Disetujui", catatan, metadata: { pemeriksaan: body?.pemeriksaan ?? null, petugas_id: petugasId, petugas: petugasName, verified_at: now }, created_at: now });
-    if (auditError) return jsonError(auditError.message, 500);
+    await writeAudit(supabase, { pengajuan_id: id, status: "Disetujui", catatan, created_at: now });
 
     return NextResponse.json({ ok: true, data: updatedPengajuan, verifikasi: updatedStage });
 }
