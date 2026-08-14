@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { site } from "@/constants/site";
 import { PortalChrome } from "@/components/layout/portal-chrome";
+import { ToastProvider } from "@/components/ui/toast-provider";
 
 export const metadata: Metadata = {
     title: `${site.name} | Portal Pelayanan Digital`,
@@ -18,7 +19,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <html lang="id" suppressHydrationWarning>
             <body className="font-sans antialiased">
                 <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-                <PortalChrome>{children}</PortalChrome>
+                <ToastProvider><PortalChrome>{children}</PortalChrome></ToastProvider>
             </body>
         </html>
     );
