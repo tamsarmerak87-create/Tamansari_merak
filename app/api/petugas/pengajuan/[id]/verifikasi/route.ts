@@ -13,10 +13,10 @@ const REQUIRED_DRAFT_ROLES = ["staff_pelayanan", "petugas_lapangan", "kepala_sek
 
 function jsonError(message: string, status = 400) { return NextResponse.json({ ok: false, error: message }, { status }); }
 function publicSaveError() { return jsonError("Data belum dapat disimpan. Silakan coba lagi.", 500); }
-function logError(error: unknown) { console.error("[VERIFIKASI_PENGAJUAN] ERROR", error); }
+function logError(error: unknown) { console.error("[VERIFIKASI] ERROR", error); }
 function logQueryError(operation: string, error: { message?: string; details?: string; hint?: string; code?: string } | null) {
     if (!error) return;
-    console.error(`[VERIFIKASI_PENGAJUAN] QUERY ERROR ${operation}`, { code: error.code, message: error.message, details: error.details, hint: error.hint });
+    console.error(`[VERIFIKASI] DATABASE ERROR ${operation}`, { code: error.code, message: error.message, details: error.details, hint: error.hint });
 }
 function encodeInspection(pemeriksaan: unknown, fallback: string) { return JSON.stringify({ pemeriksaan: pemeriksaan ?? null, catatan: fallback }); }
 function trackingMessage(stage: StageRow) { return stage.tahap === 5 ? "Pengajuan telah divalidasi Lurah dan surat diterbitkan." : `Pengajuan telah diverifikasi ${CURRENT_STAGE_LABEL[stage.tahap] ?? stage.nama_tahap} dan diteruskan ke ${NEXT_STAGE_LABEL[stage.tahap] ?? "tahap berikutnya"}.`; }
@@ -100,11 +100,11 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
 
         if (body?.action === "simpan") {
             const { error: checkError } = await supabase.from("verifikasi_pengajuan").update({ user_id: petugasId, petugas_id: petugasId, nama_petugas: petugasName, catatan, hasil_verifikasi: encodeInspection(body?.pemeriksaan, catatan), updated_at: now }).eq("id", activeStage.id).eq("status", "Diproses");
-            if (checkError) { logQueryError("SAVE CHECK", checkError); return publicSaveError(); }
+            if (checkError) { logQueryError("UPDATE verifikasi_pengajuan simpan pemeriksaan", checkError); return publicSaveError(); }
 
             // Pemeriksaan awal hanya menyimpan checklist agar tombol Buat Surat aktif; tracking/audit tidak boleh menggagalkan UX utama.
             const { error: trackingError } = await supabase.from("tracking_pengajuan").insert({ pengajuan_id: id, status: "Diproses", keterangan: "Data & Dokumen Diperiksa", created_at: now });
-            logQueryError("SAVE CHECK TRACKING", trackingError);
+            logQueryError("INSERT tracking_pengajuan simpan pemeriksaan", trackingError);
             return NextResponse.json({ ok: true, saved: true });
         }
 
@@ -144,7 +144,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
         if (updatePengajuanError) { logQueryError("UPDATE pengajuan_surat", updatePengajuanError); return publicSaveError(); }
 
         const { error: trackingError } = await supabase.from("tracking_pengajuan").insert({ pengajuan_id: id, status: activeStage.tahap === 5 ? "Selesai" : "Diproses", keterangan: trackingMessage(activeStage), created_at: now });
-        if (trackingError) { logQueryError("INSERT tracking_pengajuan", trackingError); return publicSaveError(); }
+        logQueryError("INSERT tracking_pengajuan lanjutkan tahap", trackingError);
 
         return NextResponse.json({ ok: true, data: updatedPengajuan, verifikasi: updatedStage });
     } catch (error) {
