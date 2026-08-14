@@ -166,6 +166,11 @@ function isRlsDenied(error: SupabaseLikeError) {
     return error.code === "42501" || message.includes("row-level security") || message.includes("permission denied");
 }
 
+function isMissingRelation(error: SupabaseLikeError) {
+    const message = error.message?.toLowerCase() ?? "";
+    return error.code === "PGRST205" || error.code === "42P01" || message.includes("could not find the table") || message.includes("does not exist");
+}
+
 async function getProfileForUser(user: User): Promise<WargaProfile | null> {
     const supabase = client();
     const byId = await supabase.from("warga_profiles").select(WARGA_PROFILE_COLUMNS).eq("id", user.id).maybeSingle<WargaProfile>();
@@ -298,7 +303,10 @@ export async function getWargaProfileChangeRequests() {
         .eq("user_id", user.id)
         .eq("profile_id", profile.id)
         .order("created_at", { ascending: false });
-    if (error) throw error;
+    if (error) {
+        if (isMissingRelation(error as SupabaseLikeError)) return [];
+        throw error;
+    }
     return (data ?? []) as WargaProfileChangeRequest[];
 }
 
@@ -336,7 +344,10 @@ export async function submitWargaProfileChangeRequest(input: { jenis_perubahan: 
     if (!payload.data_baru) throw new Error("Isi data yang benar.");
     if (!payload.alasan) throw new Error("Isi alasan perubahan.");
     const { data, error } = await client().from("warga_profile_change_requests").insert(payload).select(WARGA_PROFILE_CHANGE_COLUMNS).single();
-    if (error) throw error;
+    if (error) {
+        if (isMissingRelation(error as SupabaseLikeError)) throw new Error("Fitur perubahan data resmi belum aktif. Silakan hubungi petugas kelurahan.");
+        throw error;
+    }
     return data as WargaProfileChangeRequest;
 }
 
