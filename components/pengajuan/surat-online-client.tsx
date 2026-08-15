@@ -14,6 +14,7 @@ import {
     CloudUpload,
     Download,
     Eye,
+    FileArchive,
     FileCheck2,
     FileText,
     HelpCircle,
@@ -602,7 +603,28 @@ function ApplicantForm({ form, errors, serviceCatalog, update, setSelectedId }: 
 }
 
 function UploadDocs({ files, errors, setFile, clearFile }: { files: UploadState; errors: Record<string, string>; setFile: (key: FileKey, event: ChangeEvent<HTMLInputElement>, source?: "camera" | "file") => void; clearFile: () => void }) {
-    return <div><h2 className="text-2xl font-black text-gov-950">Dokumen Pendukung</h2><p className="mt-2 text-sm font-bold text-slate-600">Unggah hanya dokumen khusus yang diminta layanan. Format PDF/JPG/PNG, maksimal 1 MB per file.</p><div className="mt-5 rounded-[24px] border-2 border-dashed border-slate-200 bg-white p-5"><CloudUpload className="text-accent-500" size={34} /><div className="mt-4 flex flex-col gap-3 sm:flex-row"><label className="inline-flex min-h-12 cursor-pointer items-center justify-center rounded-2xl bg-gov-950 px-5 text-sm font-black text-white transition hover:bg-gov-800">📷 Ambil Foto<input type="file" accept="image/jpeg,image/png" capture="environment" className="sr-only" onChange={(e) => setFile("support", e, "camera")} /></label><label className="inline-flex min-h-12 cursor-pointer items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-black text-gov-950 transition hover:border-accent-400">📁 Pilih File<input type="file" accept="image/jpeg,image/png,application/pdf" className="sr-only" onChange={(e) => setFile("support", e, "file")} /></label></div>{files.support ? <div className="mt-4 rounded-2xl bg-gov-50 p-4 text-sm font-bold text-gov-950"><p className="truncate">✓ {files.support.name}</p><p className="mt-1 text-slate-600">✓ {formatFileSize(files.support.size)}</p><button type="button" onClick={clearFile} className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-black text-red-600 underline">Hapus/Ganti</button></div> : <p className="mt-4 rounded-xl bg-slate-50 px-3 py-2 text-sm font-bold text-slate-500">Belum ada dokumen pendukung dipilih.</p>}{errors.support ? <span className="mt-2 block text-xs font-bold text-red-600">{errors.support}</span> : null}</div></div>;
+    const supportFile = files.support;
+    const [previewUrl, setPreviewUrl] = useState("");
+
+    useEffect(() => {
+        if (!supportFile || !supportFile.type.startsWith("image/")) {
+            setPreviewUrl("");
+            return;
+        }
+
+        const objectUrl = URL.createObjectURL(supportFile);
+        setPreviewUrl(objectUrl);
+        return () => URL.revokeObjectURL(objectUrl);
+    }, [supportFile]);
+
+    function openPdfPreview() {
+        if (!supportFile) return;
+        const objectUrl = URL.createObjectURL(supportFile);
+        window.open(objectUrl, "_blank", "noopener,noreferrer");
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    }
+
+    return <div><h2 className="text-2xl font-black text-gov-950">Dokumen Pendukung</h2><p className="mt-2 text-sm font-bold text-slate-600">Unggah hanya dokumen khusus yang diminta layanan. Format PDF/JPG/PNG, maksimal 1 MB per file.</p><div className="mt-5 rounded-[24px] border-2 border-dashed border-slate-200 bg-white p-5"><CloudUpload className="text-accent-500" size={34} /><div className="mt-4 flex flex-col gap-3 sm:flex-row"><label className="inline-flex min-h-12 cursor-pointer items-center justify-center rounded-2xl bg-gov-950 px-5 text-sm font-black text-white transition hover:bg-gov-800">📷 Ambil Foto<input type="file" accept="image/jpeg,image/png" capture="environment" className="sr-only" onChange={(e) => setFile("support", e, "camera")} /></label><label className="inline-flex min-h-12 cursor-pointer items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-black text-gov-950 transition hover:border-accent-400">📁 Pilih File<input type="file" accept="image/jpeg,image/png,application/pdf" className="sr-only" onChange={(e) => setFile("support", e, "file")} /></label></div>{supportFile ? <div className="mt-4 flex flex-col gap-4 rounded-3xl border border-slate-200 bg-gov-50 p-4 text-sm font-bold text-gov-950 sm:flex-row sm:items-center"><div className="grid h-[100px] w-[140px] shrink-0 place-items-center overflow-hidden rounded-2xl border border-white bg-white shadow-sm">{previewUrl ? <img src={previewUrl} alt={`Preview ${supportFile.name}`} className="h-full w-full object-cover" /> : <div className="flex h-full w-full flex-col items-center justify-center bg-red-50 text-red-600"><FileArchive size={34} /><span className="mt-1 text-xs font-black">PDF</span></div>}</div><div className="min-w-0 flex-1"><p className="truncate">✓ {supportFile.name}</p><p className="mt-1 text-slate-600">✓ {formatFileSize(supportFile.size)}</p><div className="mt-3 flex flex-wrap gap-2">{supportFile.type === "application/pdf" ? <button type="button" onClick={openPdfPreview} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-gov-950 underline">Lihat PDF</button> : null}<button type="button" onClick={clearFile} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-red-600 underline">Hapus/Ganti</button></div></div></div> : <p className="mt-4 rounded-xl bg-slate-50 px-3 py-2 text-sm font-bold text-slate-500">Belum ada dokumen pendukung dipilih.</p>}{errors.support ? <span className="mt-2 block text-xs font-bold text-red-600">{errors.support}</span> : null}</div></div>;
 }
 
 function Review({ form, service, files }: { form: FormState; service: string; files: UploadState }) {
