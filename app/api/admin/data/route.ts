@@ -37,12 +37,12 @@ export async function GET(request: NextRequest) {
                 .order("nama", { ascending: true }),
             supabase
                 .from("warga_profiles")
-                .select("id,nama_lengkap,nik,email,created_at,status_verifikasi,alasan_penolakan")
+                .select("id,nama_lengkap,nik,email,nomor_hp,nomor_whatsapp,nomor_kk,tempat_lahir,tanggal_lahir,jenis_kelamin,alamat,rt,rw,kelurahan,kecamatan,role,created_at,status_verifikasi,alasan_penolakan")
                 .eq("status_verifikasi", "Belum Terverifikasi")
                 .order("created_at", { ascending: true }),
             supabase
                 .from("warga_profiles")
-                .select("id,nama_lengkap,nik,email,created_at,status_verifikasi,alasan_penolakan")
+                .select("id,nama_lengkap,nik,email,nomor_hp,nomor_whatsapp,nomor_kk,tempat_lahir,tanggal_lahir,jenis_kelamin,alamat,rt,rw,kelurahan,kecamatan,role,created_at,status_verifikasi,alasan_penolakan")
                 .order("created_at", { ascending: false }),
         ]);
 

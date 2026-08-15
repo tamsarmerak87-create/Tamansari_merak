@@ -22,6 +22,7 @@ import {
   LogOut,
   Menu,
   Newspaper,
+  Pencil,
   Printer,
   QrCode,
   Scale,
@@ -52,6 +53,17 @@ type PendingWarga = {
   created_at?: string | null;
   status_verifikasi?: string | null;
   alasan_penolakan?: string | null;
+  nomor_hp?: string | null;
+  nomor_whatsapp?: string | null;
+  nomor_kk?: string | null;
+  tempat_lahir?: string | null;
+  tanggal_lahir?: string | null;
+  jenis_kelamin?: string | null;
+  alamat?: string | null;
+  rt?: string | null;
+  rw?: string | null;
+  kelurahan?: string | null;
+  kecamatan?: string | null;
 };
 const statuses = [
   "Menunggu Verifikasi",
@@ -478,6 +490,42 @@ export function AdminShell({
       setToast({ type: "error", text: error instanceof Error ? error.message : "Gagal memverifikasi warga" });
     }
   };
+  const saveWargaProfile = async (row: PendingWarga, values: Partial<PendingWarga>) => {
+    try {
+      setToast({ type: "loading", text: "Menyimpan perubahan warga..." });
+      const res = await fetch("/api/admin/verifikasi", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ wargaId: row.id, ...values }),
+      });
+      const json = await res.json().catch(() => null) as { ok?: boolean; error?: string; data?: PendingWarga[] } | null;
+      if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Gagal menyimpan data warga");
+      const updated = json.data?.[0] ?? { ...row, ...values };
+      setPendingWarga((prev) => prev.map((item) => item.id === row.id ? { ...item, ...updated } : item));
+      setWargaProfiles((prev) => prev.map((item) => item.id === row.id ? { ...item, ...updated } : item));
+      setToast({ type: "success", text: "Data warga berhasil diperbarui." });
+      await load();
+    } catch (error) {
+      setToast({ type: "error", text: error instanceof Error ? error.message : "Gagal menyimpan data warga" });
+    }
+  };
+  const deleteWargaProfile = async (row: PendingWarga) => {
+    const confirmed = window.confirm("Hapus data warga ini?\nData akun/profil warga akan dihapus permanen.");
+    if (!confirmed) return;
+    try {
+      setToast({ type: "loading", text: "Menghapus data warga..." });
+      const res = await fetch(`/api/admin/verifikasi?id=${encodeURIComponent(row.id)}`, { method: "DELETE", credentials: "include" });
+      const json = await res.json().catch(() => null) as { ok?: boolean; error?: string; softDeleted?: boolean } | null;
+      if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Gagal menghapus data warga");
+      setPendingWarga((prev) => prev.filter((item) => item.id !== row.id));
+      setWargaProfiles((prev) => json.softDeleted ? prev.map((item) => item.id === row.id ? { ...item, status_verifikasi: "Nonaktif" } : item) : prev.filter((item) => item.id !== row.id));
+      setToast({ type: "success", text: json.softDeleted ? "Warga memiliki histori pengajuan, akun dinonaktifkan." : "Data warga berhasil dihapus." });
+      await load();
+    } catch (error) {
+      setToast({ type: "error", text: error instanceof Error ? error.message : "Gagal menghapus data warga" });
+    }
+  };
   const rejectWarga = async (row: PendingWarga) => {
     const reason = window.prompt(`Masukkan alasan penolakan untuk ${row.nama_lengkap ?? "warga"}:`);
     if (!reason?.trim()) return;
@@ -677,7 +725,7 @@ export function AdminShell({
               <h2 className="mt-3 text-2xl font-black">Antrean Verifikasi Akun Warga</h2>
               <p className="mt-2 text-sm font-bold text-white/70">Data diambil dari public.warga_profiles dengan status_verifikasi &quot;Belum Terverifikasi&quot;. Aksi verifikasi akan mengubah status menjadi Terverifikasi dan memicu realtime di halaman warga.</p>
             </div>
-            <WargaVerificationTable rows={pendingWarga} onVerify={verifyWarga} onReject={rejectWarga} />
+            <WargaVerificationTable rows={pendingWarga} onVerify={verifyWarga} onReject={rejectWarga} onEdit={saveWargaProfile} onDelete={deleteWargaProfile} />
           </Panel>
         ) : view === "pengajuan" ? (
           <Panel title="Pengajuan Surat">
@@ -1390,6 +1438,9 @@ function Layanan({
   setToast: (t: Toast) => void;
 }) {
   const [name, setName] = useState("");
+  const [editing, setEditing] = useState<Row | null>(null);
+  const [form, setForm] = useState<Row>({});
+  const serviceFields = [["nama", "Nama layanan"], ["deskripsi", "Deskripsi"], ["output", "Output"], ["alur", "Estimasi/Alur"], ["persyaratan", "Persyaratan/Dokumen"], ["kanal", "Kanal"]];
   const save = async () => {
     try {
       const response = await fetch("/api/admin/layanan", {
@@ -1405,6 +1456,52 @@ function Layanan({
       reload();
     } catch (error) {
       setToast({ type: "error", text: error instanceof Error ? error.message : "Layanan gagal tersimpan" });
+    }
+  };
+  const openEdit = (service: Row) => {
+    setEditing(service);
+    setForm({ ...service, persyaratan: Array.isArray(service.persyaratan) ? service.persyaratan.join("\n") : (service.persyaratan ?? "") });
+  };
+  const updateService = async () => {
+    if (!editing) return;
+    try {
+      setToast({ type: "loading", text: "Menyimpan layanan..." });
+      const response = await fetch("/api/admin/layanan", { method: "PUT", headers: { "content-type": "application/json" }, credentials: "include", body: JSON.stringify({ ...form, id: editing.id }) });
+      const result = await response.json().catch(() => null) as { ok?: boolean; error?: string } | null;
+      if (!response.ok || !result?.ok) throw new Error(result?.error ?? "Layanan gagal diperbarui");
+      setToast({ type: "success", text: "Layanan berhasil diperbarui." });
+      setEditing(null);
+      reload();
+    } catch (error) {
+      setToast({ type: "error", text: error instanceof Error ? error.message : "Layanan gagal diperbarui" });
+    }
+  };
+  const toggleServiceStatus = async (service: Row) => {
+    const nextActive = service.aktif === false;
+    const confirmed = window.confirm(nextActive ? "Aktifkan kembali layanan ini?\nLayanan akan tersedia kembali untuk pengajuan baru." : "Nonaktifkan layanan ini?\nLayanan tidak akan tersedia untuk pengajuan baru, tetapi histori pengajuan tetap aman.");
+    if (!confirmed) return;
+    try {
+      setToast({ type: "loading", text: nextActive ? "Mengaktifkan layanan..." : "Menonaktifkan layanan..." });
+      const response = await fetch("/api/admin/layanan", { method: "PUT", headers: { "content-type": "application/json" }, credentials: "include", body: JSON.stringify({ ...service, aktif: nextActive }) });
+      const result = await response.json().catch(() => null) as { ok?: boolean; error?: string } | null;
+      if (!response.ok || !result?.ok) throw new Error(result?.error ?? "Status layanan gagal diperbarui");
+      setToast({ type: "success", text: nextActive ? "Layanan berhasil diaktifkan." : "Layanan berhasil dinonaktifkan." });
+      reload();
+    } catch (error) {
+      setToast({ type: "error", text: error instanceof Error ? error.message : "Status layanan gagal diperbarui" });
+    }
+  };
+  const deleteService = async (service: Row) => {
+    if (!window.confirm(`Hapus layanan ${service.nama ?? "ini"}?\n\nJika layanan sudah dipakai pengajuan, layanan akan dinonaktifkan agar histori tetap aman.`)) return;
+    try {
+      setToast({ type: "loading", text: "Menghapus layanan..." });
+      const response = await fetch(`/api/admin/layanan?id=${encodeURIComponent(String(service.id))}`, { method: "DELETE", credentials: "include" });
+      const result = await response.json().catch(() => null) as { ok?: boolean; error?: string; softDeleted?: boolean } | null;
+      if (!response.ok || !result?.ok) throw new Error(result?.error ?? "Layanan gagal dihapus");
+      setToast({ type: "success", text: result.softDeleted ? "Layanan masih dipakai pengajuan, status dinonaktifkan." : "Layanan berhasil dihapus." });
+      reload();
+    } catch (error) {
+      setToast({ type: "error", text: error instanceof Error ? error.message : "Layanan gagal dihapus" });
     }
   };
   return (
@@ -1423,13 +1520,15 @@ function Layanan({
           Tambah
         </button>
       </div>
-      {services.map((s) => (
-        <RowLine
-          key={s.id}
-          a={s.nama}
-          b={s.aktif === false ? "Nonaktif" : "Aktif"}
-        />
-      ))}
+      <div className="space-y-3">
+        {services.map((s) => (
+          <div key={s.id} className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><b className="text-gov-950">{s.nama}</b><span className={cn("w-fit rounded-full px-3 py-1 text-xs font-black ring-1", s.aktif === false ? "bg-slate-200 text-slate-700 ring-slate-300" : "bg-emerald-100 text-emerald-800 ring-emerald-200")}>{s.aktif === false ? "Nonaktif" : "Aktif"}</span></div>
+            <div className="flex flex-wrap gap-2"><button onClick={() => openEdit(s)} className="inline-flex items-center gap-1 rounded-xl bg-gov-950 px-3 py-2 font-black text-white"><Pencil size={14} /> Edit</button><button onClick={() => toggleServiceStatus(s)} className={cn("inline-flex items-center gap-1 rounded-xl px-3 py-2 font-black text-white", s.aktif === false ? "bg-emerald-600 hover:bg-emerald-700" : "bg-slate-700 hover:bg-slate-800")}>{s.aktif === false ? <CheckCircle2 size={14} /> : <XCircle size={14} />} {s.aktif === false ? "Aktifkan" : "Nonaktifkan"}</button><button onClick={() => deleteService(s)} className="inline-flex items-center gap-1 rounded-xl bg-red-600 px-3 py-2 font-black text-white"><Trash2 size={14} /> Hapus</button></div>
+          </div>
+        ))}
+      </div>
+      {editing && <div className="fixed inset-0 z-50 grid place-items-center bg-gov-950/60 p-4 backdrop-blur-sm"><div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-[2rem] bg-white p-6 shadow-2xl"><div className="mb-5 flex items-start justify-between gap-4"><div><h3 className="text-2xl font-black text-gov-950">Edit Layanan</h3><p className="text-sm font-bold text-slate-500">ID layanan dipertahankan. Jika masih dipakai pengajuan, hapus akan menonaktifkan.</p></div><button onClick={() => setEditing(null)} className="rounded-full bg-slate-100 p-2"><X size={18} /></button></div><div className="grid gap-3 md:grid-cols-2">{serviceFields.map(([key, label]) => <label key={key} className={key === "persyaratan" || key === "deskripsi" ? "md:col-span-2" : ""}><span className="text-xs font-black uppercase tracking-widest text-slate-500">{label}</span>{key === "persyaratan" || key === "deskripsi" ? <textarea value={String(form[key] ?? "")} onChange={(e) => setForm((prev) => ({ ...prev, [key]: e.target.value }))} className="mt-1 min-h-24 w-full rounded-2xl bg-slate-50 p-3 font-bold outline-none ring-accent-300 focus:ring-2" /> : <input value={String(form[key] ?? "")} onChange={(e) => setForm((prev) => ({ ...prev, [key]: e.target.value }))} className="mt-1 w-full rounded-2xl bg-slate-50 p-3 font-bold outline-none ring-accent-300 focus:ring-2" />}</label>)}<label><span className="text-xs font-black uppercase tracking-widest text-slate-500">Status</span><select value={form.aktif === false ? "false" : "true"} onChange={(e) => setForm((prev) => ({ ...prev, aktif: e.target.value === "true" }))} className="mt-1 w-full rounded-2xl bg-slate-50 p-3 font-bold outline-none ring-accent-300 focus:ring-2"><option value="true">Aktif</option><option value="false">Nonaktif</option></select></label></div><div className="mt-6 flex flex-wrap justify-end gap-2"><button onClick={() => setEditing(null)} className="rounded-2xl bg-slate-100 px-5 py-3 font-black text-slate-700">Batal</button><button onClick={updateService} className="rounded-2xl bg-gov-950 px-5 py-3 font-black text-white">Simpan</button></div></div></div>}
     </Panel>
   );
 }
@@ -1478,58 +1577,101 @@ function WargaVerificationTable({
   rows,
   onVerify,
   onReject,
+  onEdit,
+  onDelete,
 }: {
   rows: PendingWarga[];
   onVerify: (row: PendingWarga) => void;
   onReject: (row: PendingWarga) => void;
+  onEdit: (row: PendingWarga, values: Partial<PendingWarga>) => void;
+  onDelete: (row: PendingWarga) => void;
 }) {
+  const [editing, setEditing] = useState<PendingWarga | null>(null);
+  const [form, setForm] = useState<Partial<PendingWarga>>({});
+  const fields: [keyof PendingWarga, string][] = [["nama_lengkap", "Nama lengkap"], ["nik", "NIK"], ["email", "Email"], ["nomor_hp", "Nomor HP"], ["nomor_kk", "Nomor KK"], ["tempat_lahir", "Tempat lahir"], ["tanggal_lahir", "Tanggal lahir"], ["jenis_kelamin", "Jenis kelamin"], ["alamat", "Alamat"], ["rt", "RT"], ["rw", "RW"]];
+  const openEdit = (row: PendingWarga) => {
+    setEditing(row);
+    setForm(Object.fromEntries(fields.map(([key]) => [key, String((row[key] ?? (key === "nomor_hp" ? row.nomor_whatsapp : "")) ?? "")])) as Partial<PendingWarga>);
+  };
+  const submit = () => {
+    if (!editing) return;
+    onEdit(editing, form);
+    setEditing(null);
+  };
   return (
-    <div className="overflow-x-auto rounded-[1.5rem] border border-slate-100">
-      <table className="min-w-full text-sm">
-        <thead className="bg-slate-50 text-left text-xs font-black uppercase tracking-[.14em] text-slate-500">
-          <tr>
-            <th className="px-4 py-4">Nama</th>
-            <th className="px-4 py-4">NIK</th>
-            <th className="px-4 py-4">Email</th>
-            <th className="px-4 py-4">Tanggal Daftar</th>
-            <th className="px-4 py-4">Status</th>
-            <th className="px-4 py-4">Aksi</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.id} className="border-t border-slate-100 align-top">
-              <td className="px-4 py-4 font-black text-gov-950">{row.nama_lengkap ?? "-"}</td>
-              <td className="px-4 py-4 font-bold text-slate-700">{row.nik ?? "-"}</td>
-              <td className="px-4 py-4 font-bold text-slate-700">{row.email ?? "-"}</td>
-              <td className="px-4 py-4 font-bold text-slate-700">{row.created_at ? new Date(row.created_at).toLocaleDateString("id-ID") : "-"}</td>
-              <td className="px-4 py-4">
-                <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-800">
-                  {row.status_verifikasi ?? "Belum Terverifikasi"}
-                </span>
-              </td>
-              <td className="px-4 py-4">
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={() => onVerify(row)} className="rounded-xl bg-emerald-600 px-4 py-2 font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-emerald-700">
-                    Verifikasi
-                  </button>
-                  <button onClick={() => onReject(row)} className="rounded-xl bg-red-600 px-4 py-2 font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-red-700">
-                    Tolak
-                  </button>
-                </div>
-              </td>
+    <>
+      <div className="overflow-x-auto rounded-[1.5rem] border border-slate-100">
+        <table className="min-w-full text-sm">
+          <thead className="bg-slate-50 text-left text-xs font-black uppercase tracking-[.14em] text-slate-500">
+            <tr>
+              <th className="px-4 py-4">Nama</th>
+              <th className="px-4 py-4">NIK</th>
+              <th className="px-4 py-4">Email</th>
+              <th className="px-4 py-4">Tanggal Daftar</th>
+              <th className="px-4 py-4">Status</th>
+              <th className="px-4 py-4">Aksi</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      {rows.length === 0 && (
-        <div className="p-10 text-center">
-          <ShieldCheck className="mx-auto size-10 text-emerald-500" />
-          <p className="mt-3 text-lg font-black text-gov-950">Tidak ada antrean verifikasi.</p>
-          <p className="mt-1 font-bold text-slate-500">Semua warga yang masuk antrean sudah diproses.</p>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id} className="border-t border-slate-100 align-top">
+                <td className="px-4 py-4 font-black text-gov-950">{row.nama_lengkap ?? "-"}</td>
+                <td className="px-4 py-4 font-bold text-slate-700">{row.nik ?? "-"}</td>
+                <td className="px-4 py-4 font-bold text-slate-700">{row.email ?? "-"}</td>
+                <td className="px-4 py-4 font-bold text-slate-700">{row.created_at ? new Date(row.created_at).toLocaleDateString("id-ID") : "-"}</td>
+                <td className="px-4 py-4">
+                  <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-800">
+                    {row.status_verifikasi ?? "Belum Terverifikasi"}
+                  </span>
+                </td>
+                <td className="px-4 py-4">
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => openEdit(row)} className="inline-flex items-center gap-1 rounded-xl bg-gov-950 px-3 py-2 font-black text-white shadow-sm transition hover:-translate-y-0.5">
+                      <Pencil size={14} /> Detail / Edit
+                    </button>
+                    <button onClick={() => onVerify(row)} className="rounded-xl bg-emerald-600 px-4 py-2 font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-emerald-700">
+                      Verifikasi
+                    </button>
+                    <button onClick={() => onReject(row)} className="rounded-xl bg-red-600 px-4 py-2 font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-red-700">
+                      Tolak
+                    </button>
+                    <button onClick={() => onDelete(row)} className="inline-flex items-center gap-1 rounded-xl bg-slate-900 px-3 py-2 font-black text-white shadow-sm transition hover:-translate-y-0.5">
+                      <Trash2 size={14} /> Hapus
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {rows.length === 0 && (
+          <div className="p-10 text-center">
+            <ShieldCheck className="mx-auto size-10 text-emerald-500" />
+            <p className="mt-3 text-lg font-black text-gov-950">Tidak ada antrean verifikasi.</p>
+            <p className="mt-1 font-bold text-slate-500">Semua warga yang masuk antrean sudah diproses.</p>
+          </div>
+        )}
+      </div>
+      {editing && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-gov-950/60 p-4 backdrop-blur-sm">
+          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-[2rem] bg-white p-6 shadow-2xl">
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div><h3 className="text-2xl font-black text-gov-950">Detail / Edit Warga</h3><p className="text-sm font-bold text-slate-500">ID warga dipertahankan. Password tidak diubah.</p></div>
+              <button onClick={() => setEditing(null)} className="rounded-full bg-slate-100 p-2"><X size={18} /></button>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              {fields.map(([key, label]) => (
+                <label key={key} className={key === "alamat" ? "md:col-span-2" : ""}>
+                  <span className="text-xs font-black uppercase tracking-widest text-slate-500">{label}</span>
+                  <input value={String(form[key] ?? "")} onChange={(e) => setForm((prev) => ({ ...prev, [key]: e.target.value }))} className="mt-1 w-full rounded-2xl bg-slate-50 p-3 font-bold outline-none ring-accent-300 focus:ring-2" />
+                </label>
+              ))}
+            </div>
+            <div className="mt-6 flex flex-wrap justify-end gap-2"><button onClick={() => setEditing(null)} className="rounded-2xl bg-slate-100 px-5 py-3 font-black text-slate-700">Batal</button><button onClick={submit} className="rounded-2xl bg-gov-950 px-5 py-3 font-black text-white">Simpan</button></div>
+          </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 function Placeholder({ title, text }: { title: string; text: string }) {

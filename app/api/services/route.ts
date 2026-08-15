@@ -18,6 +18,7 @@ export async function GET() {
             kanal,
             created_at
         `)
+        .eq("aktif", true)
         .order("nama", { ascending: true });
 
     return NextResponse.json({

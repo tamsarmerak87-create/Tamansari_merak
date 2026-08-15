@@ -5,9 +5,35 @@ import { createSupabaseAdminClient } from "@/services/supabase";
 type VerificationRequestBody = {
     wargaId?: string;
     id?: string;
+    nama_lengkap?: string;
+    nik?: string;
+    email?: string;
+    nomor_hp?: string | null;
+    nomor_whatsapp?: string | null;
+    nomor_kk?: string | null;
+    tempat_lahir?: string | null;
+    tanggal_lahir?: string | null;
+    jenis_kelamin?: string | null;
+    alamat?: string | null;
+    rt?: string | null;
+    rw?: string | null;
+    kelurahan?: string | null;
+    kecamatan?: string | null;
     status_verifikasi?: "Belum Terverifikasi" | "Terverifikasi" | "Ditolak";
     alasan_penolakan?: string | null;
 };
+
+const WARGA_SELECT = "id,nama_lengkap,nik,email,nomor_hp,nomor_whatsapp,nomor_kk,tempat_lahir,tanggal_lahir,jenis_kelamin,alamat,rt,rw,kelurahan,kecamatan,status_verifikasi,alasan_penolakan,created_at";
+
+function jsonError(message: string, status = 400) {
+    return NextResponse.json({ ok: false, error: message }, { status });
+}
+
+function textValue(value: unknown) {
+    if (value === undefined) return undefined;
+    const trimmed = String(value ?? "").trim();
+    return trimmed || null;
+}
 
 export async function PATCH(request: NextRequest) {
     try {
@@ -69,5 +95,75 @@ export async function PATCH(request: NextRequest) {
             { ok: false, error: error instanceof Error ? error.message : "Gagal memperbarui verifikasi warga." },
             { status: 500 },
         );
+    }
+}
+
+export async function PUT(request: NextRequest) {
+    try {
+        const session = await getAdminSession(request, { cookie: "admin" });
+        if (session.error || !session.profile) return jsonError("Sesi admin/petugas tidak valid.", 401);
+        if (requireAdmin(session.profile)) return jsonError("Hanya admin yang dapat mengubah data warga.", 403);
+
+        const body = (await request.json()) as VerificationRequestBody;
+        const wargaId = body.wargaId ?? body.id;
+        if (!wargaId) return jsonError("ID warga wajib diisi.");
+        if (!body.nama_lengkap?.trim()) return jsonError("Nama lengkap wajib diisi.");
+        if (!body.nik?.trim()) return jsonError("NIK wajib diisi.");
+        if (!body.email?.trim()) return jsonError("Email wajib diisi.");
+
+        const supabase = createSupabaseAdminClient();
+        const { data: current, error: currentError } = await supabase.from("warga_profiles").select("id,role").eq("id", wargaId).maybeSingle();
+        if (currentError) return jsonError(currentError.message, 500);
+        if (!current) return jsonError("Data warga tidak ditemukan.", 404);
+        if (current.role && current.role !== "warga") return jsonError("Data petugas/admin tidak boleh diubah dari modul warga.", 403);
+
+        const updatePayload: Record<string, string | null> = {
+            nama_lengkap: body.nama_lengkap.trim(),
+            nik: body.nik.trim(),
+            email: body.email.trim(),
+        };
+        for (const key of ["nomor_hp", "nomor_whatsapp", "nomor_kk", "tempat_lahir", "tanggal_lahir", "jenis_kelamin", "alamat", "rt", "rw", "kelurahan", "kecamatan"] as const) {
+            const value = textValue(body[key]);
+            if (value !== undefined) updatePayload[key] = value;
+        }
+
+        const { data, error } = await supabase.from("warga_profiles").update(updatePayload).eq("id", wargaId).select(WARGA_SELECT).single();
+        if (error) return jsonError(error.message, 500);
+        return NextResponse.json({ ok: true, data });
+    } catch (error) {
+        console.error("[api/admin/verifikasi:PUT]", error);
+        return jsonError(error instanceof Error ? error.message : "Gagal mengubah data warga.", 500);
+    }
+}
+
+export async function DELETE(request: NextRequest) {
+    try {
+        const session = await getAdminSession(request, { cookie: "admin" });
+        if (session.error || !session.profile) return jsonError("Sesi admin/petugas tidak valid.", 401);
+        if (requireAdmin(session.profile)) return jsonError("Hanya admin yang dapat menghapus data warga.", 403);
+
+        const id = new URL(request.url).searchParams.get("id");
+        if (!id) return jsonError("ID warga wajib diisi.");
+
+        const supabase = createSupabaseAdminClient();
+        const { data: warga, error: wargaError } = await supabase.from("warga_profiles").select("id,nik,role").eq("id", id).maybeSingle();
+        if (wargaError) return jsonError(wargaError.message, 500);
+        if (!warga) return jsonError("Data warga tidak ditemukan.", 404);
+        if (warga.role && warga.role !== "warga") return jsonError("Data petugas/admin tidak boleh dihapus dari modul warga.", 403);
+
+        const { count, error: countError } = await supabase.from("pengajuan_surat").select("id", { count: "exact", head: true }).eq("nik", warga.nik);
+        if (countError) return jsonError(countError.message, 500);
+        if ((count ?? 0) > 0) {
+            const { data, error } = await supabase.from("warga_profiles").update({ status_verifikasi: "Ditolak", alasan_penolakan: "Akun dinonaktifkan admin karena memiliki histori pengajuan surat." }).eq("id", id).select(WARGA_SELECT).single();
+            if (error) return jsonError(error.message, 500);
+            return NextResponse.json({ ok: true, softDeleted: true, data });
+        }
+
+        const { error } = await supabase.from("warga_profiles").delete().eq("id", id);
+        if (error) return jsonError(error.message, 500);
+        return NextResponse.json({ ok: true, deleted: true });
+    } catch (error) {
+        console.error("[api/admin/verifikasi:DELETE]", error);
+        return jsonError(error instanceof Error ? error.message : "Gagal menghapus data warga.", 500);
     }
 }
