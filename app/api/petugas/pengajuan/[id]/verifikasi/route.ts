@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getAdminSession, isPetugas } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
 import { ROLE_STAGE_STATUS, STAGE_WAITING_STATUS, VERIFICATION_STAGES, getActiveStage, isFinalSubmissionStatus, normalizeSubmissionStatus, normalizeWorkflowRole } from "@/services/verification-workflow";
+import { createWargaNotification } from "@/services/warga-notifikasi.service";
 
 type RouteContext = { params: Promise<{ id: string }> };
 type SupabaseError = { message?: string; details?: string; hint?: string; code?: string };
@@ -91,7 +92,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
         const { data: pengajuan, error: pengajuanError } = await supabase
             .from("pengajuan_surat")
-            .select("id,status,workflow_status")
+            .select("id,nik,status,workflow_status")
             .eq("id", pengajuanId)
             .maybeSingle();
         if (pengajuanError) {
@@ -220,6 +221,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
             logSupabaseError("insert audit_pengajuan", auditError);
             throw auditError;
         }
+
+        await createWargaNotification({ pengajuanId, nik: String(pengajuan.nik ?? ""), status: nextStage ? "verified" : "completed", catatan }).catch((notificationError) => {
+            console.error("WARGA NOTIFICATION INSERT ERROR", notificationError);
+        });
 
         console.log("[VERIFIKASI PETUGAS] SUCCESS", { pengajuanId, stage: activeStage.tahap, nextStatus: nextWorkflowStatus });
         return NextResponse.json({ ok: true, data: updatedPengajuan });

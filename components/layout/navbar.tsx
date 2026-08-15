@@ -108,12 +108,17 @@ export function Navbar() {
         const loadNotifications = () => void getMyNotifikasi().then(setNotifications).catch(() => setNotifications([]));
         loadNotifications();
         window.addEventListener("focus", loadNotifications);
-        return () => window.removeEventListener("focus", loadNotifications);
+        window.addEventListener("warga-notifikasi-updated", loadNotifications);
+        return () => {
+            window.removeEventListener("focus", loadNotifications);
+            window.removeEventListener("warga-notifikasi-updated", loadNotifications);
+        };
     }, [user]);
 
     const openNotification = async (note: WargaNotification) => {
         await markNotificationRead(note.id).catch(() => undefined);
         setNotifications((current) => current.map((item) => item.id === note.id ? { ...item, read: true } : item));
+        window.dispatchEvent(new Event("warga-notifikasi-updated"));
         setNotificationOpen(false);
         if (note.pengajuan_id) router.push(`/dashboard/pengajuan/${note.pengajuan_id}`);
     };
@@ -288,6 +293,7 @@ export function Navbar() {
         </header>
     );
 }
+
 
 
 

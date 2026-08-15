@@ -25,7 +25,8 @@ function jsonError(message: string, status = 400) {
 function groupBy<T extends AnyRow>(rows: T[], key: keyof T): Map<string, T[]> { const map = new Map<string, T[]>(); for (const row of rows) { const value = String(row[key] ?? ""); if (!map.has(value)) map.set(value, []); map.get(value)?.push(row); } return map; }
 function activeStatusFromStages(stages: AnyRow[] = []) { return stages.find((stage) => stage.status === "Diproses")?.nama_tahap ?? (stages.every((stage) => stage.status === "Disetujui") ? "Selesai" : "Menunggu"); }
 function canAccessSubmission(stages: AnyRow[] = [], role: string, userId: string) {
-    return stages.some((stage) => stage.role_petugas === role || stage.petugas_id === userId || stage.user_id === userId);
+    if (role === "lurah") return true;
+    return stages.some((stage) => stage.petugas_id === userId || stage.user_id === userId);
 }
 
 function logDetailDebug(message: string, data: AnyRow) {

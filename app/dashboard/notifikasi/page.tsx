@@ -35,12 +35,14 @@ export default function NotifikasiPage() {
     async function openNote(note: WargaNotification) {
         await markNotificationRead(note.id).catch(() => undefined);
         setNotes((current) => current.map((item) => item.id === note.id ? { ...item, read: true } : item));
+        window.dispatchEvent(new Event("warga-notifikasi-updated"));
         if (note.pengajuan_id) router.push(`/dashboard/pengajuan/${note.pengajuan_id}`);
     }
 
     async function markAll() {
         await markAllNotificationsRead().catch(() => undefined);
         setNotes((current) => current.map((item) => ({ ...item, read: true })));
+        window.dispatchEvent(new Event("warga-notifikasi-updated"));
     }
 
     if (loading || !user) return <main className="min-h-screen bg-[#F7F9FC] p-10 font-black text-gov-950">Memuat notifikasi...</main>;
