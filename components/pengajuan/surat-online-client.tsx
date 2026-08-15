@@ -379,11 +379,9 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
                     physical_proof_generated_at: form.physicalProofGeneratedAt || new Date().toISOString(),
                     materai_status: "NOT_CONFIGURED",
                 };
-                console.log("=== POST PENGAJUAN ===");
-                console.log(
-                    "=== AKAN POST KE API ===",
-                    JSON.stringify(submitPayload, null, 2)
-                );
+                console.log("=== AKAN SUBMIT PENGAJUAN ===");
+                console.log("POST /api/surat-online/pengajuan");
+                console.log("PAYLOAD:", submitPayload);
                 const response = await fetch("/api/surat-online/pengajuan", {
                     method: "POST",
                     headers: {
@@ -391,11 +389,11 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
                     },
                     body: JSON.stringify(submitPayload),
                 });
-                const result = await response.json().catch(() => null);
-                console.log("=== RESPONSE SUBMIT ===", {
-                    status: response.status,
-                    result,
-                });
+                const result = await response.json();
+
+                console.log("=== HASIL SUBMIT ===");
+                console.log("STATUS:", response.status);
+                console.log("RESULT:", result);
                 if (!response.ok || !result?.ok) throw new Error(typeof result?.error === "string" ? result.error : result?.error?.message ?? "Gagal mengirim pengajuan.");
                 uploadedPaths.length = 0;
                 setTicket((result.data as SubmissionResult).nomor_pengajuan);
