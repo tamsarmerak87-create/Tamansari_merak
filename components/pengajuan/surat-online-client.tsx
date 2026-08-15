@@ -83,6 +83,7 @@ const steps = ["Data Pemohon", "Data Pengajuan", "Dokumen Pendukung", "Review", 
 const timeline = ["Permohonan Diterima", "Verifikasi", "Diproses", "Ditandatangani", "Selesai"];
 const statusList = ["Menunggu", "Diproses", "Verifikasi", "Ditolak", "Selesai"];
 const allowedTypes = ["application/pdf", "image/jpeg", "image/png"];
+const MAX_SUPPORT_FILE_SIZE = 1024 * 1024;
 
 type FormState = ReturnType<typeof createEmptyForm>;
 type FileKey = "support";
@@ -139,6 +140,45 @@ function Field({ label, error, children }: { label: string; error?: string; chil
             {error ? <span className="mt-2 flex items-center gap-1 text-xs font-bold text-red-600"><XCircle size={14} />{error}</span> : null}
         </label>
     );
+}
+
+function formatFileSize(size: number) {
+    return size >= 1024 * 1024 ? `${(size / 1024 / 1024).toFixed(2)} MB` : `${Math.max(1, Math.round(size / 1024))} KB`;
+}
+
+function canvasToBlob(canvas: HTMLCanvasElement, quality: number) {
+    return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+}
+
+async function compressCameraImage(file: File) {
+    if (!file.type.startsWith("image/") || file.size <= MAX_SUPPORT_FILE_SIZE) return file;
+
+    const image = new window.Image();
+    const objectUrl = URL.createObjectURL(file);
+    await new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve();
+        image.onerror = () => reject(new Error("Gagal membaca foto."));
+        image.src = objectUrl;
+    });
+    URL.revokeObjectURL(objectUrl);
+
+    let width = image.naturalWidth;
+    let height = image.naturalHeight;
+    let quality = 0.82;
+
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(width));
+        canvas.height = Math.max(1, Math.round(height));
+        canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height);
+        const blob = await canvasToBlob(canvas, quality);
+        if (blob && blob.size <= MAX_SUPPORT_FILE_SIZE) return new File([blob], file.name.replace(/\.[^.]+$/, ".jpg"), { type: "image/jpeg", lastModified: Date.now() });
+        width *= 0.82;
+        height *= 0.82;
+        quality = Math.max(0.45, quality - 0.08);
+    }
+
+    throw new Error("Ukuran file maksimal 1 MB.");
 }
 
 export default function SuratOnlineClient({ services, initialServiceId = "", formOnly = false }: { services: PublicService[]; initialServiceId?: string; formOnly?: boolean }) {
@@ -200,9 +240,23 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
         });
     }, [initialServiceId, serviceCatalog]);
 
-    function setFile(key: FileKey, event: ChangeEvent<HTMLInputElement>) {
-        setFiles((prev) => ({ ...prev, [key]: event.target.files?.[0] ?? null }));
+    async function setFile(key: FileKey, event: ChangeEvent<HTMLInputElement>, source: "camera" | "file" = "file") {
+        const input = event.target;
+        const selectedFile = input.files?.[0] ?? null;
         setErrors((prev) => ({ ...prev, [key]: "" }));
+        if (!selectedFile) {
+            setFiles((prev) => ({ ...prev, [key]: null }));
+            return;
+        }
+        try {
+            const nextFile = source === "camera" ? await compressCameraImage(selectedFile) : selectedFile;
+            if (nextFile.size > MAX_SUPPORT_FILE_SIZE) throw new Error("Ukuran file maksimal 1 MB.");
+            setFiles((prev) => ({ ...prev, [key]: nextFile }));
+        } catch (error) {
+            setFiles((prev) => ({ ...prev, [key]: null }));
+            setErrors((prev) => ({ ...prev, [key]: error instanceof Error ? error.message : "Ukuran file maksimal 1 MB." }));
+            input.value = "";
+        }
     }
 
     function validate(): ValidationResult {
@@ -272,9 +326,9 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
             console.log("[SUBMIT BLOCKED] format dokumen pendukung tidak valid", { type: support.type });
             next.support = "Format harus PDF, JPG, atau PNG";
             missingFields.push("Dokumen pendukung (format PDF/JPG/PNG)");
-        } else if (support && support.size > 1024 * 1024) {
+        } else if (support && support.size > MAX_SUPPORT_FILE_SIZE) {
             console.log("[SUBMIT BLOCKED] ukuran dokumen pendukung terlalu besar", { size: support.size });
-            next.support = "Ukuran maksimal 1MB";
+            next.support = "Ukuran file maksimal 1 MB.";
             missingFields.push("Dokumen pendukung (maksimal 1MB)");
         }
         if (!form.consent) {
@@ -527,7 +581,7 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
 
             {!formOnly ? <section id="layanan" className="px-5 py-14 sm:px-10 lg:px-20"><div className="mx-auto max-w-[1440px]"><div className="max-w-3xl"><span className="font-black uppercase tracking-[.2em] text-accent-600">Pilih pelayanan</span><h2 className="mt-3 font-display text-4xl font-black text-gov-950 md:text-5xl">Satu portal untuk seluruh pengajuan warga.</h2></div><div className="mt-8 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">{serviceCatalog.map((item, i) => <motion.button key={item.id} type="button" onClick={() => pickService(item.id)} initial={{ opacity: 0, y: 18 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: Math.min(i * 0.02, 0.25) }} whileHover={{ scale: 1.03 }} className={cn("min-h-[280px] rounded-[24px] border bg-white p-5 text-left shadow-soft transition focus:outline-none focus:ring-4 focus:ring-accent-200", selectedId === item.id ? "border-accent-400" : "border-white")}><div className="grid size-12 place-items-center rounded-2xl bg-gov-950 text-white"><FileText size={22} /></div><h3 className="mt-5 text-xl font-black text-gov-950">{item.title}</h3><p className="mt-3 line-clamp-3 leading-7 text-slate-650">{item.description}</p><p className="mt-4 inline-flex items-center gap-2 rounded-full bg-accent-100 px-3 py-1 text-sm font-black text-gov-950"><Clock size={15} />{item.estimate}</p><span className="mt-5 flex min-h-11 items-center justify-center rounded-2xl bg-gov-950 px-4 text-sm font-black text-white">Ajukan</span></motion.button>)}</div></div></section> : null}
 
-            <section id="form-pengajuan" className={cn("px-5 sm:px-10 lg:px-20", formOnly ? "py-10 pt-28 lg:py-14 lg:pt-32" : "py-14")}><div className={cn("mx-auto grid gap-6", formOnly ? "max-w-5xl" : "max-w-[1440px] lg:grid-cols-[1fr_360px]")}>{formOnly ? <div className="text-center"><span className="font-black uppercase tracking-[.2em] text-accent-600">Pengajuan Layanan</span><h1 className="mt-3 font-display text-3xl font-black text-gov-950 md:text-5xl">{selectedService?.title ?? "Layanan"}</h1></div> : null}<GlassCard className="rounded-[24px] bg-white/90"><Stepper />{submitted ? <Success ticket={ticket} data={successData} service={successData?.jenis_surat ?? selectedService?.title ?? "-"} estimate={selectedService?.estimate ?? "-"} /> : <form onSubmit={submit} className="mt-8 space-y-8"><ApplicantForm form={form} errors={errors} serviceCatalog={serviceCatalog} update={update} setSelectedId={setSelectedId} /><UploadDocs files={files} errors={errors} setFile={setFile} /><Review form={form} service={selectedService?.title ?? "-"} files={files} /><AgreementCard form={form} service={selectedService?.title ?? "-"} files={files} errors={errors} update={update} /><Button type="submit" variant="gold" disabled={isSubmitting} onClick={() => { console.log("=== TOMBOL AJUKAN PERMOHONAN DIKLIK ==="); alert("Tombol submit terpanggil"); }}>{isSubmitting ? "Mengajukan..." : "Ajukan Permohonan"} <Send size={18} /></Button></form>}</GlassCard>{!formOnly ? <InfoSidebar /> : null}</div></section>
+            <section id="form-pengajuan" className={cn("px-5 sm:px-10 lg:px-20", formOnly ? "py-10 pt-28 lg:py-14 lg:pt-32" : "py-14")}><div className={cn("mx-auto grid gap-6", formOnly ? "max-w-5xl" : "max-w-[1440px] lg:grid-cols-[1fr_360px]")}>{formOnly ? <div className="text-center"><span className="font-black uppercase tracking-[.2em] text-accent-600">Pengajuan Layanan</span><h1 className="mt-3 font-display text-3xl font-black text-gov-950 md:text-5xl">{selectedService?.title ?? "Layanan"}</h1></div> : null}<GlassCard className="rounded-[24px] bg-white/90"><Stepper />{submitted ? <Success ticket={ticket} data={successData} service={successData?.jenis_surat ?? selectedService?.title ?? "-"} estimate={selectedService?.estimate ?? "-"} /> : <form onSubmit={submit} className="mt-8 space-y-8"><ApplicantForm form={form} errors={errors} serviceCatalog={serviceCatalog} update={update} setSelectedId={setSelectedId} /><UploadDocs files={files} errors={errors} setFile={setFile} clearFile={() => setFiles((prev) => ({ ...prev, support: null }))} /><Review form={form} service={selectedService?.title ?? "-"} files={files} /><AgreementCard form={form} service={selectedService?.title ?? "-"} files={files} errors={errors} update={update} /><Button type="submit" variant="gold" disabled={isSubmitting} onClick={() => { console.log("=== TOMBOL AJUKAN PERMOHONAN DIKLIK ==="); alert("Tombol submit terpanggil"); }}>{isSubmitting ? "Mengajukan..." : "Ajukan Permohonan"} <Send size={18} /></Button></form>}</GlassCard>{!formOnly ? <InfoSidebar /> : null}</div></section>
 
             {!formOnly ? <section id="cek-status" className="px-5 py-16 sm:px-10 lg:px-20"><div className="mx-auto grid max-w-[1440px] gap-6 lg:grid-cols-2"><GlassCard className="rounded-[24px] bg-white/90"><span className="font-black uppercase tracking-[.2em] text-accent-600">Cek Status Permohonan</span><h2 className="mt-3 text-3xl font-black text-gov-950">Pantau progres dengan nomor tiket atau NIK.</h2><div className="mt-6 flex flex-col gap-3 sm:flex-row"><input className={cn(inputClass, "flex-1")} placeholder="Contoh: TMS-2026-123456 atau NIK" value={statusQuery} onChange={(e) => setStatusQuery(e.target.value)} /><Button type="button" onClick={checkStatus} disabled={statusLoading}><Search size={18} />{statusLoading ? "Memuat..." : "Cek Status"}</Button></div>{statusChecked ? <StatusResult results={statusResults} loading={statusLoading} error={statusError} /> : <div className="mt-6 rounded-[24px] border border-dashed border-slate-200 p-6 text-center text-sm font-bold text-slate-500">Empty state: masukkan nomor tiket atau NIK untuk melihat progres permohonan.</div>}</GlassCard><GlassCard className="rounded-[24px] bg-white/90"><h3 className="text-2xl font-black text-gov-950">Status yang tersedia</h3><div className="mt-5 grid gap-3 sm:grid-cols-2">{statusList.map((item) => <div key={item} className="rounded-2xl bg-gov-50 p-4 font-black text-gov-950">{item}</div>)}</div><div className="mt-6 rounded-2xl bg-red-50 p-4 text-sm font-bold text-red-700">Error state: nomor tiket tidak ditemukan akan tampil di area ini.</div><div className="mt-3 animate-pulse rounded-2xl bg-slate-100 p-4 text-sm font-bold text-slate-500">Loading skeleton: digunakan saat sistem mengambil data status.</div></GlassCard></div></section> : null}
         </main>
@@ -547,8 +601,8 @@ function ApplicantForm({ form, errors, serviceCatalog, update, setSelectedId }: 
     return <div><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-2xl font-black text-gov-950">Data Pemohon</h2><span className="mt-2 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-700">✓ Data dari Profil Terverifikasi</span></div><Link href="/dashboard/profil" className="text-sm font-black text-gov-950 underline">Ubah di Profil</Link></div><div className="mt-5 grid gap-4 md:grid-cols-2">{identity.map(([label, value]) => <ReadOnlyInfo key={label} label={label} value={value} />)}</div><div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-800"><p className="font-black">Dokumen Identitas</p><p className="mt-2">✓ KTP - Terverifikasi</p><p>✓ Kartu Keluarga - Terverifikasi</p><p className="mt-2">Dokumen identitas diambil dari Profil Akun Warga dan tidak perlu diunggah kembali.</p></div><div className="mt-8"><h2 className="text-2xl font-black text-gov-950">Data Pengajuan</h2><div className="mt-5 grid gap-4 md:grid-cols-2"><Field label="Pilih Pelayanan" error={errors.serviceId}><select className={inputClass} value={form.serviceId} onChange={(e) => { update("serviceId", e.target.value); setSelectedId(e.target.value); }}>{serviceCatalog.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></Field><Field label="Keperluan" error={errors.purpose}><textarea className={cn(inputClass, "min-h-28 py-3")} value={form.purpose} onChange={(e) => update("purpose", e.target.value)} /></Field><Field label="Keterangan"><textarea className={cn(inputClass, "min-h-28 py-3")} value={form.note} onChange={(e) => update("note", e.target.value)} /></Field></div></div></div>;
 }
 
-function UploadDocs({ files, errors, setFile }: { files: UploadState; errors: Record<string, string>; setFile: (key: FileKey, event: ChangeEvent<HTMLInputElement>) => void }) {
-    return <div><h2 className="text-2xl font-black text-gov-950">Dokumen Pendukung</h2><p className="mt-2 text-sm font-bold text-slate-600">Unggah hanya dokumen khusus yang diminta layanan. Format PDF/JPG/PNG, maksimal 1 MB per file.</p><div className="mt-5 grid gap-4 md:grid-cols-2"><label className="block rounded-[24px] border-2 border-dashed border-slate-200 bg-white p-5 text-center transition hover:border-accent-400 focus-within:ring-4 focus-within:ring-accent-200"><CloudUpload className="mx-auto text-accent-500" size={34} /><span className="mt-3 block font-black text-gov-950">+ Upload Dokumen</span><span className="mt-1 block text-xs font-bold text-slate-500">PDF, JPG, PNG maks. 1MB</span><input type="file" accept=".pdf,.jpg,.jpeg,.png" className="sr-only" onChange={(e) => setFile("support", e)} />{files.support ? <span className="mt-4 block truncate rounded-xl bg-gov-50 px-3 py-2 text-sm font-bold text-gov-950">{files.support.name}</span> : <span className="mt-4 block rounded-xl bg-slate-50 px-3 py-2 text-sm font-bold text-slate-500">Klik untuk upload dokumen pendukung</span>}{files.support ? <span className="mt-3 block h-2 overflow-hidden rounded-full bg-slate-100"><span className="block h-full w-full bg-emerald-500" /></span> : null}{errors.support ? <span className="mt-2 block text-xs font-bold text-red-600">{errors.support}</span> : null}</label></div></div>;
+function UploadDocs({ files, errors, setFile, clearFile }: { files: UploadState; errors: Record<string, string>; setFile: (key: FileKey, event: ChangeEvent<HTMLInputElement>, source?: "camera" | "file") => void; clearFile: () => void }) {
+    return <div><h2 className="text-2xl font-black text-gov-950">Dokumen Pendukung</h2><p className="mt-2 text-sm font-bold text-slate-600">Unggah hanya dokumen khusus yang diminta layanan. Format PDF/JPG/PNG, maksimal 1 MB per file.</p><div className="mt-5 rounded-[24px] border-2 border-dashed border-slate-200 bg-white p-5"><CloudUpload className="text-accent-500" size={34} /><div className="mt-4 flex flex-col gap-3 sm:flex-row"><label className="inline-flex min-h-12 cursor-pointer items-center justify-center rounded-2xl bg-gov-950 px-5 text-sm font-black text-white transition hover:bg-gov-800">📷 Ambil Foto<input type="file" accept="image/jpeg,image/png" capture="environment" className="sr-only" onChange={(e) => setFile("support", e, "camera")} /></label><label className="inline-flex min-h-12 cursor-pointer items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-black text-gov-950 transition hover:border-accent-400">📁 Pilih File<input type="file" accept="image/jpeg,image/png,application/pdf" className="sr-only" onChange={(e) => setFile("support", e, "file")} /></label></div>{files.support ? <div className="mt-4 rounded-2xl bg-gov-50 p-4 text-sm font-bold text-gov-950"><p className="truncate">✓ {files.support.name}</p><p className="mt-1 text-slate-600">✓ {formatFileSize(files.support.size)}</p><button type="button" onClick={clearFile} className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-black text-red-600 underline">Hapus/Ganti</button></div> : <p className="mt-4 rounded-xl bg-slate-50 px-3 py-2 text-sm font-bold text-slate-500">Belum ada dokumen pendukung dipilih.</p>}{errors.support ? <span className="mt-2 block text-xs font-bold text-red-600">{errors.support}</span> : null}</div></div>;
 }
 
 function Review({ form, service, files }: { form: FormState; service: string; files: UploadState }) {
