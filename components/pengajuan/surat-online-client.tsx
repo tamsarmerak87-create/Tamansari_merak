@@ -615,30 +615,31 @@ function ApplicantForm({ form, errors, serviceCatalog, update, setSelectedId }: 
 
 function UploadDocs({ files, errors, setFile, removeFile }: { files: UploadState; errors: Record<string, string>; setFile: (key: FileKey, event: ChangeEvent<HTMLInputElement>, source?: "camera" | "file") => void; removeFile: (index: number) => void }) {
     const supportFiles = files.support;
-    const supportFile = supportFiles[0] ?? null;
-    const [previewUrl, setPreviewUrl] = useState("");
+    const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
 
     useEffect(() => {
-        if (!supportFile || !supportFile.type.startsWith("image/")) {
-            setPreviewUrl("");
-            return;
-        }
+        const urls: Record<string, string> = {};
 
-        const objectUrl = URL.createObjectURL(supportFile);
-        setPreviewUrl(objectUrl);
-        return () => URL.revokeObjectURL(objectUrl);
-    }, [supportFile]);
+        supportFiles.forEach((file, index) => {
+            if (file.type === "image/jpeg" || file.type === "image/png") {
+                urls[`${file.name}-${file.lastModified}-${index}`] = URL.createObjectURL(file);
+            }
+        });
 
-    function openPdfPreview() {
-        if (!supportFile) return;
-        const objectUrl = URL.createObjectURL(supportFile);
+        setPreviewUrls(urls);
+        return () => {
+            Object.values(urls).forEach((url) => URL.revokeObjectURL(url));
+        };
+    }, [supportFiles]);
+
+    function openPdfPreview(file: File) {
+        const objectUrl = URL.createObjectURL(file);
         window.open(objectUrl, "_blank", "noopener,noreferrer");
-        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
     }
 
-    return <div><h2 className="text-2xl font-black text-gov-950">Dokumen Pendukung</h2><p className="mt-2 text-sm font-bold text-slate-600">Unggah hanya dokumen khusus yang diminta layanan. Format PDF/JPG/PNG, maksimal 1 MB per file.</p><div className="mt-5 rounded-[24px] border-2 border-dashed border-slate-200 bg-white p-5"><CloudUpload className="text-accent-500" size={34} /><div className="mt-4 flex flex-col gap-3 sm:flex-row"><label className="inline-flex min-h-12 cursor-pointer items-center justify-center rounded-2xl bg-gov-950 px-5 text-sm font-black text-white transition hover:bg-gov-800">📷 Ambil Foto<input type="file" accept="image/jpeg,image/png" capture="environment" className="sr-only" onChange={(e) => setFile("support", e, "camera")} /></label><label className="inline-flex min-h-12 cursor-pointer items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-black text-gov-950 transition hover:border-accent-400">📁 Pilih File<input type="file" accept="image/jpeg,image/png,application/pdf" className="sr-only" onChange={(e) => setFile("support", e, "file")} /></label></div>{supportFile ? <div className="mt-4 flex flex-col gap-4 rounded-3xl border border-slate-200 bg-gov-50 p-4 text-sm font-bold text-gov-950 sm:flex-row sm:items-center"><div className="grid h-[100px] w-[140px] shrink-0 place-items-center overflow-hidden rounded-2xl border border-white bg-white shadow-sm">{previewUrl ? <img src={previewUrl} alt={`Preview ${supportFile.name}`} className="h-full w-full object-cover" /> : <div className="flex h-full w-full flex-col items-center justify-center bg-red-50 text-red-600"><FileArchive size={34} /><span className="mt-1 text-xs font-black">PDF</span></div>}</div><div className="min-w-0 flex-1"><p className="truncate">✓ {supportFile.name}</p><p className="mt-1 text-slate-600">✓ {formatFileSize(supportFile.size)}</p><div className="mt-3 flex flex-wrap gap-2">{supportFile.type === "application/pdf" ? <button type="button" onClick={openPdfPreview} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-gov-950 underline">Lihat PDF</button> : null}<button type="button" onClick={() => removeFile(0)} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-red-600 underline">Hapus/Ganti</button></div></div></div> : <p className="mt-4 rounded-xl bg-slate-50 px-3 py-2 text-sm font-bold text-slate-500">Belum ada dokumen pendukung dipilih.</p>}{errors.support ? <span className="mt-2 block text-xs font-bold text-red-600">{errors.support}</span> : null}</div></div>;
+    return <div><h2 className="text-2xl font-black text-gov-950">Dokumen Pendukung</h2><p className="mt-2 text-sm font-bold text-slate-600">Unggah hanya dokumen khusus yang diminta layanan. Format PDF/JPG/PNG, maksimal 1 MB per file.</p><div className="mt-5 rounded-[24px] border-2 border-dashed border-slate-200 bg-white p-5"><CloudUpload className="text-accent-500" size={34} /><div className="mt-4 flex flex-col gap-3 sm:flex-row"><label className="inline-flex min-h-12 cursor-pointer items-center justify-center rounded-2xl bg-gov-950 px-5 text-sm font-black text-white transition hover:bg-gov-800">📷 Ambil Foto<input type="file" accept="image/jpeg,image/png" capture="environment" className="sr-only" onChange={(e) => setFile("support", e, "camera")} /></label><label className="inline-flex min-h-12 cursor-pointer items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-black text-gov-950 transition hover:border-accent-400">📁 Pilih File<input type="file" accept="image/jpeg,image/png,application/pdf" className="sr-only" onChange={(e) => setFile("support", e, "file")} /></label></div>{supportFiles.length ? <div className="mt-4 grid gap-3 lg:grid-cols-2">{supportFiles.map((file, index) => { const previewKey = `${file.name}-${file.lastModified}-${index}`; const previewUrl = previewUrls[previewKey]; const isPdf = file.type === "application/pdf"; return <div key={previewKey} className="flex min-h-[105px] gap-3 rounded-2xl border border-slate-200 bg-gov-50 p-3 text-sm font-bold text-gov-950 shadow-sm"><div className="h-[75px] w-[100px] shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white">{previewUrl ? <img src={previewUrl} alt={`Preview ${file.name}`} className="h-full w-full object-cover" /> : <div className="flex h-full w-full flex-col items-center justify-center bg-red-50 text-red-600"><FileArchive size={28} /><span className="mt-1 text-[10px] font-black">PDF</span></div>}</div><div className="flex min-w-0 flex-1 flex-col justify-center"><p className="flex items-center gap-2 truncate"><span className="grid size-5 shrink-0 place-items-center rounded-full bg-emerald-100 text-emerald-700"><Check size={13} /></span><span className="truncate">{file.name}</span></p><p className="mt-1 text-xs font-black text-slate-500">{formatFileSize(file.size)}</p><div className="mt-2 flex flex-wrap gap-2">{isPdf ? <button type="button" onClick={() => openPdfPreview(file)} className="rounded-xl bg-white px-3 py-1.5 text-xs font-black text-gov-950 underline shadow-sm">Lihat PDF</button> : null}<button type="button" onClick={() => removeFile(index)} className="rounded-xl bg-white px-3 py-1.5 text-xs font-black text-red-600 underline shadow-sm">Hapus/Ganti</button></div></div></div>; })}</div> : <p className="mt-4 rounded-xl bg-slate-50 px-3 py-2 text-sm font-bold text-slate-500">Belum ada dokumen pendukung dipilih.</p>}{errors.support ? <span className="mt-2 block text-xs font-bold text-red-600">{errors.support}</span> : null}</div></div>;
 }
-
 function Review({ form, service, files }: { form: FormState; service: string; files: UploadState }) {
     return <div className="rounded-[24px] bg-gov-50 p-5"><h2 className="text-2xl font-black text-gov-950">Review Pengajuan</h2><p className="mt-2 text-sm font-black text-emerald-700">✓ Diambil dari Profil Terverifikasi</p><div className="mt-4 grid gap-2 text-sm md:grid-cols-2"><p><b>Nama:</b> {form.name || "-"}</p><p><b>NIK:</b> {form.nik || "-"}</p><p><b>Alamat:</b> {form.address || "-"}</p><p><b>Jenis layanan:</b> {service}</p><p><b>Keperluan:</b> {form.purpose || "-"}</p><p><b>Dokumen pendukung:</b> {files.support.length ? files.support.map((file) => file.name).join(", ") : "Tidak ada"}</p></div><p className="mt-4 rounded-2xl bg-white p-4 text-sm font-bold text-slate-700">Data identitas pemohon otomatis menggunakan data Profil Akun Warga yang telah diverifikasi oleh petugas.</p></div>;
 }
