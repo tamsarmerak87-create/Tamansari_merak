@@ -6,6 +6,8 @@ type ServiceConfig = {
     token?: string;
 };
 
+export const PUBLIC_APP_URL = "https://tamansari-merak.vercel.app";
+
 function normalizeUrl(url?: string) {
     return url?.trim().replace(/\/$/, "");
 }
@@ -31,13 +33,7 @@ async function postJson(url: string, body: Json, headers: HeadersInit = {}) {
 }
 
 export function getAppBaseUrl() {
-    if (typeof window !== "undefined") return normalizeUrl(window.location.origin) ?? "https://tamansari-merak.vercel.app";
-
-    const siteUrl = normalizeUrl(process.env.NEXT_PUBLIC_SITE_URL);
-    const vercelUrl = normalizeUrl(process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined);
-    const isLocalSiteUrl = siteUrl ? /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(siteUrl) : false;
-
-    return (process.env.NODE_ENV === "production" && isLocalSiteUrl ? undefined : siteUrl) ?? vercelUrl ?? "https://tamansari-merak.vercel.app";
+    return PUBLIC_APP_URL;
 }
 
 export async function forwardToN8n(flow: string, payload: Json) {

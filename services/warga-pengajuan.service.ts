@@ -113,6 +113,17 @@ type WargaPengajuanDetailApiResponse = {
     error?: string;
 };
 
+type WargaNotificationRow = {
+    id: string;
+    title?: string | null;
+    message?: string | null;
+    catatan?: string | null;
+    type?: WargaNotification["type"] | null;
+    read?: boolean | null;
+    created_at?: string | null;
+    pengajuan_id?: string | null;
+};
+
 function client() {
     const supabase = createSupabaseBrowserClient();
     if (!supabase) throw new Error("Supabase env belum dikonfigurasi.");
@@ -274,19 +285,41 @@ export function buildTrackingNotifications(items: WargaPengajuan[]) {
 }
 
 export async function getMyNotifikasi(pengajuan?: WargaPengajuan[]) {
-    return buildTrackingNotifications(pengajuan ?? []);
+    void pengajuan;
+    const { user } = await getCurrentWargaProfile();
+    if (!user) throw new Error("Silakan login terlebih dahulu.");
+    const { data, error } = await client().from("warga_notifikasi").select("id,title,message,catatan,type,read,created_at,pengajuan_id").eq("warga_id", user.id).order("created_at", { ascending: false });
+    if (error) throw error;
+    return ((data ?? []) as WargaNotificationRow[]).map((item) => ({
+        id: item.id,
+        title: item.title || "Notifikasi",
+        message: item.catatan ? `${item.message ?? ""}\nCatatan: ${item.catatan}` : item.message || "-",
+        type: item.type ?? "pengajuan",
+        read: Boolean(item.read),
+        created_at: item.created_at,
+        pengajuan_id: item.pengajuan_id,
+    }));
 }
 
 export async function markNotificationRead(id: string) {
-    void id;
+    const { user } = await getCurrentWargaProfile();
+    if (!user) throw new Error("Silakan login terlebih dahulu.");
+    const { error } = await client().from("warga_notifikasi").update({ read: true }).eq("id", id).eq("warga_id", user.id);
+    if (error) throw error;
 }
 
 export async function markAllNotificationsRead() {
-    return;
+    const { user } = await getCurrentWargaProfile();
+    if (!user) throw new Error("Silakan login terlebih dahulu.");
+    const { error } = await client().from("warga_notifikasi").update({ read: true }).eq("warga_id", user.id).eq("read", false);
+    if (error) throw error;
 }
 
 export async function deleteNotification(id: string) {
-    void id;
+    const { user } = await getCurrentWargaProfile();
+    if (!user) throw new Error("Silakan login terlebih dahulu.");
+    const { error } = await client().from("warga_notifikasi").delete().eq("id", id).eq("warga_id", user.id);
+    if (error) throw error;
 }
 
 export function getMyDocumentsFromPengajuan(items: WargaPengajuan[]) {

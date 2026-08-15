@@ -40,6 +40,7 @@ import QRCode from "qrcode";
 import { createSupabaseBrowserClient } from "@/services/supabase";
 import { useWargaAuth } from "@/components/auth/warga-auth-provider";
 import { BuktiPengajuanPrint } from "@/components/pengajuan/BuktiPengajuanPrint";
+import { getAppBaseUrl } from "@/services/integrations";
 
 type ServiceCatalogItem = PublicService & { estimate: string };
 
@@ -84,7 +85,11 @@ const steps = ["Data Pemohon", "Data Pengajuan", "Dokumen Pendukung", "Review", 
 const timeline = ["Permohonan Diterima", "Verifikasi", "Diproses", "Ditandatangani", "Selesai"];
 const statusList = ["Menunggu", "Diproses", "Verifikasi", "Ditolak", "Selesai"];
 const allowedTypes = ["application/pdf", "image/jpeg", "image/png"];
+const allowedImageTypes = ["image/jpeg", "image/png"];
 const MAX_SUPPORT_FILE_SIZE = 1024 * 1024;
+
+const buildPublicTrackingUrl = (nomor: string) =>
+    `${getAppBaseUrl()}/surat-online/tracking?nomor=${encodeURIComponent(nomor)}`;
 
 type FormState = ReturnType<typeof createEmptyForm>;
 type FileKey = "support";
@@ -650,7 +655,7 @@ function Success({ ticket, service, estimate, data }: { ticket: string; service:
     const date = data?.created_at ? new Date(data.created_at) : new Date();
     const serviceName = data?.layanan?.nama ?? data?.jenis_surat ?? service;
     const serviceEstimate = data?.layanan?.output?.replace(/^Estimasi\s+/i, "") ?? estimate;
-    const trackingUrl = data?.tracking_url ?? `${window.location.origin}/surat-online/tracking?nomor=${encodeURIComponent(ticket)}`;
+    const trackingUrl = buildPublicTrackingUrl(ticket);
     const [qrDataUrl, setQrDataUrl] = useState("");
     const [previewOpen, setPreviewOpen] = useState(false);
     useEffect(() => {
@@ -670,7 +675,7 @@ function StatusResult({ results, loading, error }: { results: StatusItem[]; load
     const [qrDataUrl, setQrDataUrl] = useState("");
     const [previewOpen, setPreviewOpen] = useState(false);
     const item = results[0];
-    const trackingUrlForQr = item?.nomor_pengajuan ? item.tracking_url ?? `${window.location.origin}/surat-online/tracking?nomor=${encodeURIComponent(item.nomor_pengajuan)}` : "";
+    const trackingUrlForQr = item?.nomor_pengajuan ? buildPublicTrackingUrl(item.nomor_pengajuan) : "";
     useEffect(() => {
         if (!trackingUrlForQr) return;
         QRCode.toDataURL(trackingUrlForQr, { margin: 1, width: 220 })
@@ -691,3 +696,7 @@ function StatusResult({ results, loading, error }: { results: StatusItem[]; load
     const printData = { ...item, tracking_url: trackingUrl, jenis_surat: serviceName, status: currentStatus };
     return <div className="mt-6 rounded-[24px] bg-gov-50 p-5"><p className="font-black text-gov-950">Status: {currentStatus}</p><p className="mt-2 text-sm font-bold text-slate-650">Nomor: {item.nomor_pengajuan} • Petugas: {latest?.petugas ?? item.petugas ?? "-"} • Realtime aktif</p><div className="mt-4 h-3 overflow-hidden rounded-full bg-white"><div className={cn("h-full", currentStatus === "Ditolak" ? "bg-red-500" : currentStatus === "Selesai" ? "bg-emerald-500" : "bg-gov-500")} style={{ width: `${currentStatus === "Ditolak" ? 100 : Math.min(progress * 20, 100)}%` }} /></div><div className="mt-5 grid gap-3">{stepsToShow.map((step, i) => { const active = step === "Ditolak" ? currentStatus === "Ditolak" : i < progress; return <div key={step} className="flex items-start gap-3"><span className={cn("grid size-8 shrink-0 place-items-center rounded-full", active ? currentStatus === "Ditolak" && step === "Ditolak" ? "bg-red-500 text-white" : currentStatus === "Selesai" ? "bg-emerald-500 text-white" : "bg-gov-500 text-white" : "bg-white text-slate-400")}><Check size={16} /></span><span className="font-bold"><span className="block">{step}</span>{tracking[i] ? <span className="block text-xs text-slate-500">{tracking[i].created_at ? new Date(tracking[i].created_at).toLocaleString("id-ID") : "-"} • {tracking[i].keterangan ?? "-"} • Petugas: {tracking[i].petugas ?? "-"}</span> : null}</span></div>; })}</div><div className="mt-5 flex flex-col gap-2 sm:flex-row"><Button type="button" variant="primary" title="Cetak atau simpan bukti pengajuan sebagai PDF" className="w-full sm:w-auto" onClick={() => setPreviewOpen(true)}><Printer size={18} />Cetak Bukti Pengajuan</Button></div><div className="mt-5 rounded-2xl bg-white p-4"><p className="font-black text-gov-950">Dokumen</p><div className="mt-2 grid gap-2 text-sm font-bold">{(item.dokumen_pengajuan ?? []).map((doc) => { const url = doc.url_file ?? doc.file_url ?? "#"; return <a key={`${doc.jenis ?? doc.jenis_dokumen}-${url}`} className="text-gov-950 underline" href={url} target="_blank" rel="noreferrer">{doc.jenis ?? doc.jenis_dokumen ?? doc.nama_file ?? "Dokumen"}</a>; })}</div></div>{previewOpen ? <div className="fixed inset-0 z-[80] overflow-y-auto bg-slate-950/70 p-4 backdrop-blur-sm no-print"><div className="mx-auto max-w-5xl rounded-[28px] bg-white p-4 shadow-2xl sm:p-6"><div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-black uppercase tracking-[.18em] text-accent-600">Pratinjau Bukti Pengajuan</p><h3 className="text-2xl font-black text-gov-950">Dokumen A4 siap cetak</h3></div><div className="flex flex-col gap-2 sm:flex-row"><Button type="button" variant="glass" onClick={() => setPreviewOpen(false)}>Tutup</Button><Button type="button" variant="primary" title="Cetak atau simpan bukti pengajuan sebagai PDF" onClick={() => window.print()}><Printer size={18} />Cetak Bukti</Button></div></div><div className="max-h-[78vh] overflow-auto rounded-2xl bg-slate-100 p-3"><BuktiPengajuanPrint data={printData} serviceName={serviceName} qrDataUrl={qrDataUrl} className="mx-auto" /></div></div></div> : null}<div className="print-only-holder" aria-hidden={!previewOpen}><BuktiPengajuanPrint data={printData} serviceName={serviceName} qrDataUrl={qrDataUrl} /></div></div>;
 }
+
+
+
+

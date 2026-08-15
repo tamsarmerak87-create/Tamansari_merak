@@ -6,7 +6,7 @@ import { Bell, CheckCheck, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useWargaAuth } from "@/components/auth/warga-auth-provider";
 import { BackButton } from "@/components/warga/back-button";
-import { buildTrackingNotifications, getMyNotifikasi, getMyPengajuan, markAllNotificationsRead, markNotificationRead, type WargaNotification } from "@/services/warga-pengajuan.service";
+import { getMyNotifikasi, markAllNotificationsRead, markNotificationRead, type WargaNotification } from "@/services/warga-pengajuan.service";
 
 export default function NotifikasiPage() {
     const router = useRouter();
@@ -23,8 +23,8 @@ export default function NotifikasiPage() {
         try {
             setFetching(true);
             setError("");
-            const items = await getMyPengajuan(profile);
-            setNotes(await getMyNotifikasi(items).catch(() => buildTrackingNotifications(items)));
+            void profile;
+            setNotes(await getMyNotifikasi());
         } catch (e) {
             setError(e instanceof Error ? e.message : "Data belum dapat dimuat.");
         } finally {

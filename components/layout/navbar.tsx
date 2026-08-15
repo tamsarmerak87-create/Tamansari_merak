@@ -5,12 +5,13 @@ import Image from "next/image";
 import type { Route } from "next";
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Car, ChevronDown, ChevronRight, FileText, KeyRound, LayoutDashboard, LogIn, LogOut, MapPinned, Menu, Search, UserPlus, UserRound, X } from "lucide-react";
+import { Bell, Car, ChevronDown, ChevronRight, FileText, KeyRound, LayoutDashboard, LogIn, LogOut, MapPinned, Menu, Search, UserPlus, UserRound, X } from "lucide-react";
 import { site } from "@/constants/site";
 import { cn } from "@/utils/cn";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useWargaAuth } from "@/components/auth/warga-auth-provider";
 import { getWargaProfilePhotoUrl, isVerified, logoutWarga } from "@/services/warga-auth.service";
+import { getMyNotifikasi, markNotificationRead, type WargaNotification } from "@/services/warga-pengajuan.service";
 
 const nav = [
     { label: "Beranda", href: "/" },
@@ -33,14 +34,18 @@ export function Navbar() {
     const pathname = usePathname();
     const router = useRouter();
     const accountRef = useRef<HTMLDivElement>(null);
+    const notificationRef = useRef<HTMLDivElement>(null);
     const [open, setOpen] = useState(false);
     const [scrolled, setScrolled] = useState(false);
     const [accountOpen, setAccountOpen] = useState(false);
     const [searchOpen, setSearchOpen] = useState(false);
+    const [notificationOpen, setNotificationOpen] = useState(false);
+    const [notifications, setNotifications] = useState<WargaNotification[]>([]);
     const [query, setQuery] = useState("");
     const { user, profile, refresh } = useWargaAuth();
     const wargaName = profile?.nama_lengkap?.trim() || "Warga";
     const wargaPhoto = getWargaProfilePhotoUrl(profile?.foto_url);
+    const unreadNotifications = notifications.filter((item) => !item.read).length;
 
     const isActive = (href: string) =>
         href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
@@ -81,11 +86,37 @@ export function Navbar() {
     }, []);
 
     useEffect(() => {
+        const closeDropdown = (event: MouseEvent) => {
+            if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) setNotificationOpen(false);
+        };
+        document.addEventListener("mousedown", closeDropdown);
+        return () => document.removeEventListener("mousedown", closeDropdown);
+    }, []);
+
+    useEffect(() => {
         const onScroll = () => setScrolled(window.scrollY > 8);
         onScroll();
         window.addEventListener("scroll", onScroll, { passive: true });
         return () => window.removeEventListener("scroll", onScroll);
     }, []);
+
+    useEffect(() => {
+        if (!user) {
+            setNotifications([]);
+            return;
+        }
+        const loadNotifications = () => void getMyNotifikasi().then(setNotifications).catch(() => setNotifications([]));
+        loadNotifications();
+        window.addEventListener("focus", loadNotifications);
+        return () => window.removeEventListener("focus", loadNotifications);
+    }, [user]);
+
+    const openNotification = async (note: WargaNotification) => {
+        await markNotificationRead(note.id).catch(() => undefined);
+        setNotifications((current) => current.map((item) => item.id === note.id ? { ...item, read: true } : item));
+        setNotificationOpen(false);
+        if (note.pengajuan_id) router.push(`/dashboard/pengajuan/${note.pengajuan_id}`);
+    };
 
     return (
         <header className="sticky top-0 z-50 w-full max-w-[100vw] px-2 pt-2 sm:px-6 lg:px-8 lg:pt-5">
@@ -124,6 +155,31 @@ export function Navbar() {
                             </form>
                         )}
                     </div>
+
+                    {user ? (
+                        <div ref={notificationRef} className="relative">
+                            <button type="button" onClick={() => setNotificationOpen((value) => !value)} className="relative grid size-10 place-items-center rounded-full border border-border-soft bg-white/80 text-gov-900 shadow-soft transition duration-200 hover:-translate-y-0.5 hover:bg-cream-100 focus:outline-none focus:ring-4 focus:ring-gov-100 sm:size-11" aria-label="Notifikasi warga" aria-expanded={notificationOpen}>
+                                <Bell size={16} />
+                                {unreadNotifications > 0 ? <span className="absolute -right-1 -top-1 grid min-w-5 place-items-center rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-black text-white ring-2 ring-white">{unreadNotifications > 99 ? "99+" : unreadNotifications}</span> : null}
+                            </button>
+                            {notificationOpen ? (
+                                <div className="absolute right-0 top-14 z-[65] w-[min(22rem,calc(100vw-1.5rem))] overflow-hidden rounded-[22px] border border-border-soft bg-white shadow-[0_22px_70px_rgba(8,47,73,.18)]">
+                                    <div className="flex items-center justify-between gap-3 border-b border-gov-100 px-4 py-3">
+                                        <p className="text-sm font-black text-gov-950">Notifikasi</p>
+                                        <Link href="/dashboard/notifikasi" onClick={() => setNotificationOpen(false)} className="text-xs font-black text-gov-800">Lihat semua</Link>
+                                    </div>
+                                    <div className="max-h-[22rem] overflow-y-auto p-2">
+                                        {notifications.length === 0 ? <p className="px-3 py-6 text-center text-sm font-bold text-slate-500">Belum ada notifikasi.</p> : notifications.slice(0, 5).map((note) => (
+                                            <button key={note.id} type="button" onClick={() => void openNotification(note)} className={cn("w-full rounded-2xl px-3 py-3 text-left transition hover:bg-emerald-50", note.read ? "bg-white" : "bg-amber-50")}>
+                                                <span className="block text-sm font-black text-gov-950">{note.title}</span>
+                                                <span className="mt-1 line-clamp-2 whitespace-pre-line text-xs font-semibold text-slate-600">{note.message}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            ) : null}
+                        </div>
+                    ) : null}
 
                     {/* Menu akun */}
                     <div ref={accountRef} className="relative">
@@ -232,6 +288,7 @@ export function Navbar() {
         </header>
     );
 }
+
 
 
 

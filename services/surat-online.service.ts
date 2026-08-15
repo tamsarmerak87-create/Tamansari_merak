@@ -2,6 +2,7 @@ import { z } from "zod";
 import { createSupabaseAdminClient, createSupabaseBrowserClient } from "@/services/supabase";
 import { forwardToN8n, getAppBaseUrl } from "@/services/integrations";
 import { createVerificationRows } from "@/services/verification-workflow";
+import { createWargaNotification } from "@/services/warga-notifikasi.service";
 
 export const STATUS_STEPS = ["Permohonan diterima", "Verifikasi", "Diproses", "Ditandatangani", "Selesai"] as const;
 export const SUBMISSION_STATUS = ["Menunggu Verifikasi", "Verifikasi", "Diproses", "Ditandatangani", "Selesai", "Ditolak"] as const;
@@ -481,6 +482,11 @@ export async function createSubmission(formData: SubmissionRequest) {
             logSupabaseStageError("[surat-online:tracking-insert:error]", trackingError, { stage: "tracking_insert" });
             throw new SupabaseOperationError("PENGAJUAN TRACKING ERROR", trackingError, "tracking_insert");
         }
+
+        await createWargaNotification({ pengajuanId: pengajuan.id, nik: payload.nik, status: "submitted" }).catch((notificationError) => {
+            console.error("WARGA NOTIFICATION INSERT ERROR");
+            console.dir(notificationError, { depth: null });
+        });
 
         await client.from("pengajuan_audit_logs").insert(["CONSENT_GIVEN", "DECLARATION_ACCEPTED", "PHYSICAL_PROOF_GENERATED", "APPLICATION_SUBMITTED"].map((action) => ({ pengajuan_id: pengajuan.id, user_id: null, action })));
 

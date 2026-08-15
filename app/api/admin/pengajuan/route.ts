@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getAdminSession, isAdmin, requireAdmin } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
 import { ROLE_STAGE_STATUS, STAGE_WAITING_STATUS, VERIFICATION_STAGES, getActiveStage, isFinalSubmissionStatus, normalizeSubmissionStatus, normalizeWorkflowRole } from "@/services/verification-workflow";
+import { createWargaNotification, type NotificationStatus } from "@/services/warga-notifikasi.service";
 
 function jsonError(message: string, status = 400) {
     return NextResponse.json({ ok: false, error: message }, { status });
@@ -10,6 +11,13 @@ function jsonError(message: string, status = 400) {
 type Action = "proses_tahap" | "verifikasi" | "setujui" | "selesai" | "tolak" | "revisi";
 type StageRow = { id: string; tahap: number; nama_tahap: string; role_petugas: string; status: string };
 type ActionDecision = { status: "Disetujui" | "Ditolak"; submissionStatus: string; auditLabel: string; trackingLabel: string };
+
+function notificationStatusFor(action: Action, stage: StageRow): NotificationStatus {
+    if (action === "tolak" || action === "revisi") return "rejected";
+    if (stage.tahap === 1) return "verified";
+    if (stage.tahap === 5) return "completed";
+    return "processing";
+}
 
 const STAGE_AUDIT_LABEL: Record<number, string> = {
     1: "STAFF",
@@ -79,7 +87,7 @@ export async function PATCH(request: NextRequest) {
     if (!adminHasFullAccess && activeStage.role_petugas !== workflowRole) return jsonError(`Tahap aktif hanya dapat diproses oleh ${activeStage.nama_tahap}.`, 403);
     if (!["Menunggu", "Diproses"].includes(activeStage.status)) return jsonError("Tahap aktif sudah tidak bisa diproses.", 409);
 
-    const { data: pengajuanAktif, error: pengajuanError } = await supabase.from("pengajuan_surat").select("id,status,workflow_status").eq("id", body.id).maybeSingle();
+    const { data: pengajuanAktif, error: pengajuanError } = await supabase.from("pengajuan_surat").select("id,nik,status,workflow_status").eq("id", body.id).maybeSingle();
     if (pengajuanError) return jsonError(pengajuanError.message, 500);
     if (!pengajuanAktif) return jsonError("Pengajuan tidak ditemukan.", 404);
     if (isFinalSubmissionStatus(String(pengajuanAktif.status))) return jsonError("Pengajuan sudah final dan tidak bisa diproses ulang tanpa pembatalan/revisi resmi.", 409);
@@ -144,6 +152,10 @@ export async function PATCH(request: NextRequest) {
     };
     const { error: auditError } = await supabase.from("audit_pengajuan").insert(auditPayload);
     if (auditError) return jsonError(auditError.message, 500);
+
+    await createWargaNotification({ pengajuanId: body.id, nik: String(pengajuanAktif.nik ?? ""), status: notificationStatusFor(body.action, activeStage), catatan }).catch((notificationError) => {
+        console.error("WARGA NOTIFICATION INSERT ERROR", notificationError);
+    });
 
     return NextResponse.json({ ok: true, data });
 }
