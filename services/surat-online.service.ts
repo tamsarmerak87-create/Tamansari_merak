@@ -2,7 +2,7 @@ import { z } from "zod";
 import { createSupabaseAdminClient, createSupabaseBrowserClient } from "@/services/supabase";
 import { forwardToN8n, getAppBaseUrl } from "@/services/integrations";
 import { createVerificationRows } from "@/services/verification-workflow";
-import { createWargaNotification } from "@/services/warga-notifikasi.service";
+import { createWargaNotification, type NotificationStatus } from "@/services/warga-notifikasi.service";
 
 export const STATUS_STEPS = ["Permohonan diterima", "Verifikasi", "Diproses", "Ditandatangani", "Selesai"] as const;
 export const SUBMISSION_STATUS = ["Menunggu Verifikasi", "Verifikasi", "Diproses", "Ditandatangani", "Selesai", "Ditolak"] as const;
@@ -10,6 +10,15 @@ export const SUBMISSION_STATUS = ["Menunggu Verifikasi", "Verifikasi", "Diproses
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_FILE_TYPES = ["application/pdf", "image/jpeg", "image/png"];
 const SUBMISSION_STORAGE_BUCKET = "surat";
+
+function notificationStatusFromSubmissionStatus(status: string): NotificationStatus | null {
+    const normalized = status.trim().toLowerCase();
+    if (["terverifikasi", "verifikasi", "diverifikasi"].includes(normalized)) return "verified";
+    if (["ditolak", "tolak"].includes(normalized)) return "rejected";
+    if (["diproses", "sedang diproses", "ditandatangani"].includes(normalized)) return "processing";
+    if (["selesai"].includes(normalized)) return "completed";
+    return null;
+}
 
 export const submissionSchema = z.object({
     layanan_id: z.string().uuid("Jenis layanan tidak valid"),
@@ -625,6 +634,14 @@ export async function updateSubmissionStatus(id: string, status: string, catatan
         console.error(trackingError);
         console.dir(trackingError, { depth: null });
         throw trackingError;
+    }
+
+    const notificationStatus = notificationStatusFromSubmissionStatus(normalizedStatus);
+    if (notificationStatus) {
+        await createWargaNotification({ pengajuanId: id, nik: data.nik, status: notificationStatus, catatan }).catch((notificationError) => {
+            console.error("WARGA STATUS NOTIFICATION INSERT ERROR");
+            console.dir(notificationError, { depth: null });
+        });
     }
 
     try {
