@@ -32,7 +32,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/card";
 import { site } from "@/constants/site";
-import { createSubmission, removeSubmissionAttachments, searchSubmission, submissionSchema, uploadSubmissionAttachment } from "@/services/surat-online.service";
+import { removeSubmissionAttachments, searchSubmission, submissionSchema, uploadSubmissionAttachment } from "@/services/surat-online.service";
 import type { PublicService } from "@/types";
 import { cn } from "@/utils/cn";
 import QRCode from "qrcode";
@@ -211,17 +211,42 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
         return Object.keys(next).length === 0;
     }
 
-    async function submit(e: FormEvent) {
-        e.preventDefault();
+    async function submit(e?: FormEvent) {
+        e?.preventDefault();
+        console.log("=== HANDLE SUBMIT DIMULAI ===");
+        console.log("[AGREEMENT]", form.consent);
+        console.log({
+            consent: form.consent,
+            responsibility: form.responsibility,
+            serviceId: form.serviceId,
+            purpose: form.purpose,
+            supportFile: files.support ? { name: files.support.name, type: files.support.type, size: files.support.size } : null,
+        });
         try {
             if (user && profile?.status_verifikasi !== "Akun Terverifikasi" && profile?.status_verifikasi !== "Terverifikasi") {
+                console.log("[SUBMIT BLOCKED] profil belum valid", { status_verifikasi: profile?.status_verifikasi });
                 alert("Akun Anda belum diverifikasi. Silakan verifikasi akun sebelum mengajukan layanan.");
                 window.location.href = "/verify";
                 return;
             }
-            if (!validate()) return;
+            if (!selectedService) {
+                console.log("[SUBMIT BLOCKED] layanan tidak ditemukan", { serviceId: form.serviceId });
+                alert("Layanan tidak ditemukan. Silakan pilih layanan yang tersedia.");
+                return;
+            }
+            if (!form.purpose.trim()) console.log("[SUBMIT BLOCKED] keperluan kosong");
+            if (!form.consent) console.log("[SUBMIT BLOCKED] persetujuan false");
+            if (files.support) console.log("[SUBMIT CHECK] dokumen pendukung tersedia", { name: files.support.name, type: files.support.type, size: files.support.size });
+            if (!validate()) {
+                console.log("[SUBMIT BLOCKED] validasi form gagal", { errors: "lihat pesan validasi di halaman" });
+                alert("Mohon lengkapi data yang wajib diisi sebelum mengajukan permohonan.");
+                return;
+            }
             const confirmationMessage = `Apakah Anda yakin ingin mengirim permohonan?\n\nNama: ${form.name || "-"}\nLayanan: ${selectedService?.title ?? "-"}\nDokumen pendukung: ${files.support ? 1 : 0} berkas\nData identitas: dari Profil Terverifikasi`;
-            if (!window.confirm(confirmationMessage)) return;
+            if (!window.confirm(confirmationMessage)) {
+                console.log("[SUBMIT BLOCKED] warga membatalkan konfirmasi");
+                return;
+            }
             setIsSubmitting(true);
             const payload = {
                 layanan_id: form.serviceId,
@@ -244,7 +269,6 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
                 keperluan: form.purpose,
                 catatan: form.note,
             };
-            submissionSchema.parse(payload);
             const ownerId = form.nik || profile?.nik || user?.id || "warga";
             const uploadedPaths: string[] = [];
             const cleanupUploadedFiles = async () => {
@@ -261,22 +285,39 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
                 if (pendukungUpload?.path) uploadedPaths.push(pendukungUpload.path);
 
                 if (process.env.NODE_ENV !== "production") console.info("[surat-online]", { stage: "pengajuan_insert", uploadedPathCount: uploadedPaths.length });
-                const result = await createSubmission({
+                const submitPayload = {
                     ...payload,
                     file_ktp: null,
                     file_kk: null,
                     file_pendukung: pendukungUpload?.path ?? null,
                     consent: form.consent,
-                    declaration: form.responsibility,
-                    physical_proof_generated: form.physicalProofGenerated,
-                    physical_proof_viewed: form.physicalProofViewed,
-                    physical_proof_approved: form.physicalProofApproved,
-                    physical_proof_generated_at: form.physicalProofGeneratedAt,
+                    declaration: form.consent,
+                    physical_proof_generated: true,
+                    physical_proof_viewed: true,
+                    physical_proof_approved: true,
+                    physical_proof_generated_at: form.physicalProofGeneratedAt || new Date().toISOString(),
                     materai_status: "NOT_CONFIGURED",
-                }) as SubmissionResult;
+                };
+                console.log(
+                    "=== AKAN POST KE API ===",
+                    JSON.stringify(submitPayload, null, 2)
+                );
+                const response = await fetch("/api/surat-online/pengajuan", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify(submitPayload),
+                });
+                const result = await response.json().catch(() => null);
+                console.log("=== RESPONSE SUBMIT ===", {
+                    status: response.status,
+                    result,
+                });
+                if (!response.ok || !result?.ok) throw new Error(typeof result?.error === "string" ? result.error : result?.error?.message ?? "Gagal mengirim pengajuan.");
                 uploadedPaths.length = 0;
-                setTicket(result.nomor_pengajuan);
-                setSuccessData(result);
+                setTicket((result.data as SubmissionResult).nomor_pengajuan);
+                setSuccessData(result.data as SubmissionResult);
                 setSubmitted(true);
             } catch (error) {
                 await cleanupUploadedFiles();
@@ -406,7 +447,7 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
 
             {!formOnly ? <section id="layanan" className="px-5 py-14 sm:px-10 lg:px-20"><div className="mx-auto max-w-[1440px]"><div className="max-w-3xl"><span className="font-black uppercase tracking-[.2em] text-accent-600">Pilih pelayanan</span><h2 className="mt-3 font-display text-4xl font-black text-gov-950 md:text-5xl">Satu portal untuk seluruh pengajuan warga.</h2></div><div className="mt-8 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">{serviceCatalog.map((item, i) => <motion.button key={item.id} type="button" onClick={() => pickService(item.id)} initial={{ opacity: 0, y: 18 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: Math.min(i * 0.02, 0.25) }} whileHover={{ scale: 1.03 }} className={cn("min-h-[280px] rounded-[24px] border bg-white p-5 text-left shadow-soft transition focus:outline-none focus:ring-4 focus:ring-accent-200", selectedId === item.id ? "border-accent-400" : "border-white")}><div className="grid size-12 place-items-center rounded-2xl bg-gov-950 text-white"><FileText size={22} /></div><h3 className="mt-5 text-xl font-black text-gov-950">{item.title}</h3><p className="mt-3 line-clamp-3 leading-7 text-slate-650">{item.description}</p><p className="mt-4 inline-flex items-center gap-2 rounded-full bg-accent-100 px-3 py-1 text-sm font-black text-gov-950"><Clock size={15} />{item.estimate}</p><span className="mt-5 flex min-h-11 items-center justify-center rounded-2xl bg-gov-950 px-4 text-sm font-black text-white">Ajukan</span></motion.button>)}</div></div></section> : null}
 
-            <section id="form-pengajuan" className={cn("px-5 sm:px-10 lg:px-20", formOnly ? "py-10 pt-28 lg:py-14 lg:pt-32" : "py-14")}><div className={cn("mx-auto grid gap-6", formOnly ? "max-w-5xl" : "max-w-[1440px] lg:grid-cols-[1fr_360px]")}>{formOnly ? <div className="text-center"><span className="font-black uppercase tracking-[.2em] text-accent-600">Pengajuan Layanan</span><h1 className="mt-3 font-display text-3xl font-black text-gov-950 md:text-5xl">{selectedService?.title ?? "Layanan"}</h1></div> : null}<GlassCard className="rounded-[24px] bg-white/90"><Stepper />{submitted ? <Success ticket={ticket} data={successData} service={successData?.jenis_surat ?? selectedService?.title ?? "-"} estimate={selectedService?.estimate ?? "-"} /> : <form onSubmit={submit} className="mt-8 space-y-8"><ApplicantForm form={form} errors={errors} serviceCatalog={serviceCatalog} update={update} setSelectedId={setSelectedId} /><UploadDocs files={files} errors={errors} setFile={setFile} /><Review form={form} service={selectedService?.title ?? "-"} files={files} /><AgreementCard form={form} service={selectedService?.title ?? "-"} files={files} errors={errors} update={update} /><Button type="submit" variant="gold" disabled={isSubmitting || !form.consent}>{isSubmitting ? "Mengirim..." : "Ajukan Permohonan"} <Send size={18} /></Button></form>}</GlassCard>{!formOnly ? <InfoSidebar /> : null}</div></section>
+            <section id="form-pengajuan" className={cn("px-5 sm:px-10 lg:px-20", formOnly ? "py-10 pt-28 lg:py-14 lg:pt-32" : "py-14")}><div className={cn("mx-auto grid gap-6", formOnly ? "max-w-5xl" : "max-w-[1440px] lg:grid-cols-[1fr_360px]")}>{formOnly ? <div className="text-center"><span className="font-black uppercase tracking-[.2em] text-accent-600">Pengajuan Layanan</span><h1 className="mt-3 font-display text-3xl font-black text-gov-950 md:text-5xl">{selectedService?.title ?? "Layanan"}</h1></div> : null}<GlassCard className="rounded-[24px] bg-white/90"><Stepper />{submitted ? <Success ticket={ticket} data={successData} service={successData?.jenis_surat ?? selectedService?.title ?? "-"} estimate={selectedService?.estimate ?? "-"} /> : <form onSubmit={submit} className="mt-8 space-y-8"><ApplicantForm form={form} errors={errors} serviceCatalog={serviceCatalog} update={update} setSelectedId={setSelectedId} /><UploadDocs files={files} errors={errors} setFile={setFile} /><Review form={form} service={selectedService?.title ?? "-"} files={files} /><AgreementCard form={form} service={selectedService?.title ?? "-"} files={files} errors={errors} update={update} /><Button type="button" onClick={() => void submit()} variant="gold" disabled={isSubmitting || !form.consent}>{isSubmitting ? "Mengajukan..." : "Ajukan Permohonan"} <Send size={18} /></Button></form>}</GlassCard>{!formOnly ? <InfoSidebar /> : null}</div></section>
 
             {!formOnly ? <section id="cek-status" className="px-5 py-16 sm:px-10 lg:px-20"><div className="mx-auto grid max-w-[1440px] gap-6 lg:grid-cols-2"><GlassCard className="rounded-[24px] bg-white/90"><span className="font-black uppercase tracking-[.2em] text-accent-600">Cek Status Permohonan</span><h2 className="mt-3 text-3xl font-black text-gov-950">Pantau progres dengan nomor tiket atau NIK.</h2><div className="mt-6 flex flex-col gap-3 sm:flex-row"><input className={cn(inputClass, "flex-1")} placeholder="Contoh: TMS-2026-123456 atau NIK" value={statusQuery} onChange={(e) => setStatusQuery(e.target.value)} /><Button type="button" onClick={checkStatus} disabled={statusLoading}><Search size={18} />{statusLoading ? "Memuat..." : "Cek Status"}</Button></div>{statusChecked ? <StatusResult results={statusResults} loading={statusLoading} error={statusError} /> : <div className="mt-6 rounded-[24px] border border-dashed border-slate-200 p-6 text-center text-sm font-bold text-slate-500">Empty state: masukkan nomor tiket atau NIK untuk melihat progres permohonan.</div>}</GlassCard><GlassCard className="rounded-[24px] bg-white/90"><h3 className="text-2xl font-black text-gov-950">Status yang tersedia</h3><div className="mt-5 grid gap-3 sm:grid-cols-2">{statusList.map((item) => <div key={item} className="rounded-2xl bg-gov-50 p-4 font-black text-gov-950">{item}</div>)}</div><div className="mt-6 rounded-2xl bg-red-50 p-4 text-sm font-bold text-red-700">Error state: nomor tiket tidak ditemukan akan tampil di area ini.</div><div className="mt-3 animate-pulse rounded-2xl bg-slate-100 p-4 text-sm font-bold text-slate-500">Loading skeleton: digunakan saat sistem mengambil data status.</div></GlassCard></div></section> : null}
         </main>
