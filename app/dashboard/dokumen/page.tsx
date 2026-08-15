@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Download, Eye, FileText, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useWargaAuth } from "@/components/auth/warga-auth-provider";
+import { BackButton } from "@/components/warga/back-button";
 import { getDokumenUrl, getMyDocumentsFromPengajuan, getMyPengajuan, type DokumenPengajuan } from "@/services/warga-pengajuan.service";
 
 export default function DokumenSayaPage() {
@@ -35,7 +36,7 @@ export default function DokumenSayaPage() {
 
     if (loading || !user) return <main className="min-h-screen bg-[#F7F9FC] p-10 font-black text-gov-950">Memuat dokumen...</main>;
 
-    return <main className="min-h-screen bg-[#F7F9FC] px-5 py-10 text-slate-800 sm:px-10 lg:px-20"><section className="mx-auto max-w-6xl space-y-6"><Hero title="Dokumen Saya" text="Semua dokumen ditarik dari data pengajuan milik akun yang sedang login." /><div className="flex justify-end"><Button type="button" variant="glass" onClick={() => void refresh()}><RefreshCw size={18} /> Refresh</Button></div>{fetching ? <State text="Memuat dokumen..." /> : error ? <State text={error} retry onRetry={refresh} /> : grouped.length === 0 ? <Empty /> : <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{grouped.map((doc) => <DocumentCard key={doc.id ?? `${doc.pengajuan_id}-${doc.url_file}`} doc={doc} />)}</div>}</section></main>;
+    return <main className="min-h-screen bg-[#F7F9FC] px-5 py-10 text-slate-800 sm:px-10 lg:px-20"><section className="mx-auto max-w-6xl space-y-6"><BackButton /><Hero title="Dokumen Saya" text="Semua dokumen ditarik dari data pengajuan milik akun yang sedang login." /><div className="flex justify-end"><Button type="button" variant="glass" onClick={() => void refresh()}><RefreshCw size={18} /> Refresh</Button></div>{fetching ? <State text="Memuat dokumen..." /> : error ? <State text={error} retry onRetry={refresh} /> : grouped.length === 0 ? <Empty /> : <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{grouped.map((doc) => <DocumentCard key={doc.id ?? `${doc.pengajuan_id}-${doc.url_file}`} doc={doc} />)}</div>}</section></main>;
 }
 
 function DocumentCard({ doc }: { doc: DokumenPengajuan }) {

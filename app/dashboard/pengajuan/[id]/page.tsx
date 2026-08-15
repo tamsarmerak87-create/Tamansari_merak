@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast-provider";
 import { useWargaAuth } from "@/components/auth/warga-auth-provider";
 import { QRCodePelayanan } from "@/components/pengajuan/qr-code-pelayanan";
+import { BackButton } from "@/components/warga/back-button";
 import { getDokumenUrl, getMyPengajuanDetail, type WargaPengajuan } from "@/services/warga-pengajuan.service";
 
 const journeySteps = ["Pengajuan Dikirim", "Petugas Pelayanan", "Petugas Lapangan", "Kepala Seksi", "Seklur", "Lurah", "Selesai"];
@@ -123,7 +124,7 @@ export default function DetailPengajuanPage({ params }: { params: Promise<{ id: 
     const name = serviceName(item);
     const complete = summary?.label === "Pengajuan Selesai";
 
-    return <main className="min-h-screen bg-[#F7F8F5] px-4 py-6 text-[#172033] sm:px-8 lg:px-16"><section className="mx-auto max-w-6xl"><button type="button" onClick={goBack} className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-full border border-[#DADDE3] bg-white px-5 text-sm font-black text-[#172033] shadow-sm transition hover:bg-[#FFF8DB]"><ArrowLeft size={18} />Kembali</button>
+    return <main className="min-h-screen bg-[#F7F8F5] px-4 py-6 text-[#172033] sm:px-8 lg:px-16"><section className="mx-auto max-w-6xl"><BackButton onClick={() => router.push("/dashboard")} className="mb-4" />
         <header className="rounded-[30px] border border-[#E8E8E8] bg-[linear-gradient(135deg,#FFF3B0,#FFFFFF_50%,#EAF8EF)] p-6 shadow-sm sm:p-8"><p className="text-sm font-black uppercase tracking-[.18em] text-[#15803D]">Status Pengajuan</p><h1 className="mt-3 break-words text-3xl font-black sm:text-5xl">{item.nomor_pengajuan}</h1><p className="mt-3 text-lg font-black uppercase text-slate-700">{name}</p><div className={`mt-5 inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-black ring-1 ${summary?.className}`}><span>{summary?.icon}</span>{summary?.label}</div><p className="mt-3 max-w-2xl font-semibold text-slate-600">{summary?.message}</p>{complete ? <p className="mt-2 font-black text-emerald-700">Silakan lihat atau download dokumen Anda.</p> : null}</header>
         <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_300px]"><div className="space-y-6"><section className="rounded-[24px] border border-[#E8E8E8] bg-white p-5 shadow-sm sm:p-6"><h2 className="text-xl font-black">Informasi Pengajuan</h2><div className="mt-5 grid gap-4 sm:grid-cols-2"><Info label="Nomor Pengajuan" value={item.nomor_pengajuan || "-"} /><Info label="Layanan" value={name} /><Info label="Keperluan" value={item.keperluan || "-"} /><Info label="Tanggal Pengajuan" value={formatDate(item.created_at)} /><Info label="Status" value={`${summary?.icon ?? "○"} ${summary?.label ?? "Menunggu proses"}`} /></div></section>
             <section className="rounded-[24px] border border-[#E8E8E8] bg-white p-5 shadow-sm sm:p-6"><h2 className="text-xl font-black">Perjalanan Dokumen</h2><div className="mt-6">{timeline.map((stage, index) => <JourneyItem key={`${stage.nama_tahap}-${index}`} stage={stage} index={index} state={stepState(stage, complete)} isLast={index === timeline.length - 1} />)}</div></section>
