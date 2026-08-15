@@ -87,13 +87,14 @@ const statusList = ["Menunggu", "Diproses", "Verifikasi", "Ditolak", "Selesai"];
 const allowedTypes = ["application/pdf", "image/jpeg", "image/png"];
 const allowedImageTypes = ["image/jpeg", "image/png"];
 const MAX_SUPPORT_FILE_SIZE = 1024 * 1024;
+const MAX_SUPPORT_FILES = 5;
 
 const buildPublicTrackingUrl = (nomor: string) =>
     `${getAppBaseUrl()}/surat-online/tracking?nomor=${encodeURIComponent(nomor)}`;
 
 type FormState = ReturnType<typeof createEmptyForm>;
 type FileKey = "support";
-type UploadState = Record<FileKey, File | null>;
+type UploadState = Record<FileKey, File[]>;
 type ValidationResult = { valid: boolean; missingFields: string[]; errors: Record<string, string> };
 type SubmissionResult = Record<string, unknown> & {
     nomor_pengajuan: string;
@@ -195,7 +196,7 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
     const firstServiceId = initialServiceId || serviceCatalog[0]?.id || "";
     const [selectedId, setSelectedId] = useState(firstServiceId);
     const [form, setForm] = useState<FormState>(() => createEmptyForm(firstServiceId));
-    const [files, setFiles] = useState<UploadState>({ support: null });
+    const [files, setFiles] = useState<UploadState>({ support: [] });
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [submitted, setSubmitted] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -248,19 +249,18 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
 
     async function setFile(key: FileKey, event: ChangeEvent<HTMLInputElement>, source: "camera" | "file" = "file") {
         const input = event.target;
-        const selectedFile = input.files?.[0] ?? null;
+        const selectedFiles = Array.from(input.files ?? []);
         setErrors((prev) => ({ ...prev, [key]: "" }));
-        if (!selectedFile) {
-            setFiles((prev) => ({ ...prev, [key]: null }));
-            return;
-        }
+        if (selectedFiles.length === 0) return;
         try {
-            const nextFile = source === "camera" ? await compressCameraImage(selectedFile) : selectedFile;
-            if (nextFile.size > MAX_SUPPORT_FILE_SIZE) throw new Error("Ukuran file maksimal 1 MB.");
-            setFiles((prev) => ({ ...prev, [key]: nextFile }));
+            const currentFiles = files[key] ?? [];
+            if (currentFiles.length + selectedFiles.length > MAX_SUPPORT_FILES) throw new Error(`Dokumen pendukung maksimal ${MAX_SUPPORT_FILES} file.`);
+            const nextFiles = await Promise.all(selectedFiles.map((file) => (source === "camera" ? compressCameraImage(file) : file)));
+            if (nextFiles.some((file) => file.size > MAX_SUPPORT_FILE_SIZE)) throw new Error("Ukuran file maksimal 1 MB per file.");
+            setFiles((prev) => ({ ...prev, [key]: [...prev[key], ...nextFiles] }));
         } catch (error) {
-            setFiles((prev) => ({ ...prev, [key]: null }));
-            setErrors((prev) => ({ ...prev, [key]: error instanceof Error ? error.message : "Ukuran file maksimal 1 MB." }));
+            setErrors((prev) => ({ ...prev, [key]: error instanceof Error ? error.message : "Ukuran file maksimal 1 MB per file." }));
+        } finally {
             input.value = "";
         }
     }
@@ -328,14 +328,17 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
             }
         });
         const support = files.support;
-        if (support && !allowedTypes.includes(support.type)) {
-            console.log("[SUBMIT BLOCKED] format dokumen pendukung tidak valid", { type: support.type });
+        if (support.length > MAX_SUPPORT_FILES) {
+            next.support = `Dokumen pendukung maksimal ${MAX_SUPPORT_FILES} file.`;
+            missingFields.push(`Dokumen pendukung (maksimal ${MAX_SUPPORT_FILES} file)`);
+        } else if (support.some((file) => !allowedTypes.includes(file.type))) {
+            console.log("[SUBMIT BLOCKED] format dokumen pendukung tidak valid", { types: support.map((file) => file.type) });
             next.support = "Format harus PDF, JPG, atau PNG";
             missingFields.push("Dokumen pendukung (format PDF/JPG/PNG)");
-        } else if (support && support.size > MAX_SUPPORT_FILE_SIZE) {
-            console.log("[SUBMIT BLOCKED] ukuran dokumen pendukung terlalu besar", { size: support.size });
-            next.support = "Ukuran file maksimal 1 MB.";
-            missingFields.push("Dokumen pendukung (maksimal 1MB)");
+        } else if (support.some((file) => file.size > MAX_SUPPORT_FILE_SIZE)) {
+            console.log("[SUBMIT BLOCKED] ukuran dokumen pendukung terlalu besar", { sizes: support.map((file) => file.size) });
+            next.support = "Ukuran file maksimal 1 MB per file.";
+            missingFields.push("Dokumen pendukung (maksimal 1MB per file)");
         }
         if (!form.consent) {
             console.log("[SUBMIT BLOCKED] persetujuan false");
@@ -356,7 +359,7 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
             responsibility: form.responsibility,
             serviceId: form.serviceId,
             purpose: form.purpose,
-            supportFile: files.support ? { name: files.support.name, type: files.support.type, size: files.support.size } : null,
+            supportFile: files.support.map((file) => ({ name: file.name, type: file.type, size: file.size })),
         });
         try {
             if (user && profile?.status_verifikasi !== "Akun Terverifikasi" && profile?.status_verifikasi !== "Terverifikasi") {
@@ -375,7 +378,7 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
                 console.log("[SUBMIT BLOCKED] submit sebelumnya masih berjalan");
                 return;
             }
-            if (files.support) console.log("[SUBMIT CHECK] dokumen pendukung tersedia", { name: files.support.name, type: files.support.type, size: files.support.size });
+            if (files.support.length > 0) console.log("[SUBMIT CHECK] dokumen pendukung tersedia", files.support.map((file) => ({ name: file.name, type: file.type, size: file.size })));
             const validation = validate();
             if (!validation.valid) {
                 console.log("[SUBMIT BLOCKED] validasi form gagal", { errors: validation.errors, missingFields: validation.missingFields });
@@ -383,7 +386,7 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
                 alert(`Mohon lengkapi bagian berikut:\n\n${details.map((field) => `• ${field}`).join("\n")}`);
                 return;
             }
-            const confirmationMessage = `Apakah Anda yakin ingin mengirim permohonan?\n\nNama: ${form.name || "-"}\nLayanan: ${selectedService?.title ?? "-"}\nDokumen pendukung: ${files.support ? 1 : 0} berkas\nData identitas: dari Profil Terverifikasi`;
+            const confirmationMessage = `Apakah Anda yakin ingin mengirim permohonan?\n\nNama: ${form.name || "-"}\nLayanan: ${selectedService?.title ?? "-"}\nDokumen pendukung: ${files.support.length} berkas\nData identitas: dari Profil Terverifikasi`;
             if (!window.confirm(confirmationMessage)) {
                 console.log("[SUBMIT BLOCKED] warga membatalkan konfirmasi");
                 return;
@@ -420,17 +423,20 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
             };
 
             try {
-                if (process.env.NODE_ENV !== "production") console.info("[surat-online]", { stage: "file_upload", bucket: "surat", files: { pendukung: Boolean(files.support) } });
+                if (process.env.NODE_ENV !== "production") console.info("[surat-online]", { stage: "file_upload", bucket: "surat", files: { pendukung: files.support.length } });
                 const nomorPengajuan = `draft-${Date.now()}`;
-                const pendukungUpload = files.support ? await uploadSubmissionAttachment("pendukung", files.support, ownerId, nomorPengajuan) : null;
-                if (pendukungUpload?.path) uploadedPaths.push(pendukungUpload.path);
+                const pendukungUploads = await Promise.all(files.support.map((file, index) => uploadSubmissionAttachment(`pendukung-${index + 1}` as "pendukung", file, ownerId, nomorPengajuan)));
+                pendukungUploads.forEach((upload) => {
+                    if (upload.path) uploadedPaths.push(upload.path);
+                });
+                const pendukungPaths = pendukungUploads.map((upload) => upload.path);
 
                 if (process.env.NODE_ENV !== "production") console.info("[surat-online]", { stage: "pengajuan_insert", uploadedPathCount: uploadedPaths.length });
                 const submitPayload = {
                     ...payload,
                     file_ktp: normalizedProfile.ktpPath,
                     file_kk: normalizedProfile.kkPath,
-                    file_pendukung: pendukungUpload?.path ?? null,
+                    file_pendukung: pendukungPaths.length > 1 ? JSON.stringify(pendukungPaths) : pendukungPaths[0] ?? null,
                     consent: form.consent,
                     declaration: form.consent,
                     physical_proof_generated: true,
@@ -587,7 +593,7 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
 
             {!formOnly ? <section id="layanan" className="px-5 py-14 sm:px-10 lg:px-20"><div className="mx-auto max-w-[1440px]"><div className="max-w-3xl"><span className="font-black uppercase tracking-[.2em] text-accent-600">Pilih pelayanan</span><h2 className="mt-3 font-display text-4xl font-black text-gov-950 md:text-5xl">Satu portal untuk seluruh pengajuan warga.</h2></div><div className="mt-8 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">{serviceCatalog.map((item, i) => <motion.button key={item.id} type="button" onClick={() => pickService(item.id)} initial={{ opacity: 0, y: 18 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: Math.min(i * 0.02, 0.25) }} whileHover={{ scale: 1.03 }} className={cn("min-h-[280px] rounded-[24px] border bg-white p-5 text-left shadow-soft transition focus:outline-none focus:ring-4 focus:ring-accent-200", selectedId === item.id ? "border-accent-400" : "border-white")}><div className="grid size-12 place-items-center rounded-2xl bg-gov-950 text-white"><FileText size={22} /></div><h3 className="mt-5 text-xl font-black text-gov-950">{item.title}</h3><p className="mt-3 line-clamp-3 leading-7 text-slate-650">{item.description}</p><p className="mt-4 inline-flex items-center gap-2 rounded-full bg-accent-100 px-3 py-1 text-sm font-black text-gov-950"><Clock size={15} />{item.estimate}</p><span className="mt-5 flex min-h-11 items-center justify-center rounded-2xl bg-gov-950 px-4 text-sm font-black text-white">Ajukan</span></motion.button>)}</div></div></section> : null}
 
-            <section id="form-pengajuan" className={cn("px-5 sm:px-10 lg:px-20", formOnly ? "py-10 pt-28 lg:py-14 lg:pt-32" : "py-14")}><div className={cn("mx-auto grid gap-6", formOnly ? "max-w-5xl" : "max-w-[1440px] lg:grid-cols-[1fr_360px]")}>{formOnly ? <div className="text-center"><span className="font-black uppercase tracking-[.2em] text-accent-600">Pengajuan Layanan</span><h1 className="mt-3 font-display text-3xl font-black text-gov-950 md:text-5xl">{selectedService?.title ?? "Layanan"}</h1></div> : null}<GlassCard className="rounded-[24px] bg-white/90"><Stepper />{submitted ? <Success ticket={ticket} data={successData} service={successData?.jenis_surat ?? selectedService?.title ?? "-"} estimate={selectedService?.estimate ?? "-"} /> : <form onSubmit={submit} className="mt-8 space-y-8"><ApplicantForm form={form} errors={errors} serviceCatalog={serviceCatalog} update={update} setSelectedId={setSelectedId} /><UploadDocs files={files} errors={errors} setFile={setFile} clearFile={() => setFiles((prev) => ({ ...prev, support: null }))} /><Review form={form} service={selectedService?.title ?? "-"} files={files} /><AgreementCard form={form} service={selectedService?.title ?? "-"} files={files} errors={errors} update={update} /><Button type="submit" variant="gold" disabled={isSubmitting} onClick={() => { console.log("=== TOMBOL AJUKAN PERMOHONAN DIKLIK ==="); alert("Tombol submit terpanggil"); }}>{isSubmitting ? "Mengajukan..." : "Ajukan Permohonan"} <Send size={18} /></Button></form>}</GlassCard>{!formOnly ? <InfoSidebar /> : null}</div></section>
+            <section id="form-pengajuan" className={cn("px-5 sm:px-10 lg:px-20", formOnly ? "py-10 pt-28 lg:py-14 lg:pt-32" : "py-14")}><div className={cn("mx-auto grid gap-6", formOnly ? "max-w-5xl" : "max-w-[1440px] lg:grid-cols-[1fr_360px]")}>{formOnly ? <div className="text-center"><span className="font-black uppercase tracking-[.2em] text-accent-600">Pengajuan Layanan</span><h1 className="mt-3 font-display text-3xl font-black text-gov-950 md:text-5xl">{selectedService?.title ?? "Layanan"}</h1></div> : null}<GlassCard className="rounded-[24px] bg-white/90"><Stepper />{submitted ? <Success ticket={ticket} data={successData} service={successData?.jenis_surat ?? selectedService?.title ?? "-"} estimate={selectedService?.estimate ?? "-"} /> : <form onSubmit={submit} className="mt-8 space-y-8"><ApplicantForm form={form} errors={errors} serviceCatalog={serviceCatalog} update={update} setSelectedId={setSelectedId} /><UploadDocs files={files} errors={errors} setFile={setFile} removeFile={(index) => setFiles((prev) => ({ ...prev, support: prev.support.filter((_, itemIndex) => itemIndex !== index) }))} /><Review form={form} service={selectedService?.title ?? "-"} files={files} /><AgreementCard form={form} service={selectedService?.title ?? "-"} files={files} errors={errors} update={update} /><Button type="submit" variant="gold" disabled={isSubmitting} onClick={() => { console.log("=== TOMBOL AJUKAN PERMOHONAN DIKLIK ==="); alert("Tombol submit terpanggil"); }}>{isSubmitting ? "Mengajukan..." : "Ajukan Permohonan"} <Send size={18} /></Button></form>}</GlassCard>{!formOnly ? <InfoSidebar /> : null}</div></section>
 
             {!formOnly ? <section id="cek-status" className="px-5 py-16 sm:px-10 lg:px-20"><div className="mx-auto grid max-w-[1440px] gap-6 lg:grid-cols-2"><GlassCard className="rounded-[24px] bg-white/90"><span className="font-black uppercase tracking-[.2em] text-accent-600">Cek Status Permohonan</span><h2 className="mt-3 text-3xl font-black text-gov-950">Pantau progres dengan nomor tiket atau NIK.</h2><div className="mt-6 flex flex-col gap-3 sm:flex-row"><input className={cn(inputClass, "flex-1")} placeholder="Contoh: TMS-2026-123456 atau NIK" value={statusQuery} onChange={(e) => setStatusQuery(e.target.value)} /><Button type="button" onClick={checkStatus} disabled={statusLoading}><Search size={18} />{statusLoading ? "Memuat..." : "Cek Status"}</Button></div>{statusChecked ? <StatusResult results={statusResults} loading={statusLoading} error={statusError} /> : <div className="mt-6 rounded-[24px] border border-dashed border-slate-200 p-6 text-center text-sm font-bold text-slate-500">Empty state: masukkan nomor tiket atau NIK untuk melihat progres permohonan.</div>}</GlassCard><GlassCard className="rounded-[24px] bg-white/90"><h3 className="text-2xl font-black text-gov-950">Status yang tersedia</h3><div className="mt-5 grid gap-3 sm:grid-cols-2">{statusList.map((item) => <div key={item} className="rounded-2xl bg-gov-50 p-4 font-black text-gov-950">{item}</div>)}</div><div className="mt-6 rounded-2xl bg-red-50 p-4 text-sm font-bold text-red-700">Error state: nomor tiket tidak ditemukan akan tampil di area ini.</div><div className="mt-3 animate-pulse rounded-2xl bg-slate-100 p-4 text-sm font-bold text-slate-500">Loading skeleton: digunakan saat sistem mengambil data status.</div></GlassCard></div></section> : null}
         </main>
@@ -607,8 +613,9 @@ function ApplicantForm({ form, errors, serviceCatalog, update, setSelectedId }: 
     return <div><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-2xl font-black text-gov-950">Data Pemohon</h2><span className="mt-2 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-700">✓ Data dari Profil Terverifikasi</span></div><Link href="/dashboard/profil" className="text-sm font-black text-gov-950 underline">Ubah di Profil</Link></div><div className="mt-5 grid gap-4 md:grid-cols-2">{identity.map(([label, value]) => <ReadOnlyInfo key={label} label={label} value={value} />)}</div><div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-800"><p className="font-black">Dokumen Identitas</p><p className="mt-2">✓ KTP - Terverifikasi</p><p>✓ Kartu Keluarga - Terverifikasi</p><p className="mt-2">Dokumen identitas diambil dari Profil Akun Warga dan tidak perlu diunggah kembali.</p></div><div className="mt-8"><h2 className="text-2xl font-black text-gov-950">Data Pengajuan</h2><div className="mt-5 grid gap-4 md:grid-cols-2"><Field label="Pilih Pelayanan" error={errors.serviceId}><select className={inputClass} value={form.serviceId} onChange={(e) => { update("serviceId", e.target.value); setSelectedId(e.target.value); }}>{serviceCatalog.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></Field><Field label="Keperluan" error={errors.purpose}><textarea className={cn(inputClass, "min-h-28 py-3")} value={form.purpose} onChange={(e) => update("purpose", e.target.value)} /></Field><Field label="Keterangan"><textarea className={cn(inputClass, "min-h-28 py-3")} value={form.note} onChange={(e) => update("note", e.target.value)} /></Field></div></div></div>;
 }
 
-function UploadDocs({ files, errors, setFile, clearFile }: { files: UploadState; errors: Record<string, string>; setFile: (key: FileKey, event: ChangeEvent<HTMLInputElement>, source?: "camera" | "file") => void; clearFile: () => void }) {
-    const supportFile = files.support;
+function UploadDocs({ files, errors, setFile, removeFile }: { files: UploadState; errors: Record<string, string>; setFile: (key: FileKey, event: ChangeEvent<HTMLInputElement>, source?: "camera" | "file") => void; removeFile: (index: number) => void }) {
+    const supportFiles = files.support;
+    const supportFile = supportFiles[0] ?? null;
     const [previewUrl, setPreviewUrl] = useState("");
 
     useEffect(() => {
@@ -629,11 +636,11 @@ function UploadDocs({ files, errors, setFile, clearFile }: { files: UploadState;
         window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
     }
 
-    return <div><h2 className="text-2xl font-black text-gov-950">Dokumen Pendukung</h2><p className="mt-2 text-sm font-bold text-slate-600">Unggah hanya dokumen khusus yang diminta layanan. Format PDF/JPG/PNG, maksimal 1 MB per file.</p><div className="mt-5 rounded-[24px] border-2 border-dashed border-slate-200 bg-white p-5"><CloudUpload className="text-accent-500" size={34} /><div className="mt-4 flex flex-col gap-3 sm:flex-row"><label className="inline-flex min-h-12 cursor-pointer items-center justify-center rounded-2xl bg-gov-950 px-5 text-sm font-black text-white transition hover:bg-gov-800">📷 Ambil Foto<input type="file" accept="image/jpeg,image/png" capture="environment" className="sr-only" onChange={(e) => setFile("support", e, "camera")} /></label><label className="inline-flex min-h-12 cursor-pointer items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-black text-gov-950 transition hover:border-accent-400">📁 Pilih File<input type="file" accept="image/jpeg,image/png,application/pdf" className="sr-only" onChange={(e) => setFile("support", e, "file")} /></label></div>{supportFile ? <div className="mt-4 flex flex-col gap-4 rounded-3xl border border-slate-200 bg-gov-50 p-4 text-sm font-bold text-gov-950 sm:flex-row sm:items-center"><div className="grid h-[100px] w-[140px] shrink-0 place-items-center overflow-hidden rounded-2xl border border-white bg-white shadow-sm">{previewUrl ? <img src={previewUrl} alt={`Preview ${supportFile.name}`} className="h-full w-full object-cover" /> : <div className="flex h-full w-full flex-col items-center justify-center bg-red-50 text-red-600"><FileArchive size={34} /><span className="mt-1 text-xs font-black">PDF</span></div>}</div><div className="min-w-0 flex-1"><p className="truncate">✓ {supportFile.name}</p><p className="mt-1 text-slate-600">✓ {formatFileSize(supportFile.size)}</p><div className="mt-3 flex flex-wrap gap-2">{supportFile.type === "application/pdf" ? <button type="button" onClick={openPdfPreview} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-gov-950 underline">Lihat PDF</button> : null}<button type="button" onClick={clearFile} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-red-600 underline">Hapus/Ganti</button></div></div></div> : <p className="mt-4 rounded-xl bg-slate-50 px-3 py-2 text-sm font-bold text-slate-500">Belum ada dokumen pendukung dipilih.</p>}{errors.support ? <span className="mt-2 block text-xs font-bold text-red-600">{errors.support}</span> : null}</div></div>;
+    return <div><h2 className="text-2xl font-black text-gov-950">Dokumen Pendukung</h2><p className="mt-2 text-sm font-bold text-slate-600">Unggah hanya dokumen khusus yang diminta layanan. Format PDF/JPG/PNG, maksimal 1 MB per file.</p><div className="mt-5 rounded-[24px] border-2 border-dashed border-slate-200 bg-white p-5"><CloudUpload className="text-accent-500" size={34} /><div className="mt-4 flex flex-col gap-3 sm:flex-row"><label className="inline-flex min-h-12 cursor-pointer items-center justify-center rounded-2xl bg-gov-950 px-5 text-sm font-black text-white transition hover:bg-gov-800">📷 Ambil Foto<input type="file" accept="image/jpeg,image/png" capture="environment" className="sr-only" onChange={(e) => setFile("support", e, "camera")} /></label><label className="inline-flex min-h-12 cursor-pointer items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-black text-gov-950 transition hover:border-accent-400">📁 Pilih File<input type="file" accept="image/jpeg,image/png,application/pdf" className="sr-only" onChange={(e) => setFile("support", e, "file")} /></label></div>{supportFile ? <div className="mt-4 flex flex-col gap-4 rounded-3xl border border-slate-200 bg-gov-50 p-4 text-sm font-bold text-gov-950 sm:flex-row sm:items-center"><div className="grid h-[100px] w-[140px] shrink-0 place-items-center overflow-hidden rounded-2xl border border-white bg-white shadow-sm">{previewUrl ? <img src={previewUrl} alt={`Preview ${supportFile.name}`} className="h-full w-full object-cover" /> : <div className="flex h-full w-full flex-col items-center justify-center bg-red-50 text-red-600"><FileArchive size={34} /><span className="mt-1 text-xs font-black">PDF</span></div>}</div><div className="min-w-0 flex-1"><p className="truncate">✓ {supportFile.name}</p><p className="mt-1 text-slate-600">✓ {formatFileSize(supportFile.size)}</p><div className="mt-3 flex flex-wrap gap-2">{supportFile.type === "application/pdf" ? <button type="button" onClick={openPdfPreview} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-gov-950 underline">Lihat PDF</button> : null}<button type="button" onClick={() => removeFile(0)} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-red-600 underline">Hapus/Ganti</button></div></div></div> : <p className="mt-4 rounded-xl bg-slate-50 px-3 py-2 text-sm font-bold text-slate-500">Belum ada dokumen pendukung dipilih.</p>}{errors.support ? <span className="mt-2 block text-xs font-bold text-red-600">{errors.support}</span> : null}</div></div>;
 }
 
 function Review({ form, service, files }: { form: FormState; service: string; files: UploadState }) {
-    return <div className="rounded-[24px] bg-gov-50 p-5"><h2 className="text-2xl font-black text-gov-950">Review Pengajuan</h2><p className="mt-2 text-sm font-black text-emerald-700">✓ Diambil dari Profil Terverifikasi</p><div className="mt-4 grid gap-2 text-sm md:grid-cols-2"><p><b>Nama:</b> {form.name || "-"}</p><p><b>NIK:</b> {form.nik || "-"}</p><p><b>Alamat:</b> {form.address || "-"}</p><p><b>Jenis layanan:</b> {service}</p><p><b>Keperluan:</b> {form.purpose || "-"}</p><p><b>Dokumen pendukung:</b> {files.support?.name || "Tidak ada"}</p></div><p className="mt-4 rounded-2xl bg-white p-4 text-sm font-bold text-slate-700">Data identitas pemohon otomatis menggunakan data Profil Akun Warga yang telah diverifikasi oleh petugas.</p></div>;
+    return <div className="rounded-[24px] bg-gov-50 p-5"><h2 className="text-2xl font-black text-gov-950">Review Pengajuan</h2><p className="mt-2 text-sm font-black text-emerald-700">✓ Diambil dari Profil Terverifikasi</p><div className="mt-4 grid gap-2 text-sm md:grid-cols-2"><p><b>Nama:</b> {form.name || "-"}</p><p><b>NIK:</b> {form.nik || "-"}</p><p><b>Alamat:</b> {form.address || "-"}</p><p><b>Jenis layanan:</b> {service}</p><p><b>Keperluan:</b> {form.purpose || "-"}</p><p><b>Dokumen pendukung:</b> {files.support.length ? files.support.map((file) => file.name).join(", ") : "Tidak ada"}</p></div><p className="mt-4 rounded-2xl bg-white p-4 text-sm font-bold text-slate-700">Data identitas pemohon otomatis menggunakan data Profil Akun Warga yang telah diverifikasi oleh petugas.</p></div>;
 }
 
 function proofHtml(form: FormState, service: string, id: string) {
@@ -696,6 +703,10 @@ function StatusResult({ results, loading, error }: { results: StatusItem[]; load
     const printData = { ...item, tracking_url: trackingUrl, jenis_surat: serviceName, status: currentStatus };
     return <div className="mt-6 rounded-[24px] bg-gov-50 p-5"><p className="font-black text-gov-950">Status: {currentStatus}</p><p className="mt-2 text-sm font-bold text-slate-650">Nomor: {item.nomor_pengajuan} • Petugas: {latest?.petugas ?? item.petugas ?? "-"} • Realtime aktif</p><div className="mt-4 h-3 overflow-hidden rounded-full bg-white"><div className={cn("h-full", currentStatus === "Ditolak" ? "bg-red-500" : currentStatus === "Selesai" ? "bg-emerald-500" : "bg-gov-500")} style={{ width: `${currentStatus === "Ditolak" ? 100 : Math.min(progress * 20, 100)}%` }} /></div><div className="mt-5 grid gap-3">{stepsToShow.map((step, i) => { const active = step === "Ditolak" ? currentStatus === "Ditolak" : i < progress; return <div key={step} className="flex items-start gap-3"><span className={cn("grid size-8 shrink-0 place-items-center rounded-full", active ? currentStatus === "Ditolak" && step === "Ditolak" ? "bg-red-500 text-white" : currentStatus === "Selesai" ? "bg-emerald-500 text-white" : "bg-gov-500 text-white" : "bg-white text-slate-400")}><Check size={16} /></span><span className="font-bold"><span className="block">{step}</span>{tracking[i] ? <span className="block text-xs text-slate-500">{tracking[i].created_at ? new Date(tracking[i].created_at).toLocaleString("id-ID") : "-"} • {tracking[i].keterangan ?? "-"} • Petugas: {tracking[i].petugas ?? "-"}</span> : null}</span></div>; })}</div><div className="mt-5 flex flex-col gap-2 sm:flex-row"><Button type="button" variant="primary" title="Cetak atau simpan bukti pengajuan sebagai PDF" className="w-full sm:w-auto" onClick={() => setPreviewOpen(true)}><Printer size={18} />Cetak Bukti Pengajuan</Button></div><div className="mt-5 rounded-2xl bg-white p-4"><p className="font-black text-gov-950">Dokumen</p><div className="mt-2 grid gap-2 text-sm font-bold">{(item.dokumen_pengajuan ?? []).map((doc) => { const url = doc.url_file ?? doc.file_url ?? "#"; return <a key={`${doc.jenis ?? doc.jenis_dokumen}-${url}`} className="text-gov-950 underline" href={url} target="_blank" rel="noreferrer">{doc.jenis ?? doc.jenis_dokumen ?? doc.nama_file ?? "Dokumen"}</a>; })}</div></div>{previewOpen ? <div className="fixed inset-0 z-[80] overflow-y-auto bg-slate-950/70 p-4 backdrop-blur-sm no-print"><div className="mx-auto max-w-5xl rounded-[28px] bg-white p-4 shadow-2xl sm:p-6"><div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-black uppercase tracking-[.18em] text-accent-600">Pratinjau Bukti Pengajuan</p><h3 className="text-2xl font-black text-gov-950">Dokumen A4 siap cetak</h3></div><div className="flex flex-col gap-2 sm:flex-row"><Button type="button" variant="glass" onClick={() => setPreviewOpen(false)}>Tutup</Button><Button type="button" variant="primary" title="Cetak atau simpan bukti pengajuan sebagai PDF" onClick={() => window.print()}><Printer size={18} />Cetak Bukti</Button></div></div><div className="max-h-[78vh] overflow-auto rounded-2xl bg-slate-100 p-3"><BuktiPengajuanPrint data={printData} serviceName={serviceName} qrDataUrl={qrDataUrl} className="mx-auto" /></div></div></div> : null}<div className="print-only-holder" aria-hidden={!previewOpen}><BuktiPengajuanPrint data={printData} serviceName={serviceName} qrDataUrl={qrDataUrl} /></div></div>;
 }
+
+
+
+
 
 
 
