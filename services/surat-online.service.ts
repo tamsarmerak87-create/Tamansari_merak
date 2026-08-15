@@ -333,7 +333,7 @@ export async function createSubmission(formData: SubmissionRequest) {
         kkMeta = readPath("file_kk") ? { path: readPath("file_kk") ?? "", url: null, name: "KK", type: "application/pdf", size: 0 } : readMeta("kk");
         pendukungMeta = readPath("file_pendukung") ? { path: readPath("file_pendukung") ?? "", url: null, name: "Dokumen pendukung", type: "application/pdf", size: 0 } : readMeta("pendukung");
         if (Number.isNaN(Date.parse(payload.tanggal_lahir))) throw new Error("Tanggal lahir tidak valid.");
-        if (formData.consent !== true || formData.declaration !== true || formData.physical_proof_generated !== true || formData.physical_proof_viewed !== true || formData.physical_proof_approved !== true) throw new Error("Persetujuan, pernyataan tanggung jawab, dan bukti fisik wajib diselesaikan sebelum permohonan dikirim.");
+        if (formData.consent !== true || formData.physical_proof_generated !== true || formData.physical_proof_viewed !== true || formData.physical_proof_approved !== true) throw new Error("Persetujuan dan bukti fisik wajib diselesaikan sebelum permohonan dikirim.");
         [ktpMeta, kkMeta, pendukungMeta].filter(Boolean).forEach((file) => {
             if (!file?.path || file.path.includes("..")) throw new Error("Path dokumen tidak valid.");
         });
@@ -419,7 +419,6 @@ export async function createSubmission(formData: SubmissionRequest) {
             file_kk: kkUpload?.path ?? null,
             file_pendukung: pendukungUpload?.path ?? null,
             consent_given: true,
-            declaration_accepted: true,
             physical_proof_generated: true,
             physical_proof_viewed: true,
             physical_proof_approved: true,
