@@ -31,6 +31,7 @@ import {
   Send,
   Settings,
   ShieldCheck,
+  Trash2,
   UserRound,
   XCircle,
   UserCog,
@@ -440,6 +441,24 @@ export function AdminShell({
   const rejectSubmission = async (row: Row) => {
     setRejectTarget(row);
   };
+  const deleteSubmission = async (row: Row) => {
+    const confirmed = window.confirm("Hapus pengajuan ini?\n\nPengajuan dan seluruh data terkait akan dihapus permanen.");
+    if (!confirmed) return;
+
+    try {
+      setToast({ type: "loading", text: "Menghapus pengajuan..." });
+      const res = await fetch(`/api/admin/pengajuan/${row.id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Gagal menghapus pengajuan");
+      setToast({ type: "success", text: "Pengajuan berhasil dihapus." });
+      await load();
+    } catch (error) {
+      setToast({ type: "error", text: error instanceof Error ? error.message : "Gagal menghapus pengajuan" });
+    }
+  };
   const verifyWarga = async (row: PendingWarga) => {
     try {
       setToast({ type: "loading", text: `Memverifikasi ${row.nama_lengkap ?? "warga"}...` });
@@ -707,6 +726,7 @@ export function AdminShell({
               rows={filtered}
               onDetail={(row) => router.push(`/admin/pengajuan/${row.id}`)}
               onVerify={setSelectedSubmission}
+              onDelete={deleteSubmission}
               adminProfile={adminProfile}
             />
             {selectedSubmission && (
@@ -853,11 +873,13 @@ function Table({
   rows,
   onDetail,
   onVerify,
+  onDelete,
   adminProfile,
 }: {
   rows: Row[];
   onDetail: (r: Row) => void;
   onVerify: (r: Row) => void;
+  onDelete: (r: Row) => void;
   adminProfile: AdminPortalProfile | null;
 }) {
   return (
@@ -875,7 +897,7 @@ function Table({
               <td className="px-4 py-4 font-bold text-slate-700">{serviceName(r)}</td>
               <td className="px-4 py-4"><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">{workflowStageKey(r)}</span></td>
               <td className="px-4 py-4"><StatusBadge status={trackingStatusLabel(r)} /></td>
-              <td className="px-4 py-4"><div className="flex flex-wrap gap-2"><button type="button" onClick={() => onDetail(r)} className="rounded-xl bg-slate-100 px-3 py-2 font-black text-slate-700 hover:bg-slate-200"><Eye className="inline" size={14} /> Detail</button>{canProcessStage(r, adminProfile) && <button type="button" onClick={() => onVerify(r)} className="rounded-xl bg-gov-950 px-3 py-2 font-black text-white hover:bg-gov-800"><ShieldCheck className="inline" size={14} /> Verifikasi</button>}</div></td>
+              <td className="px-4 py-4"><div className="flex flex-wrap gap-2"><button type="button" onClick={() => onDetail(r)} className="rounded-xl bg-slate-100 px-3 py-2 font-black text-slate-700 hover:bg-slate-200"><Eye className="inline" size={14} /> Detail</button>{canProcessStage(r, adminProfile) && <button type="button" onClick={() => onVerify(r)} className="rounded-xl bg-gov-950 px-3 py-2 font-black text-white hover:bg-gov-800"><ShieldCheck className="inline" size={14} /> Verifikasi</button>}{adminProfile?.role === "admin" && <button type="button" onClick={() => onDelete(r)} className="rounded-xl bg-red-600 px-3 py-2 font-black text-white hover:bg-red-700"><Trash2 className="inline" size={14} /> Hapus</button>}</div></td>
             </tr>
           ))}
         </tbody>
