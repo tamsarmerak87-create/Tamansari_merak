@@ -87,6 +87,7 @@ const allowedTypes = ["application/pdf", "image/jpeg", "image/png"];
 type FormState = ReturnType<typeof createEmptyForm>;
 type FileKey = "support";
 type UploadState = Record<FileKey, File | null>;
+type ValidationResult = { valid: boolean; missingFields: string[]; errors: Record<string, string> };
 type SubmissionResult = Record<string, unknown> & {
     nomor_pengajuan: string;
     nomor_tiket?: string;
@@ -106,6 +107,29 @@ type DocumentItem = { jenis_dokumen?: string; file_url?: string; jenis?: string;
 type StatusItem = SubmissionResult & { tracking_pengajuan?: TrackingItem[]; dokumen_pengajuan?: DocumentItem[] };
 
 const inputClass = "min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-gov-950 outline-none transition focus:ring-4 focus:ring-accent-200";
+
+const fieldLabels: Record<string, string> = {
+    serviceId: "Jenis layanan",
+    nik: "NIK",
+    kk: "Nomor KK",
+    name: "Nama pemohon",
+    birthplace: "Tempat lahir",
+    birthdate: "Tanggal lahir",
+    gender: "Jenis kelamin",
+    religion: "Agama",
+    maritalStatus: "Status perkawinan",
+    job: "Pekerjaan",
+    address: "Alamat",
+    rt: "RT",
+    rw: "RW",
+    village: "Kelurahan",
+    district: "Kecamatan",
+    phone: "Nomor HP",
+    email: "Email",
+    purpose: "Keperluan",
+    support: "Dokumen pendukung",
+    consent: "Pernyataan kebenaran",
+};
 
 function Field({ label, error, children }: { label: string; error?: string; children: ReactNode }) {
     return (
@@ -142,6 +166,19 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
 
     const selectedService = useMemo(() => serviceCatalog.find((item) => item.id === selectedId) ?? serviceCatalog[0], [serviceCatalog, selectedId]);
 
+    const profileValue = (key: string) => {
+        const value = (profile as Record<string, unknown> | null | undefined)?.[key];
+        return typeof value === "string" ? value : "";
+    };
+
+    const normalizedProfile = {
+        religion: form.religion || profileValue("agama") || "Tidak dicantumkan",
+        maritalStatus: form.maritalStatus || profileValue("status_perkawinan") || "Tidak dicantumkan",
+        job: form.job || profileValue("pekerjaan") || "Tidak dicantumkan",
+        ktpPath: profileValue("file_ktp") || profileValue("ktp_path") || profileValue("foto_ktp") || null,
+        kkPath: profileValue("file_kk") || profileValue("kk_path") || profileValue("foto_kk") || null,
+    };
+
     function update(name: keyof FormState, value: string | boolean) {
         setForm((prev) => ({ ...prev, [name]: value }));
         setErrors((prev) => ({ ...prev, [name]: "" }));
@@ -168,8 +205,9 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
         setErrors((prev) => ({ ...prev, [key]: "" }));
     }
 
-    function validate() {
+    function validate(): ValidationResult {
         const next: Record<string, string> = {};
+        const missingFields: string[] = [];
         const rtRw = `${form.rt}/${form.rw}`;
         const payload = {
             layanan_id: form.serviceId,
@@ -179,9 +217,9 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
             tempat_lahir: form.birthplace,
             tanggal_lahir: form.birthdate,
             jenis_kelamin: form.gender,
-            agama: form.religion,
-            status_perkawinan: form.maritalStatus,
-            pekerjaan: form.job,
+            agama: normalizedProfile.religion,
+            status_perkawinan: normalizedProfile.maritalStatus,
+            pekerjaan: normalizedProfile.job,
             alamat: form.address,
             rt_rw: rtRw,
             kelurahan: form.village,
@@ -192,23 +230,61 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
             keperluan: form.purpose,
             catatan: form.note,
         };
+        const requiredFields: (keyof FormState)[] = ["serviceId", "nik", "kk", "name", "birthplace", "birthdate", "gender", "address", "rt", "rw", "village", "district", "phone", "email", "purpose"];
+        console.log("=== DEBUG VALIDASI PENGAJUAN ===");
+        console.log("formData:", form);
+        console.log("service:", selectedService);
+        console.log("layanan:", selectedService);
+        console.log("keperluan:", form.purpose);
+        console.log("uploadedFiles:", files);
+        console.log("isAgreed:", form.consent);
+        console.log("requiredFields:", requiredFields);
+        console.log("[SERVICE ID]", selectedService?.id);
+        console.log("[SERVICE DATA]", selectedService);
+        console.log("KEPERLUAN UI:", form.purpose);
+        console.log("FORM STATE:", form);
+        console.log("[UPLOADED DOCUMENTS]", files);
+        console.log("[FILE PENDUKUNG]", files.support);
+        console.log("[AGREEMENT STATE]", form.consent);
         try {
             submissionSchema.parse(payload);
         } catch (error) {
             if (error instanceof Error && "issues" in error) (error as { issues: { path: (string | number)[]; message: string }[] }).issues.forEach((issue) => {
                 const key = String(issue.path[0] ?? "");
                 const map: Record<string, string> = { layanan_id: "serviceId", nama_lengkap: "name", nomor_kk: "kk", tempat_lahir: "birthplace", tanggal_lahir: "birthdate", jenis_kelamin: "gender", agama: "religion", status_perkawinan: "maritalStatus", pekerjaan: "job", alamat: "address", rt_rw: "rt", kelurahan: "village", kecamatan: "district", nomor_hp: "phone", keperluan: "purpose" };
-                next[map[key] ?? key] = issue.message;
+                const formKey = map[key] ?? key;
+                next[formKey] = issue.message;
+                if (!missingFields.includes(fieldLabels[formKey] ?? formKey)) missingFields.push(fieldLabels[formKey] ?? formKey);
+                console.log("[SUBMIT BLOCKED] schema validation", { field: formKey, message: issue.message });
             });
         }
-        const required: (keyof FormState)[] = ["serviceId", "nik", "kk", "name", "birthplace", "birthdate", "gender", "address", "rt", "rw", "village", "district", "phone", "email", "purpose"];
-        required.forEach((key) => { if (!String(form[key]).trim()) next[key] = "Wajib diisi"; });
+        requiredFields.forEach((key) => {
+            const value = form[key];
+            const empty = value === undefined || value === null || (typeof value === "string" && value.trim() === "");
+            console.log("[REQUIRED FIELD]", key, "VALUE:", value, "EMPTY:", empty);
+            if (empty) {
+                next[key] = "Wajib diisi";
+                if (!missingFields.includes(fieldLabels[key])) missingFields.push(fieldLabels[key]);
+            }
+        });
         const support = files.support;
-        if (support && !allowedTypes.includes(support.type)) next.support = "Format harus PDF, JPG, atau PNG";
-        else if (support && support.size > 1024 * 1024) next.support = "Ukuran maksimal 1MB";
-        if (!form.consent) next.consent = "Pernyataan persetujuan wajib dicentang";
+        if (support && !allowedTypes.includes(support.type)) {
+            console.log("[SUBMIT BLOCKED] format dokumen pendukung tidak valid", { type: support.type });
+            next.support = "Format harus PDF, JPG, atau PNG";
+            missingFields.push("Dokumen pendukung (format PDF/JPG/PNG)");
+        } else if (support && support.size > 1024 * 1024) {
+            console.log("[SUBMIT BLOCKED] ukuran dokumen pendukung terlalu besar", { size: support.size });
+            next.support = "Ukuran maksimal 1MB";
+            missingFields.push("Dokumen pendukung (maksimal 1MB)");
+        }
+        if (!form.consent) {
+            console.log("[SUBMIT BLOCKED] persetujuan false");
+            next.consent = "Pernyataan persetujuan wajib dicentang";
+            missingFields.push(fieldLabels.consent);
+        }
+        console.log("[MISSING FIELDS]", missingFields);
         setErrors(next);
-        return Object.keys(next).length === 0;
+        return { valid: Object.keys(next).length === 0, missingFields, errors: next };
     }
 
     async function submit(e?: FormEvent) {
@@ -226,7 +302,6 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
             if (user && profile?.status_verifikasi !== "Akun Terverifikasi" && profile?.status_verifikasi !== "Terverifikasi") {
                 console.log("[SUBMIT BLOCKED] profil belum valid", { status_verifikasi: profile?.status_verifikasi });
                 alert("Akun Anda belum diverifikasi. Silakan verifikasi akun sebelum mengajukan layanan.");
-                window.location.href = "/verify";
                 return;
             }
             if (!selectedService) {
@@ -241,9 +316,11 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
                 return;
             }
             if (files.support) console.log("[SUBMIT CHECK] dokumen pendukung tersedia", { name: files.support.name, type: files.support.type, size: files.support.size });
-            if (!validate()) {
-                console.log("[SUBMIT BLOCKED] validasi form gagal", { errors: "lihat pesan validasi di halaman" });
-                alert("Mohon lengkapi data yang wajib diisi sebelum mengajukan permohonan.");
+            const validation = validate();
+            if (!validation.valid) {
+                console.log("[SUBMIT BLOCKED] validasi form gagal", { errors: validation.errors, missingFields: validation.missingFields });
+                const details = validation.missingFields.length > 0 ? validation.missingFields : Object.keys(validation.errors).map((key) => fieldLabels[key] ?? key);
+                alert(`Mohon lengkapi bagian berikut:\n\n${details.map((field) => `• ${field}`).join("\n")}`);
                 return;
             }
             const confirmationMessage = `Apakah Anda yakin ingin mengirim permohonan?\n\nNama: ${form.name || "-"}\nLayanan: ${selectedService?.title ?? "-"}\nDokumen pendukung: ${files.support ? 1 : 0} berkas\nData identitas: dari Profil Terverifikasi`;
@@ -260,9 +337,9 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
                 tempat_lahir: form.birthplace,
                 tanggal_lahir: form.birthdate,
                 jenis_kelamin: form.gender,
-                agama: form.religion,
-                status_perkawinan: form.maritalStatus,
-                pekerjaan: form.job,
+                agama: normalizedProfile.religion,
+                status_perkawinan: normalizedProfile.maritalStatus,
+                pekerjaan: normalizedProfile.job,
                 alamat: form.address,
                 rt_rw: `${form.rt}/${form.rw}`,
                 kelurahan: form.village,
@@ -291,8 +368,8 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
                 if (process.env.NODE_ENV !== "production") console.info("[surat-online]", { stage: "pengajuan_insert", uploadedPathCount: uploadedPaths.length });
                 const submitPayload = {
                     ...payload,
-                    file_ktp: null,
-                    file_kk: null,
+                    file_ktp: normalizedProfile.ktpPath,
+                    file_kk: normalizedProfile.kkPath,
                     file_pendukung: pendukungUpload?.path ?? null,
                     consent: form.consent,
                     declaration: form.consent,
@@ -302,6 +379,7 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
                     physical_proof_generated_at: form.physicalProofGeneratedAt || new Date().toISOString(),
                     materai_status: "NOT_CONFIGURED",
                 };
+                console.log("=== POST PENGAJUAN ===");
                 console.log(
                     "=== AKAN POST KE API ===",
                     JSON.stringify(submitPayload, null, 2)
