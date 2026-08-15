@@ -432,6 +432,7 @@ export async function createSubmission(formData: SubmissionRequest) {
         };
 
         logUploadStage("[surat-online:pengajuan-insert:start]", { stage: "pengajuan_insert", hasKtpPath: Boolean(pengajuanPayload.file_ktp), hasKkPath: Boolean(pengajuanPayload.file_kk), hasPendukungPath: Boolean(pengajuanPayload.file_pendukung) });
+        console.log("[CREATE SUBMISSION] payload:", pengajuanPayload);
 
         const { data: pengajuan, error } = await client.from("pengajuan_surat").insert(pengajuanPayload).select("id,nomor_pengajuan,status,created_at").single();
         if (error) {
