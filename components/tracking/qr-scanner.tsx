@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Html5Qrcode } from "html5-qrcode";
 import { Camera, ImageUp, Loader2, QrCode, RotateCcw } from "lucide-react";
@@ -30,45 +30,116 @@ export function normalizeTrackingValue(raw: string) {
 
 export function QRScanner({ redirectBase = "/surat-online/tracking" }: { redirectBase?: string }) {
     const router = useRouter();
-    const scanner = useRef<Html5Qrcode | null>(null);
+    const videoRef = useRef<HTMLVideoElement | null>(null);
+    const canvasRef = useRef<HTMLCanvasElement | null>(null);
+    const qrDecoder = useRef<Html5Qrcode | null>(null);
+    const streamRef = useRef<MediaStream | null>(null);
+    const scanLoopRef = useRef<number | null>(null);
+    const startingRef = useRef(false);
+    const mountedRef = useRef(false);
     const handled = useRef(false);
     const [state, setState] = useState<ScanState>("idle");
     const [message, setMessage] = useState("Izinkan akses kamera untuk memindai QR Code.");
 
-    const canUseCamera = useMemo(() => typeof navigator !== "undefined" && Boolean(navigator.mediaDevices?.getUserMedia), []);
-
     useEffect(() => {
+        mountedRef.current = true;
         void startCamera();
-        return () => { void stopCamera(); };
+        return () => {
+            mountedRef.current = false;
+            stopCamera();
+        };
     }, []);
 
-    async function stopCamera() {
+    const stopCamera = useCallback(() => {
         handled.current = false;
-        if (!scanner.current) return;
-        try {
-            if (scanner.current.isScanning) await scanner.current.stop();
-            await scanner.current.clear();
-        } catch { }
-        scanner.current = null;
-    }
+        startingRef.current = false;
+        if (scanLoopRef.current) {
+            window.clearTimeout(scanLoopRef.current);
+            scanLoopRef.current = null;
+        }
+        if (videoRef.current) {
+            videoRef.current.pause();
+            videoRef.current.srcObject = null;
+        }
+        streamRef.current?.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+    }, []);
 
-    async function startCamera() {
-        if (!canUseCamera) {
-            setState("error");
-            setMessage("Kamera tidak tersedia pada perangkat ini.");
+    const getCameraErrorMessage = useCallback((error: unknown) => {
+        if (!(error instanceof DOMException)) return "Kamera tidak dapat digunakan. Silakan izinkan kamera atau gunakan Upload QR.";
+        if (error.name === "NotAllowedError" || error.name === "PermissionDeniedError") return "Akses kamera ditolak. Izinkan kamera pada pengaturan browser kemudian tekan Scan Lagi.";
+        if (error.name === "NotFoundError" || error.name === "DevicesNotFoundError") return "Kamera tidak ditemukan pada perangkat ini.";
+        if (error.name === "NotReadableError" || error.name === "TrackStartError") return "Kamera sedang digunakan aplikasi lain. Tutup aplikasi kamera/Zoom/WhatsApp lalu coba lagi.";
+        return "Kamera tidak dapat digunakan. Silakan izinkan kamera atau gunakan Upload QR.";
+    }, []);
+
+    const scanCurrentFrame = useCallback(async () => {
+        if (handled.current || !streamRef.current || !videoRef.current || !canvasRef.current) return;
+        const video = videoRef.current;
+        if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !video.videoWidth || !video.videoHeight) {
+            scanLoopRef.current = window.setTimeout(() => void scanCurrentFrame(), 350);
             return;
         }
-        await stopCamera();
+
+        const canvas = canvasRef.current;
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        try {
+            const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/png"));
+            if (blob) {
+                qrDecoder.current ??= new Html5Qrcode(scannerId, false);
+                const decoded = await qrDecoder.current.scanFile(new File([blob], "qr-frame.png", { type: "image/png" }), false);
+                await onDecoded(decoded);
+                return;
+            }
+        } catch { }
+        scanLoopRef.current = window.setTimeout(() => void scanCurrentFrame(), 500);
+    }, []);
+
+    async function startCamera() {
+        if (startingRef.current) return;
+        if (typeof window === "undefined" || typeof navigator === "undefined" || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            setState("error");
+            setMessage("Kamera tidak dapat digunakan. Silakan izinkan kamera atau gunakan Upload QR.");
+            return;
+        }
+        if (!window.isSecureContext && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
+            setState("error");
+            setMessage("Kamera tidak dapat digunakan. Silakan izinkan kamera atau gunakan Upload QR.");
+            return;
+        }
+
+        stopCamera();
+        startingRef.current = true;
         setState("starting");
         setMessage("Arahkan kamera ke QR Code pelayanan Anda.");
+        console.log("[QR Scanner] Starting camera");
         try {
-            const instance = new Html5Qrcode(scannerId, false);
-            scanner.current = instance;
-            await instance.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 240, height: 240 }, aspectRatio: 1 }, onDecoded, () => undefined);
+            let stream: MediaStream;
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+            } catch {
+                stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+            }
+            if (!mountedRef.current || !videoRef.current) {
+                stream.getTracks().forEach(track => track.stop());
+                return;
+            }
+            streamRef.current = stream;
+            videoRef.current.srcObject = stream;
+            await videoRef.current.play();
+            console.log("[QR Scanner] Camera stream started", stream);
             setState("scanning");
-        } catch {
+            scanLoopRef.current = window.setTimeout(() => void scanCurrentFrame(), 350);
+        } catch (error) {
+            console.error("[QR Scanner] Camera error", error);
+            stopCamera();
             setState("error");
-            setMessage("Kamera tidak dapat digunakan. Izinkan akses kamera atau upload gambar QR dari galeri.");
+            setMessage(getCameraErrorMessage(error));
+        } finally {
+            startingRef.current = false;
         }
     }
 
@@ -84,19 +155,18 @@ export function QRScanner({ redirectBase = "/surat-online/tracking" }: { redirec
         }
         setState("decoded");
         setMessage("QR berhasil dibaca. Mencari dokumen...");
-        await stopCamera();
+        stopCamera();
         router.push(`${redirectBase}?nomor=${encodeURIComponent(value)}`);
     }
 
     async function scanFile(file?: File | null) {
         if (!file) return;
-        await stopCamera();
+        stopCamera();
         setState("starting");
         setMessage("Membaca QR dari gambar...");
         try {
-            const instance = new Html5Qrcode(scannerId, false);
-            scanner.current = instance;
-            const decoded = await instance.scanFile(file, true);
+            qrDecoder.current ??= new Html5Qrcode(scannerId, false);
+            const decoded = await qrDecoder.current.scanFile(file, true);
             await onDecoded(decoded);
         } catch {
             setState("invalid");
@@ -109,7 +179,9 @@ export function QRScanner({ redirectBase = "/surat-online/tracking" }: { redirec
         <h1 className="mt-4 text-3xl font-black text-[#172033]">Scan QR Pengajuan</h1>
         <p className="mt-2 text-sm font-bold text-slate-500">Arahkan kamera ke QR Code pelayanan Anda.</p>
         <div className="relative mx-auto mt-6 aspect-square w-[min(80vw,320px)] overflow-hidden rounded-[28px] border-4 border-[#FFC400] bg-[#172033] shadow-inner">
-            <div id={scannerId} className="h-full w-full overflow-hidden [&_video]:h-full [&_video]:w-full [&_video]:object-cover" />
+            <video ref={videoRef} autoPlay muted playsInline className="h-full w-full object-cover" />
+            <canvas ref={canvasRef} className="hidden" />
+            <div id={scannerId} className="hidden" />
             {(state === "scanning" || state === "starting") && <span className="pointer-events-none absolute left-6 right-6 top-8 h-1 animate-[scanline_1.8s_ease-in-out_infinite] rounded-full bg-[#16A34A] shadow-[0_0_18px_rgba(22,163,74,.8)]" />}
             {state === "starting" && <div className="absolute inset-0 grid place-items-center bg-white/70"><Loader2 className="animate-spin text-[#16A34A]" /></div>}
         </div>
