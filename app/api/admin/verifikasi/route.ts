@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getAdminSession, requireAdmin } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
+import { appendWargaHistory, notifyWargaAccount } from "@/services/warga-verification-workflow";
 
 type VerificationRequestBody = {
     wargaId?: string;
@@ -19,7 +20,7 @@ type VerificationRequestBody = {
     rw?: string | null;
     kelurahan?: string | null;
     kecamatan?: string | null;
-    status_verifikasi?: "Belum Terverifikasi" | "Terverifikasi" | "Ditolak";
+    status_verifikasi?: "Belum Terverifikasi" | "Belum Diverifikasi" | "Menunggu Staff Pelayanan" | "Menunggu Petugas Lapangan" | "Menunggu Kasi" | "Menunggu Sek Lur" | "Menunggu Lurah" | "Dikembalikan" | "Ditolak" | "Terverifikasi";
     alasan_penolakan?: string | null;
 };
 
@@ -54,7 +55,8 @@ export async function PATCH(request: NextRequest) {
         }
 
         const nextStatus = body.status_verifikasi;
-        if (nextStatus !== "Terverifikasi" && nextStatus !== "Ditolak") {
+        const allowedStatuses = ["Belum Terverifikasi", "Belum Diverifikasi", "Menunggu Staff Pelayanan", "Menunggu Petugas Lapangan", "Menunggu Kasi", "Menunggu Sek Lur", "Menunggu Lurah", "Dikembalikan", "Ditolak", "Terverifikasi"];
+        if (!nextStatus || !allowedStatuses.includes(nextStatus)) {
             return NextResponse.json({ ok: false, error: "Status verifikasi tidak valid." }, { status: 400 });
         }
 
@@ -63,11 +65,17 @@ export async function PATCH(request: NextRequest) {
         }
 
         const supabase = createSupabaseAdminClient();
+        const { data: current, error: currentError } = await supabase.from("warga_profiles").select("*").eq("id", wargaId).maybeSingle();
+        if (currentError) return jsonError(currentError.message, 500);
+        if (!current) return jsonError("Data warga tidak ditemukan.", 404);
+
         const updatePayload = {
             status_verifikasi: nextStatus,
             alasan_penolakan: nextStatus === "Ditolak" ? body.alasan_penolakan?.trim() : null,
             verified_at: nextStatus === "Terverifikasi" ? new Date().toISOString() : null,
             verified_by: nextStatus === "Terverifikasi" ? session.profile.id : null,
+            tahap_verifikasi: nextStatus === "Terverifikasi" ? "Terverifikasi" : nextStatus.replace(/^Menunggu\s+/, ""),
+            verification_history: appendWargaHistory(current, { action: nextStatus === "Terverifikasi" ? "admin_terverifikasi" : nextStatus === "Ditolak" ? "admin_tolak" : "admin_update", status_sebelum: current.status_verifikasi, status_sesudah: nextStatus, role: session.profile.role, petugas_id: session.profile.id, nama_petugas: session.profile.nama_lengkap ?? session.profile.username, catatan: body.alasan_penolakan ?? null }),
         };
 
         const { data, error } = await supabase
@@ -87,6 +95,8 @@ export async function PATCH(request: NextRequest) {
             );
         }
 
+        if (nextStatus === "Terverifikasi") await notifyWargaAccount(current, "Akun Terverifikasi", "Akun warga Anda sudah terverifikasi oleh Admin.");
+        if (nextStatus === "Ditolak") await notifyWargaAccount(current, "Akun Ditolak", "Verifikasi akun warga Anda ditolak.", body.alasan_penolakan);
         return NextResponse.json({ ok: true, data });
     } catch (error) {
         const message = error instanceof Error ? error.message : "Gagal memperbarui verifikasi warga.";

@@ -17,6 +17,7 @@ export default function RegisterPage() {
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(false);
     const [toast, setToast] = useState<Toast>(null);
+
     const set = (key: keyof WargaRegisterInput, value: string | boolean) => { setForm((prev) => ({ ...prev, [key]: value })); setErrors((prev) => ({ ...prev, [key]: "" })); };
     function validateBeforeSubmit() {
         const next: Record<string, string> = {};
