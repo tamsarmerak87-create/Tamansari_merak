@@ -1,9 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getAdminSession, isPetugas } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
-import { appendWargaHistory, canHandleWargaStage, getActiveWargaStage, getAssignedPetugasId, getValidReturnStages, getWargaStageByRole, notifyPetugasTarget, notifyWargaAccount, resolveReturnStage, WARGA_WORKFLOW } from "@/services/warga-verification-workflow";
+import { appendWargaHistory, canHandleWargaStage, getActiveWargaStage, getAssignedPetugasId, getValidReturnStages, getWargaStageByRole, isPendingWargaVerification, notifyPetugasTarget, notifyWargaAccount, resolveReturnStage, WARGA_WORKFLOW } from "@/services/warga-verification-workflow";
 
 function jsonError(message: string, status = 400) { return NextResponse.json({ ok: false, error: message }, { status }); }
+
+function logWargaQueue(message: string, data: Record<string, any>) {
+    console.info("[WARGA VERIFICATION QUEUE]", message, data);
+}
 
 export async function GET(request: NextRequest) {
     const session = await getAdminSession(request, { cookie: "petugas" });
@@ -14,10 +18,12 @@ export async function GET(request: NextRequest) {
     const supabase = createSupabaseAdminClient();
     const id = request.nextUrl.searchParams.get("id");
     let query = supabase.from("warga_profiles").select("*").order("created_at", { ascending: false });
-    if (id) query = query.eq("id", id); else query = query.or(`and(status_verifikasi.in.(Belum Terverifikasi,Belum Diverifikasi,${stage.status}),returned_to_role.is.null),and(status_verifikasi.eq.Dikembalikan,returned_to_role.eq.${stage.role})`);
+    if (id) query = query.eq("id", id);
     const { data, error } = await query;
     if (error) return jsonError(error.message, 500);
-    const rows = (data ?? []).filter((row) => canHandleWargaStage(session.profile!, row)).map((row) => ({ ...row, active_stage: getActiveWargaStage(row), return_targets: getValidReturnStages(session.profile!.role) }));
+    const candidates = id ? data ?? [] : (data ?? []).filter(isPendingWargaVerification);
+    const rows = candidates.filter((row) => canHandleWargaStage(session.profile!, row)).map((row) => ({ ...row, active_stage: getActiveWargaStage(row), return_targets: getValidReturnStages(session.profile!.role) }));
+    logWargaQueue("GET", { user_id: session.profile.id, role: session.profile.role, requested_id: id, total_found: data?.length ?? 0, pending_candidates: candidates.length, returned_rows: rows.length, sample: (data ?? []).slice(0, 10).map((row) => ({ id: row.id, status_verifikasi: row.status_verifikasi, tahap_verifikasi: row.tahap_verifikasi, returned_to_role: row.returned_to_role, handled_by: row.handled_by, active_role: getActiveWargaStage(row)?.role ?? null })) });
     return NextResponse.json({ ok: true, data: id ? rows[0] ?? null : rows, stage, return_targets: getValidReturnStages(session.profile.role) });
 }
 

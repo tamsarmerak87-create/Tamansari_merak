@@ -29,8 +29,13 @@ export function getWargaStageByStatus(status?: string | null) {
 }
 
 export function getActiveWargaStage(warga: WargaRow) {
+    if (!warga.tahap_verifikasi && ["Belum Terverifikasi", "Belum Diverifikasi"].includes(String(warga.status_verifikasi ?? ""))) return WARGA_WORKFLOW[0];
     if (warga.status_verifikasi === "Dikembalikan") return getWargaStageByRole(warga.returned_to_role);
     return getWargaStageByStatus(warga.status_verifikasi);
+}
+
+export function isPendingWargaVerification(warga: WargaRow) {
+    return Boolean(getActiveWargaStage(warga) && !WARGA_TERMINAL_STATUSES.includes(String(warga.status_verifikasi ?? "")));
 }
 
 export function getAssignedPetugasId(warga: WargaRow) {
