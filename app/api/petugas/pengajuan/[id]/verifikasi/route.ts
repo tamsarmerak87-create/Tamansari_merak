@@ -282,7 +282,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
         logDebug("success", { pengajuanId, stage: activeStage.tahap, action, nextStatus: nextWorkflowStatus });
         return NextResponse.json({ ok: true, data: updatedPengajuan });
     } catch (error) {
-        console.error("[VERIFIKASI ERROR ASLI]", { pengajuanId, error });
+        const supabaseError = error as SupabaseError;
+        console.error("[VERIFIKASI ERROR ASLI]", {
+            pengajuanId,
+            code: supabaseError?.code ?? null,
+            message: supabaseError?.message ?? null,
+            details: supabaseError?.details ?? null,
+            hint: supabaseError?.hint ?? null,
+            error,
+        });
         return publicSaveError();
     }
 }
