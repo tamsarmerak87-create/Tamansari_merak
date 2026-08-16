@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Mail, LogIn } from "lucide-react";
@@ -18,6 +18,19 @@ export default function LoginPage() {
     const [remember, setRemember] = useState(true);
     const [loading, setLoading] = useState(false);
     const [errorMessage, setErrorMessage] = useState("");
+
+    useEffect(() => {
+        let mounted = true;
+        (async () => {
+            try {
+                const { profile } = await getCurrentWargaVerificationStatus();
+                if (mounted && profile) router.replace(getVerificationRedirectPath(profile));
+            } catch {
+                // Tetap tampilkan form login jika tidak ada session warga aktif.
+            }
+        })();
+        return () => { mounted = false; };
+    }, [router]);
 
     async function submit(event: FormEvent) {
         event.preventDefault();

@@ -1,10 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Building2, Loader2, LockKeyhole, ShieldCheck, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { loginAdminPortal } from "@/services/admin-auth.service";
+import { getCurrentAdminPortalUser, loginAdminPortal } from "@/services/admin-auth.service";
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -13,13 +13,26 @@ export default function AdminLoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const { profile } = await getCurrentAdminPortalUser();
+        if (mounted && profile) router.replace("/admin/dashboard");
+      } catch {
+        // Tetap tampilkan form login jika tidak ada cookie admin aktif.
+      }
+    })();
+    return () => { mounted = false; };
+  }, [router]);
+
   async function login(e?: React.FormEvent<HTMLFormElement>) {
     e?.preventDefault();
     try {
       setError("");
       setLoading(true);
       await loginAdminPortal(username, password);
-      router.replace("/admin");
+      router.replace("/admin/dashboard");
     } catch (authError) {
       setError(authError instanceof Error ? authError.message : "Username atau password salah.");
     } finally {
