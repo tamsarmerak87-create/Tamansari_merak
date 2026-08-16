@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+:root {
+  --mobile-bottom-nav-height: 76px;
+}
+
 @keyframes chat-slide-up {
   from {
     opacity: 0;
