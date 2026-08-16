@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Mail, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AuthField, AuthShell, authInputClass } from "@/components/auth/auth-ui";
-import { getCurrentWargaVerificationStatus, getVerificationRedirectPath, loginWarga, signInWithGoogle } from "@/services/warga-auth.service";
+import { getCurrentWargaVerificationStatus, loginWarga, signInWithGoogle } from "@/services/warga-auth.service";
 import { useWargaAuth } from "@/components/auth/warga-auth-provider";
 import { getFriendlyMessage } from "@/lib/messages";
 
@@ -23,8 +23,8 @@ export default function LoginPage() {
         let mounted = true;
         (async () => {
             try {
-                const { profile } = await getCurrentWargaVerificationStatus();
-                if (mounted && profile) router.replace(getVerificationRedirectPath(profile));
+                const { user } = await getCurrentWargaVerificationStatus();
+                if (mounted && user) router.replace("/dashboard");
             } catch {
                 // Tetap tampilkan form login jika tidak ada session warga aktif.
             }
@@ -39,8 +39,7 @@ export default function LoginPage() {
             setErrorMessage("");
             await loginWarga({ identifier, password, remember });
             await refresh();
-            const { profile } = await getCurrentWargaVerificationStatus();
-            router.replace(getVerificationRedirectPath(profile));
+            router.replace("/dashboard");
         } catch (error) {
             setErrorMessage(getFriendlyMessage(error, "Email/NIK atau password salah. Silakan periksa kembali."));
         } finally {

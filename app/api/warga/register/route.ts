@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/services/supabase";
-import { assertWargaProfilePayloadIsSchemaSafe, wargaRegisterSchema, type WargaProfileInsertPayload } from "@/services/warga-auth.service";
+import { assertWargaProfilePayloadIsSchemaSafe, WARGA_PROFILE_CHANGE_DOCUMENT_BUCKET, WARGA_PROFILE_PHOTO_BUCKET, wargaRegisterSchema, type WargaProfileInsertPayload } from "@/services/warga-auth.service";
+
+const MAX_FILE_SIZE = 2 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
 
 function errorMessage(error: unknown) {
     return error instanceof Error ? error.message : "Terjadi kesalahan tidak dikenal saat registrasi warga.";
@@ -13,6 +16,28 @@ async function cleanupAuthUser(userId: string) {
     if (error) throw new Error(`Cleanup Auth gagal untuk user_id ${userId}: ${error.message}`);
 }
 
+function extensionFor(file: File) {
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (ext && ["jpg", "jpeg", "png", "webp"].includes(ext)) return ext;
+    return file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+}
+
+function validateImage(file: File | null, label: string) {
+    if (!file || file.size === 0) throw new Error(`${label} wajib diupload.`);
+    if (!ALLOWED_IMAGE_TYPES.has(file.type)) throw new Error("Format foto harus JPG, JPEG, PNG, atau WEBP.");
+    if (file.size > MAX_FILE_SIZE) throw new Error("Foto terlalu besar. Silakan pilih foto maksimal 2 MB.");
+}
+
+async function uploadImage(supabaseAdmin: ReturnType<typeof createSupabaseAdminClient>, bucket: string, path: string, file: File) {
+    const { data, error } = await supabaseAdmin.storage.from(bucket).upload(path, file, { upsert: false, contentType: file.type });
+    if (error) throw error;
+    return data.path;
+}
+
+async function cleanupStorage(supabaseAdmin: ReturnType<typeof createSupabaseAdminClient>, uploads: { bucket: string; path: string }[]) {
+    await Promise.all(uploads.map(({ bucket, path }) => supabaseAdmin.storage.from(bucket).remove([path]).catch(() => null)));
+}
+
 export async function POST(request: Request) {
     const supabaseAdmin = createSupabaseAdminClient();
     if (!supabaseAdmin) {
@@ -21,8 +46,18 @@ export async function POST(request: Request) {
 
     let createdUserId = "";
     try {
-        const body = await request.json();
+        const contentType = request.headers.get("content-type") ?? "";
+        const formData = contentType.includes("multipart/form-data") ? await request.formData() : null;
+        const body = formData ? JSON.parse(String(formData.get("payload") ?? "{}")) : await request.json();
         const payload = wargaRegisterSchema.parse(body);
+        const ktpFile = formData?.get("ktp") instanceof File ? formData.get("ktp") as File : null;
+        const kkFile = formData?.get("kk") instanceof File ? formData.get("kk") as File : null;
+        const selfieFile = formData?.get("selfie") instanceof File ? formData.get("selfie") as File : null;
+        if (formData) {
+            validateImage(ktpFile, "KTP");
+            validateImage(kkFile, "KK");
+            validateImage(selfieFile, "Foto wajah");
+        }
 
         const existingProfile = await supabaseAdmin.from("warga_profiles").select("id,email,nik").or(`email.eq.${payload.email},nik.eq.${payload.nik}`).limit(1).maybeSingle();
         if (existingProfile.error) throw existingProfile.error;
@@ -38,6 +73,11 @@ export async function POST(request: Request) {
         const user = createUserResponse.data.user;
         if (!user) throw new Error("Auth error: Supabase tidak mengembalikan user setelah pendaftaran.");
         createdUserId = user.id;
+        const uploadedFiles: { bucket: string; path: string }[] = [];
+        const fotoUrl = selfieFile ? await uploadImage(supabaseAdmin, WARGA_PROFILE_PHOTO_BUCKET, `${user.id}/profile-${Date.now()}.${extensionFor(selfieFile)}`, selfieFile) : null;
+        if (fotoUrl) uploadedFiles.push({ bucket: WARGA_PROFILE_PHOTO_BUCKET, path: fotoUrl });
+        if (ktpFile) uploadedFiles.push({ bucket: WARGA_PROFILE_CHANGE_DOCUMENT_BUCKET, path: await uploadImage(supabaseAdmin, WARGA_PROFILE_CHANGE_DOCUMENT_BUCKET, `${user.id}/register-ktp-${Date.now()}.${extensionFor(ktpFile)}`, ktpFile) });
+        if (kkFile) uploadedFiles.push({ bucket: WARGA_PROFILE_CHANGE_DOCUMENT_BUCKET, path: await uploadImage(supabaseAdmin, WARGA_PROFILE_CHANGE_DOCUMENT_BUCKET, `${user.id}/register-kk-${Date.now()}.${extensionFor(kkFile)}`, kkFile) });
 
         const profileData = assertWargaProfilePayloadIsSchemaSafe({
             id: user.id,
@@ -55,13 +95,14 @@ export async function POST(request: Request) {
             tempat_lahir: payload.tempat_lahir,
             tanggal_lahir: payload.tanggal_lahir,
             jenis_kelamin: payload.jenis_kelamin,
-            foto_url: null,
+            foto_url: fotoUrl,
             role: "warga",
             status_verifikasi: "Belum Terverifikasi",
         }) satisfies WargaProfileInsertPayload;
 
         const profileResponse = await supabaseAdmin.from("warga_profiles").insert(profileData).select("*").single();
         if (profileResponse.error) {
+            await cleanupStorage(supabaseAdmin, uploadedFiles);
             let cleanupNote = "";
             try {
                 await cleanupAuthUser(createdUserId);

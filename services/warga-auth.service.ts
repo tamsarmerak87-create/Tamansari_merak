@@ -221,16 +221,19 @@ export async function getCurrentWarga() {
     return { user, profile };
 }
 
-export async function registerWarga(input: WargaRegisterInput) {
+export type WargaRegisterFiles = { ktp?: File | null; kk?: File | null; selfie?: File | null };
+
+export async function registerWarga(input: WargaRegisterInput, files?: WargaRegisterFiles) {
     try {
         const payload = wargaRegisterSchema.parse(input);
         const supabase = client();
 
-        const response = await fetch("/api/warga/register", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(payload),
-        });
+        const formData = new FormData();
+        formData.append("payload", JSON.stringify(payload));
+        if (files?.ktp) formData.append("ktp", files.ktp);
+        if (files?.kk) formData.append("kk", files.kk);
+        if (files?.selfie) formData.append("selfie", files.selfie);
+        const response = await fetch("/api/warga/register", files ? { method: "POST", body: formData } : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
         const result = await response.json().catch(() => null) as { user?: User; profile?: WargaProfile; error?: string } | null;
         if (!response.ok || !result?.user || !result.profile) {
             throw new Error(result?.error || "Registrasi gagal. Akun Auth tidak dibuat atau sudah dibersihkan karena profil gagal dibuat.");
