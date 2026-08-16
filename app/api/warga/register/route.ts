@@ -28,6 +28,21 @@ function validateImage(file: File | null, label: string) {
     if (file.size > MAX_FILE_SIZE) throw new Error("Foto terlalu besar. Silakan pilih foto maksimal 2 MB.");
 }
 
+function registrationDocumentRow(userId: string, path: string, jenis: "KTP" | "KK") {
+    return {
+        user_id: userId,
+        profile_id: userId,
+        jenis_perubahan: jenis,
+        data_lama: "Dokumen registrasi awal",
+        data_baru: path,
+        alasan: `Upload ${jenis} saat registrasi warga`,
+        dokumen_pendukung: path,
+        status: "pending",
+    };
+}
+
+type RegistrationDocumentRow = ReturnType<typeof registrationDocumentRow>;
+
 async function uploadImage(supabaseAdmin: ReturnType<typeof createSupabaseAdminClient>, bucket: string, path: string, file: File) {
     const { data, error } = await supabaseAdmin.storage.from(bucket).upload(path, file, { upsert: false, contentType: file.type });
     if (error) throw error;
@@ -76,8 +91,10 @@ export async function POST(request: Request) {
         const uploadedFiles: { bucket: string; path: string }[] = [];
         const fotoUrl = selfieFile ? await uploadImage(supabaseAdmin, WARGA_PROFILE_PHOTO_BUCKET, `${user.id}/profile-${Date.now()}.${extensionFor(selfieFile)}`, selfieFile) : null;
         if (fotoUrl) uploadedFiles.push({ bucket: WARGA_PROFILE_PHOTO_BUCKET, path: fotoUrl });
-        if (ktpFile) uploadedFiles.push({ bucket: WARGA_PROFILE_CHANGE_DOCUMENT_BUCKET, path: await uploadImage(supabaseAdmin, WARGA_PROFILE_CHANGE_DOCUMENT_BUCKET, `${user.id}/register-ktp-${Date.now()}.${extensionFor(ktpFile)}`, ktpFile) });
-        if (kkFile) uploadedFiles.push({ bucket: WARGA_PROFILE_CHANGE_DOCUMENT_BUCKET, path: await uploadImage(supabaseAdmin, WARGA_PROFILE_CHANGE_DOCUMENT_BUCKET, `${user.id}/register-kk-${Date.now()}.${extensionFor(kkFile)}`, kkFile) });
+        const ktpPath = ktpFile ? await uploadImage(supabaseAdmin, WARGA_PROFILE_CHANGE_DOCUMENT_BUCKET, `${user.id}/register-ktp-${Date.now()}.${extensionFor(ktpFile)}`, ktpFile) : null;
+        if (ktpPath) uploadedFiles.push({ bucket: WARGA_PROFILE_CHANGE_DOCUMENT_BUCKET, path: ktpPath });
+        const kkPath = kkFile ? await uploadImage(supabaseAdmin, WARGA_PROFILE_CHANGE_DOCUMENT_BUCKET, `${user.id}/register-kk-${Date.now()}.${extensionFor(kkFile)}`, kkFile) : null;
+        if (kkPath) uploadedFiles.push({ bucket: WARGA_PROFILE_CHANGE_DOCUMENT_BUCKET, path: kkPath });
 
         const profileData = assertWargaProfilePayloadIsSchemaSafe({
             id: user.id,
@@ -112,6 +129,14 @@ export async function POST(request: Request) {
                 cleanupNote = ` Cleanup Auth gagal: ${errorMessage(cleanupError)}`;
             }
             throw new Error(`Profil warga gagal dibuat: ${profileResponse.error.message}.${cleanupNote}`);
+        }
+
+        const registrationDocuments: RegistrationDocumentRow[] = [];
+        if (ktpPath) registrationDocuments.push(registrationDocumentRow(user.id, ktpPath, "KTP"));
+        if (kkPath) registrationDocuments.push(registrationDocumentRow(user.id, kkPath, "KK"));
+        if (registrationDocuments.length > 0) {
+            const documentResponse = await supabaseAdmin.from("warga_profile_change_requests").insert(registrationDocuments);
+            if (documentResponse.error) throw new Error(`Path dokumen registrasi gagal disimpan: ${documentResponse.error.message}`);
         }
 
         return NextResponse.json({ user, profile: profileResponse.data });
