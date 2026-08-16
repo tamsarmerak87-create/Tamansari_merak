@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getAdminSession, isPetugas } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
-import { ROLE_STAGE_STATUS, normalizeSubmissionStatus, normalizeWorkflowRole } from "@/services/verification-workflow";
+import { ROLE_STAGE_STATUS, STAGE_WAITING_STATUS, getActiveStage, isFinalSubmissionStatus, normalizeSubmissionStatus, normalizeWorkflowRole } from "@/services/verification-workflow";
 import { canHandleWargaStage, getActiveWargaStage, isPendingWargaVerification } from "@/services/warga-verification-workflow";
 
 type AnyRow = Record<string, any>;
@@ -29,7 +29,15 @@ function groupBy<T extends AnyRow>(rows: T[], key: keyof T): Map<string, T[]> { 
 function activeStatusFromStages(stages: AnyRow[] = []) { return stages.find((stage) => stage.status === "Diproses")?.nama_tahap ?? (stages.every((stage) => stage.status === "Disetujui") ? "Selesai" : "Menunggu"); }
 function canAccessSubmission(stages: AnyRow[] = [], role: string, userId: string) {
     if (role === "lurah") return true;
-    return stages.some((stage) => stage.petugas_id === userId || stage.user_id === userId);
+    return stages.some((stage) => stage.role_petugas === role && ["Menunggu", "Diproses"].includes(String(stage.status ?? ""))) || stages.some((stage) => stage.petugas_id === userId || stage.user_id === userId);
+}
+
+function submissionWaitingForRole(row: AnyRow, role: string) {
+    if (isFinalSubmissionStatus(String(row.status ?? row.workflow_status ?? ""))) return false;
+    const normalizedStatus = normalizeSubmissionStatus(String(row.workflow_status ?? row.status ?? ""));
+    const requiredStatus = ROLE_STAGE_STATUS[role as keyof typeof ROLE_STAGE_STATUS];
+    if (normalizedStatus === requiredStatus) return true;
+    return role === "staff_pelayanan" && ["MENUNGGU_STAFF", "MENUNGGU_VERIFIKASI"].includes(String(normalizedStatus));
 }
 
 function historyTime(row: AnyRow) { return String(row.created_at ?? row.acted_at ?? row.updated_at ?? ""); }
@@ -141,7 +149,7 @@ export async function GET(request: NextRequest) {
     const [activeResult, allStagesResult, submissionsResult, officersResult, auditsResult, wargaResult, petugasNotificationsResult] = await Promise.all([
         safeRows<VerificationRow>("verifikasi_pengajuan.active", supabase.from("verifikasi_pengajuan").select("id,pengajuan_id,tahap,nama_tahap,role_petugas,status,petugas_id,user_id,catatan,created_at,acted_at").eq("role_petugas", workflowRole).eq("status", "Diproses").order("created_at", { ascending: false }), warnings),
         safeRows<VerificationRow>("verifikasi_pengajuan.all", supabase.from("verifikasi_pengajuan").select("id,pengajuan_id,tahap,nama_tahap,role_petugas,status,petugas_id,user_id,catatan,created_at,acted_at").order("tahap", { ascending: true }), warnings),
-        isLurah ? safeRows<AnyRow>("pengajuan_surat.monitoring", supabase.from("pengajuan_surat").select("*, layanan(*)").order("created_at", { ascending: false }), warnings) : Promise.resolve({ data: [], error: null }),
+        safeRows<AnyRow>(isLurah ? "pengajuan_surat.monitoring" : "pengajuan_surat.petugas_candidates", supabase.from("pengajuan_surat").select("*, layanan(*)").order("created_at", { ascending: false }), warnings),
         safeRows<AnyRow>("petugas", supabase.from("petugas").select("id,username,nama_lengkap,jabatan,role,is_active").eq("is_active", true), warnings),
         safeRows<AnyRow>("audit_pengajuan.mine", supabase.from("audit_pengajuan").select("*").eq("user_id", session.profile.id).order("created_at", { ascending: false }), warnings),
         safeRows<AnyRow>("warga_profiles.verification", supabase.from("warga_profiles").select("id,nama_lengkap,nik,status_verifikasi,tahap_verifikasi,returned_to_role,handled_by,verification_history,alasan_penolakan,created_at,updated_at").order("updated_at", { ascending: false }), warnings),
@@ -150,8 +158,10 @@ export async function GET(request: NextRequest) {
 
     const activeStages = (activeResult.data ?? []) as VerificationRow[];
     const allStages = (allStagesResult.data ?? []) as VerificationRow[];
+    const candidateSubmissions = ((submissionsResult.data ?? []) as AnyRow[]).filter((row) => isLurah || submissionWaitingForRole(row, workflowRole));
     const activeIds = activeStages.map((stage) => stage.pengajuan_id);
-    const listSubmissionIds = isLurah ? (submissionsResult.data ?? []).map((row) => row.id) : activeIds;
+    const legacyIds = candidateSubmissions.map((row) => row.id).filter(Boolean);
+    const listSubmissionIds = isLurah ? (submissionsResult.data ?? []).map((row) => row.id) : Array.from(new Set([...activeIds, ...legacyIds]));
     const detailStageIds = detailId ? allStages.filter((stage) => stage.pengajuan_id === detailId).map((stage) => stage.pengajuan_id) : [];
     const submissionIds = Array.from(new Set([...listSubmissionIds, ...detailStageIds, detailId].filter(Boolean)));
 
@@ -178,21 +188,30 @@ export async function GET(request: NextRequest) {
 
     function enrichStage(stage: VerificationRow): AnyRow {
         const pengajuan = submissionMap.get(stage.pengajuan_id);
-        return { ...pengajuan, ...stage, id: stage.pengajuan_id, verifikasi_id: stage.id, active_stage: stage, workflow_status: pengajuan?.workflow_status ?? pengajuan?.status ?? stage.status, workflow_stage_status: stage.status, dokumen_pengajuan: docsByPengajuan.get(stage.pengajuan_id) ?? [], verifikasi_pengajuan: stagesByPengajuan.get(stage.pengajuan_id) ?? [], tracking_pengajuan: trackingByPengajuan.get(stage.pengajuan_id) ?? [], audit_pengajuan: auditsByPengajuan.get(stage.pengajuan_id) ?? [] };
+        return { ...pengajuan, ...stage, id: stage.pengajuan_id, verifikasi_id: stage.id, active_stage: stage, workflow_status: STAGE_WAITING_STATUS[stage.tahap] ?? pengajuan?.workflow_status ?? pengajuan?.status ?? stage.status, workflow_stage_status: stage.status, dokumen_pengajuan: docsByPengajuan.get(stage.pengajuan_id) ?? [], verifikasi_pengajuan: stagesByPengajuan.get(stage.pengajuan_id) ?? [], tracking_pengajuan: trackingByPengajuan.get(stage.pengajuan_id) ?? [], audit_pengajuan: auditsByPengajuan.get(stage.pengajuan_id) ?? [] };
     }
 
     function enrichSubmission(row: AnyRow): AnyRow {
         const stages = stagesByPengajuan.get(String(row.id)) ?? [];
-        return { ...row, workflow_status: activeStatusFromStages(stages), verifikasi_pengajuan: stages, dokumen_pengajuan: docsByPengajuan.get(String(row.id)) ?? [], tracking_pengajuan: trackingByPengajuan.get(String(row.id)) ?? [], audit_pengajuan: auditsByPengajuan.get(String(row.id)) ?? [] };
+        const activeStage = getActiveStage(stages) ?? null;
+        return { ...row, workflow_status: row.workflow_status ?? activeStatusFromStages(stages), active_stage: activeStage, verifikasi_pengajuan: stages, dokumen_pengajuan: docsByPengajuan.get(String(row.id)) ?? [], tracking_pengajuan: trackingByPengajuan.get(String(row.id)) ?? [], audit_pengajuan: auditsByPengajuan.get(String(row.id)) ?? [] };
     }
 
     const wargaRows = (wargaResult.data ?? []) as AnyRow[];
     const wargaTasks = wargaRows.filter((row) => isPendingWargaVerification(row) && canHandleWargaStage(session.profile!, row)).map(wargaTask);
     const requiredSubmissionStatus = ROLE_STAGE_STATUS[workflowRole];
-    const pengajuanTasks: AnyRow[] = activeStages
+    const stageTasks: AnyRow[] = activeStages
         .map(enrichStage)
         .filter((row) => row.nomor_pengajuan || row.nama_lengkap)
-        .filter((row) => normalizeSubmissionStatus(String(row.workflow_status ?? row.status)) === requiredSubmissionStatus)
+        .filter((row) => row.active_stage?.role_petugas === workflowRole && submissionWaitingForRole(row, workflowRole))
+        .map((row) => ({ ...row, task_type: "pengajuan_layanan", jenis_tugas: "Pengajuan Layanan" }));
+    const legacyTasks: AnyRow[] = candidateSubmissions
+        .filter((row) => !activeIds.includes(row.id))
+        .map(enrichSubmission)
+        .filter((row) => submissionWaitingForRole(row, workflowRole))
+        .map((row) => ({ ...row, active_stage: row.active_stage ?? { tahap: 1, nama_tahap: "Verifikasi Staff Pelayanan", role_petugas: "staff_pelayanan", status: "Diproses" }, workflow_status: row.workflow_status ?? requiredSubmissionStatus, task_type: "pengajuan_layanan", jenis_tugas: "Pengajuan Layanan" }));
+    const pengajuanTasks: AnyRow[] = [...stageTasks, ...legacyTasks]
+        .filter((row, index, rows) => rows.findIndex((item) => item.id === row.id) === index)
         .map((row) => ({ ...row, task_type: "pengajuan_layanan", jenis_tugas: "Pengajuan Layanan" }));
     const tasks: AnyRow[] = pengajuanTasks.sort((a, b) => new Date(b.updated_at ?? b.created_at ?? 0).getTime() - new Date(a.updated_at ?? a.created_at ?? 0).getTime());
     const wargaHistory = wargaHistoryRows(wargaRows, workflowRole, session.profile.id).sort((a, b) => new Date(historyTime(b)).getTime() - new Date(historyTime(a)).getTime());
