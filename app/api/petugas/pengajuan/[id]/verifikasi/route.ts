@@ -31,7 +31,7 @@ function logConfigError(operation: string, message: string, context?: Record<str
 }
 
 function logSupabaseOperation(context: DebugContext, operation: string, table: string, error?: SupabaseError | null) {
-    console.error("[VERIFIKASI ERROR DEBUG]", {
+    console.error(error ? "[SUPABASE VERIFIKASI ERROR]" : "[VERIFIKASI SAVE DEBUG]", {
         pengajuanId: context.pengajuanId,
         petugasId: context.petugasId,
         role: context.role,
@@ -41,10 +41,10 @@ function logSupabaseOperation(context: DebugContext, operation: string, table: s
         operation,
         table,
         success: !error,
-        errorCode: error?.code ?? null,
-        errorMessage: error?.message ?? null,
-        errorDetails: error?.details ?? null,
-        errorHint: error?.hint ?? null,
+        code: error?.code ?? null,
+        message: error?.message ?? null,
+        details: error?.details ?? null,
+        hint: error?.hint ?? null,
     });
 }
 
@@ -257,7 +257,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
         const auditPayload = {
             pengajuan_id: pengajuanId,
-            user_id: petugasId,
             nama_petugas: petugasName,
             role: workflowRole,
             tahap: STAGE_AUDIT_LABEL[activeStage.tahap] ?? activeStage.nama_tahap,
@@ -267,7 +266,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
             status_sebelum: requiredStatus,
             status_sesudah: nextWorkflowStatus,
             catatan,
-            metadata: { tahap: activeStage.tahap, next_tahap: nextStage?.tahap ?? null, role: workflowRole, pemeriksaan: body?.pemeriksaan ?? null },
+            metadata: { tahap: activeStage.tahap, next_tahap: nextStage?.tahap ?? null, role: workflowRole, petugas_id: petugasId, pemeriksaan: body?.pemeriksaan ?? null },
         };
         const { error: auditError } = await supabase.from("audit_pengajuan").insert(auditPayload);
         if (auditError) {
@@ -283,7 +282,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         logDebug("success", { pengajuanId, stage: activeStage.tahap, action, nextStatus: nextWorkflowStatus });
         return NextResponse.json({ ok: true, data: updatedPengajuan });
     } catch (error) {
-        console.error("[VERIFIKASI PETUGAS] UNHANDLED ERROR", { pengajuanId, error });
+        console.error("[VERIFIKASI ERROR ASLI]", { pengajuanId, error });
         return publicSaveError();
     }
 }
