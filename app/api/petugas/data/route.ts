@@ -33,9 +33,13 @@ function canAccessSubmission(stages: AnyRow[] = [], role: string, userId: string
 }
 
 function submissionWaitingForRole(row: AnyRow, role: string) {
-    if (isFinalSubmissionStatus(String(row.status ?? row.workflow_status ?? ""))) return false;
-    const normalizedStatus = normalizeSubmissionStatus(String(row.workflow_status ?? row.status ?? ""));
+    const activeStage = row.active_stage ?? null;
+    const activeStageWaitingStatus = activeStage?.tahap ? STAGE_WAITING_STATUS[Number(activeStage.tahap)] : null;
+    const rawWorkflowStatus = row.workflow_status ?? activeStageWaitingStatus ?? row.status ?? "";
+    if (isFinalSubmissionStatus(String(rawWorkflowStatus))) return false;
+    const normalizedStatus = normalizeSubmissionStatus(String(rawWorkflowStatus));
     const requiredStatus = ROLE_STAGE_STATUS[role as keyof typeof ROLE_STAGE_STATUS];
+    if (activeStage?.role_petugas === role && activeStage?.status === "Diproses") return true;
     if (normalizedStatus === requiredStatus) return true;
     return role === "staff_pelayanan" && ["MENUNGGU_STAFF", "MENUNGGU_VERIFIKASI"].includes(String(normalizedStatus));
 }
@@ -85,6 +89,11 @@ function wargaHistoryRows(rows: AnyRow[], role: string, petugasId: string) {
 
 function logDetailDebug(message: string, data: AnyRow) {
     console.info("[PETUGAS DETAIL DEBUG]", message, data);
+}
+
+function logTugasDebug(data: AnyRow) {
+    if (process.env.NODE_ENV === "production") return;
+    console.info("[PETUGAS TUGAS DEBUG]", data);
 }
 
 async function safeRows<T extends AnyRow>(label: string, query: PromiseLike<{ data: T[] | null; error: AnyRow | null }>, warnings: AnyRow[]): Promise<SafeResult<T[]>> {
@@ -214,6 +223,18 @@ export async function GET(request: NextRequest) {
         .filter((row, index, rows) => rows.findIndex((item) => item.id === row.id) === index)
         .map((row) => ({ ...row, task_type: "pengajuan_layanan", jenis_tugas: "Pengajuan Layanan" }));
     const tasks: AnyRow[] = pengajuanTasks.sort((a, b) => new Date(b.updated_at ?? b.created_at ?? 0).getTime() - new Date(a.updated_at ?? a.created_at ?? 0).getTime());
+    logTugasDebug({
+        userId: session.profile.id,
+        role: session.profile.role,
+        jabatan: session.profile.jabatan ?? null,
+        normalizedRole: workflowRole,
+        activeStage: activeStages.map((stage) => ({ pengajuan_id: stage.pengajuan_id, tahap: stage.tahap, role_petugas: stage.role_petugas, status: stage.status })),
+        waitingStatus: requiredSubmissionStatus,
+        table: "verifikasi_pengajuan + pengajuan_surat",
+        query: { role_petugas: workflowRole, stage_status: "Diproses", submission_status: requiredSubmissionStatus },
+        queryResultCount: { activeStages: activeStages.length, candidateSubmissions: candidateSubmissions.length, stageTasks: stageTasks.length, legacyTasks: legacyTasks.length, tasks: tasks.length },
+        queryError: warnings.length ? warnings : null,
+    });
     const wargaHistory = wargaHistoryRows(wargaRows, workflowRole, session.profile.id).sort((a, b) => new Date(historyTime(b)).getTime() - new Date(historyTime(a)).getTime());
     const history: AnyRow[] = (auditsResult.data ?? []).map((row: AnyRow) => ({ ...row, task_type: "pengajuan_layanan", jenis_tugas: "Pengajuan Layanan" })).sort((a, b) => new Date(historyTime(b)).getTime() - new Date(historyTime(a)).getTime());
     const monitoring = isLurah ? (submissionsResult.data ?? []).map(enrichSubmission) : [];

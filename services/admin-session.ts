@@ -1,5 +1,6 @@
 import { type NextRequest } from "next/server";
 import { createSupabaseAdminClient } from "@/services/supabase";
+import { normalizeWorkflowRole } from "@/services/verification-workflow";
 
 export const workflowRoles = [
     "admin",
@@ -31,7 +32,8 @@ export function isAdminRole(role?: string | null): role is AdminRole {
 }
 
 export function isPetugasRole(role?: string | null): role is PetugasRole {
-    return workflowRoles.includes(role as WorkflowRole) && role !== "admin";
+    const normalizedRole = normalizeWorkflowRole(role);
+    return Boolean(normalizedRole);
 }
 
 export function isAdmin(user?: { role?: string | null } | null) {
@@ -80,9 +82,12 @@ export async function getAdminSession(request: NextRequest, options: { cookie?: 
         .eq("is_active", true)
         .maybeSingle();
 
-    if (error || !data || (!isAdminRole(data.role) && !isPetugasRole(data.role))) return { error: "FORBIDDEN" as const, profile: null };
+    if (error || !data) return { error: "FORBIDDEN" as const, profile: null };
 
-    return { error: null, profile: data as PetugasProfile };
+    const normalizedRole = isAdminRole(data.role) ? data.role : normalizeWorkflowRole(data.role ?? data.jabatan);
+    if (!normalizedRole || (!isAdminRole(normalizedRole) && !isPetugasRole(normalizedRole))) return { error: "FORBIDDEN" as const, profile: null };
+
+    return { error: null, profile: { ...data, role: normalizedRole } as PetugasProfile };
 }
 
 export function requirePetugas(user?: { role?: string | null } | null) {
