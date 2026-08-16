@@ -6,7 +6,8 @@ import { createWargaNotification } from "@/services/warga-notifikasi.service";
 
 type RouteContext = { params: Promise<{ id: string }> };
 type SupabaseError = { message?: string; details?: string; hint?: string; code?: string };
-type VerificationBody = { catatan?: string; pemeriksaan?: unknown };
+type VerificationAction = "simpan" | "revisi" | "tolak" | "approve" | "selesai";
+type VerificationBody = { action?: VerificationAction | null; catatan?: string; pemeriksaan?: unknown };
 type StageRow = { id: string; tahap: number; nama_tahap: string; role_petugas: string; status: string };
 
 const STAGE_AUDIT_LABEL: Record<number, string> = { 1: "STAFF", 2: "LAPANGAN", 3: "KASI", 4: "SEKLUR", 5: "LURAH" };
@@ -47,6 +48,10 @@ function logSupabaseNoRows(operation: string, context: Record<string, unknown>) 
     });
 }
 
+function logDebug(event: string, context: Record<string, unknown>) {
+    console.log("VERIFIKASI DEBUG", { event, ...context });
+}
+
 function workflowStatusMatches(actualStatus: string, requiredStatus: string, activeStage: StageRow) {
     if (actualStatus === requiredStatus) return true;
     return activeStage.tahap === 1 && ["MENUNGGU_STAFF", "MENUNGGU_VERIFIKASI"].includes(actualStatus);
@@ -71,10 +76,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
         const workflowRole = normalizeWorkflowRole(session.profile.role);
         if (!workflowRole) return jsonError("Role petugas tidak memiliki kewenangan workflow verifikasi.", 403);
-        if (workflowRole !== "staff_pelayanan") {
-            // Endpoint ini dipakai tombol Verifikasi tahap 1 di portal petugas.
-            return jsonError("Tombol Verifikasi hanya dapat diproses oleh Staff Pelayanan.", 403);
-        }
 
         const supabase = createSupabaseAdminClient();
         if (!supabase) {
@@ -83,12 +84,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
         }
 
         const body = await request.json().catch(() => null) as VerificationBody | null;
+        const action = body?.action ?? "approve";
+        if (!["simpan", "revisi", "tolak", "approve", "selesai"].includes(action)) return jsonError("Aksi verifikasi tidak valid.", 400);
         const now = new Date().toISOString();
-        const catatan = body?.catatan?.trim() || "Dokumen telah diverifikasi dan lengkap";
+        const catatan = body?.catatan?.trim() || (action === "simpan" ? "Pemeriksaan data dan dokumen disimpan." : "Dokumen telah diverifikasi dan lengkap");
         const petugasId = session.profile.id;
         const petugasName = session.profile.nama_lengkap ?? session.profile.username ?? "Petugas Kelurahan";
 
-        console.log("[VERIFIKASI PETUGAS] START", { pengajuanId, petugasId, role: workflowRole });
+        logDebug("start", { pengajuanId, petugasId, role: workflowRole, action });
 
         const { data: pengajuan, error: pengajuanError } = await supabase
             .from("pengajuan_surat")
@@ -123,24 +126,57 @@ export async function POST(request: NextRequest, context: RouteContext) {
         if (!workflowStatusMatches(String(normalizedSubmissionStatus), requiredStatus, activeStage)) return jsonError(`${activeStage.nama_tahap} hanya boleh memproses status ${requiredStatus}.`, 403);
         if (STAGE_WAITING_STATUS[activeStage.tahap] !== requiredStatus) return jsonError("Tahap workflow aktif tidak sesuai dengan status pengajuan.", 409);
 
-        const nextStage = orderedStages.find((stage) => stage.tahap === activeStage.tahap + 1) ?? null;
-        const nextWorkflowStatus = nextStage ? STAGE_WAITING_STATUS[nextStage.tahap] : "SELESAI";
         const hasilVerifikasi = JSON.stringify({
-            status: "Data dan dokumen dinyatakan lengkap.",
+            status: action === "simpan" ? "Pemeriksaan tersimpan." : action === "revisi" || action === "tolak" ? "Data atau dokumen perlu diperbaiki." : "Data dan dokumen dinyatakan lengkap.",
             pemeriksaan: body?.pemeriksaan ?? { check_status: "checked", check_notes: catatan, checked_at: now, checked_by: petugasId },
         });
+
+        if (action === "simpan") {
+            const { data: savedStage, error: saveStageError } = await supabase
+                .from("verifikasi_pengajuan")
+                .update({
+                    petugas_id: petugasId,
+                    nama_petugas: petugasName,
+                    jabatan: activeStage.nama_tahap,
+                    catatan,
+                    hasil_verifikasi: hasilVerifikasi,
+                    updated_at: now,
+                })
+                .eq("id", activeStage.id)
+                .in("status", ["Menunggu", "Diproses"])
+                .select("id,status")
+                .maybeSingle();
+            if (saveStageError) {
+                logSupabaseError("update verifikasi_pengajuan simpan pemeriksaan", saveStageError);
+                throw saveStageError;
+            }
+            if (!savedStage) {
+                logSupabaseNoRows("update verifikasi_pengajuan simpan pemeriksaan", { pengajuanId, stageId: activeStage.id, allowedStatus: ["Menunggu", "Diproses"] });
+                return jsonError("Pemeriksaan tidak dapat disimpan karena tahap sudah berubah. Muat ulang data pengajuan.", 409);
+            }
+            logDebug("saved-inspection", { pengajuanId, stage: activeStage.tahap, status: activeStage.status });
+            return NextResponse.json({ ok: true, data: { id: pengajuanId, workflow_status: normalizedSubmissionStatus, stage_status: savedStage.status } });
+        }
+
+        const isReject = action === "revisi" || action === "tolak";
+        if (isReject && !body?.catatan?.trim()) return jsonError("Catatan/alasan penolakan wajib diisi.", 400);
+        if (activeStage.tahap === 5 && action === "revisi") return jsonError("Tahap Lurah hanya dapat menyelesaikan atau menolak pengajuan.", 400);
+
+        const nextStage = isReject ? null : orderedStages.find((stage) => stage.tahap === activeStage.tahap + 1) ?? null;
+        const nextWorkflowStatus = isReject ? (action === "revisi" ? "REVISI" : "DITOLAK") : nextStage ? STAGE_WAITING_STATUS[nextStage.tahap] : "SELESAI";
+        const stageStatus = isReject ? "Ditolak" : "Disetujui";
 
         const { data: updatedStage, error: updateStageError } = await supabase
             .from("verifikasi_pengajuan")
             .update({
-                status: "Disetujui",
+                status: stageStatus,
                 petugas_id: petugasId,
                 nama_petugas: petugasName,
                 jabatan: activeStage.nama_tahap,
                 catatan,
                 hasil_verifikasi: hasilVerifikasi,
                 acted_at: now,
-                approved_at: now,
+                approved_at: isReject ? null : now,
                 updated_at: now,
             })
             .eq("id", activeStage.id)
@@ -170,7 +206,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
         const pengajuanUpdate = {
             workflow_status: nextWorkflowStatus,
-            status: nextStage ? "Diproses" : "Selesai",
+            status: isReject ? nextWorkflowStatus : nextStage ? "Diproses" : "Selesai",
             updated_at: now,
         };
         const { data: updatedPengajuan, error: updatePengajuanError } = await supabase
@@ -190,8 +226,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
         const trackingRows = [{
             pengajuan_id: pengajuanId,
-            status: nextStage ? "Diproses" : "SELESAI",
-            keterangan: nextStage ? `Pengajuan diteruskan ke ${stageShortName(nextStage)}.` : "Pengajuan selesai diverifikasi.",
+            status: isReject ? (action === "revisi" ? "Dikembalikan untuk revisi" : "Ditolak") : nextStage ? "Diproses" : "SELESAI",
+            keterangan: isReject ? `${action === "revisi" ? "Pengajuan dikembalikan" : "Pengajuan ditolak"} pada tahap ${stageShortName(activeStage)}. ${catatan}` : nextStage ? `Pengajuan diteruskan ke ${stageShortName(nextStage)}.` : "Pengajuan selesai diverifikasi.",
             petugas: petugasName,
             created_at: now,
         }];
@@ -207,9 +243,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
             nama_petugas: petugasName,
             role: workflowRole,
             tahap: STAGE_AUDIT_LABEL[activeStage.tahap] ?? activeStage.nama_tahap,
-            aksi: "VERIFIKASI",
-            action: "VERIFIKASI",
-            status: "Diproses",
+            aksi: isReject ? (action === "revisi" ? "KEMBALIKAN" : "TOLAK") : "VERIFIKASI",
+            action: isReject ? (action === "revisi" ? "KEMBALIKAN" : "TOLAK") : "VERIFIKASI",
+            status: isReject ? nextWorkflowStatus : "Diproses",
             status_sebelum: requiredStatus,
             status_sesudah: nextWorkflowStatus,
             catatan,
@@ -221,11 +257,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
             throw auditError;
         }
 
-        await createWargaNotification({ pengajuanId, nik: String(pengajuan.nik ?? ""), status: nextStage ? "verified" : "completed", catatan }).catch((notificationError) => {
+        await createWargaNotification({ pengajuanId, nik: String(pengajuan.nik ?? ""), status: isReject ? "rejected" : nextStage ? "verified" : "completed", catatan }).catch((notificationError) => {
             console.error("WARGA NOTIFICATION INSERT ERROR", notificationError);
         });
 
-        console.log("[VERIFIKASI PETUGAS] SUCCESS", { pengajuanId, stage: activeStage.tahap, nextStatus: nextWorkflowStatus });
+        logDebug("success", { pengajuanId, stage: activeStage.tahap, action, nextStatus: nextWorkflowStatus });
         return NextResponse.json({ ok: true, data: updatedPengajuan });
     } catch (error) {
         console.error("[VERIFIKASI PETUGAS] UNHANDLED ERROR", { pengajuanId, error });
