@@ -31,7 +31,7 @@ function logConfigError(operation: string, message: string, context?: Record<str
 
 function logSupabaseError(operation: string, error: SupabaseError | null) {
     if (!error) return;
-    console.error(`[VERIFIKASI PETUGAS] Supabase gagal: ${operation}`, {
+    console.error(`[VERIFIKASI SAVE DEBUG] Supabase gagal: ${operation}`, {
         message: error.message,
         details: error.details,
         hint: error.hint,
@@ -40,7 +40,7 @@ function logSupabaseError(operation: string, error: SupabaseError | null) {
 }
 
 function logSupabaseNoRows(operation: string, context: Record<string, unknown>) {
-    console.error(`[VERIFIKASI PETUGAS] Supabase gagal: ${operation}`, {
+    console.error(`[VERIFIKASI SAVE DEBUG] Supabase gagal: ${operation}`, {
         message: "Operasi tidak mengubah/mengembalikan baris apa pun.",
         details: context,
         hint: "Periksa filter id/status, RLS policy, trigger, atau data workflow yang tidak sinkron.",
@@ -49,7 +49,7 @@ function logSupabaseNoRows(operation: string, context: Record<string, unknown>) 
 }
 
 function logDebug(event: string, context: Record<string, unknown>) {
-    console.log("VERIFIKASI DEBUG", { event, ...context });
+    console.log("[VERIFIKASI SAVE DEBUG]", { event, ...context });
 }
 
 function workflowStatusMatches(actualStatus: string, requiredStatus: string, activeStage: StageRow) {
@@ -84,8 +84,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
         }
 
         const body = await request.json().catch(() => null) as VerificationBody | null;
+        if (!body || typeof body !== "object") return jsonError("Payload verifikasi wajib berupa JSON.", 400);
         const action = body?.action ?? "approve";
         if (!["simpan", "revisi", "tolak", "approve", "selesai"].includes(action)) return jsonError("Aksi verifikasi tidak valid.", 400);
+        if ((action === "simpan" || action === "approve" || action === "selesai") && body.pemeriksaan == null) return jsonError("Checklist pemeriksaan wajib dikirim.", 400);
         const now = new Date().toISOString();
         const catatan = body?.catatan?.trim() || (action === "simpan" ? "Pemeriksaan data dan dokumen disimpan." : "Dokumen telah diverifikasi dan lengkap");
         const petugasId = session.profile.id;
@@ -136,6 +138,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 .from("verifikasi_pengajuan")
                 .update({
                     petugas_id: petugasId,
+                    user_id: petugasId,
                     nama_petugas: petugasName,
                     jabatan: activeStage.nama_tahap,
                     catatan,
@@ -171,11 +174,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
             .update({
                 status: stageStatus,
                 petugas_id: petugasId,
+                user_id: petugasId,
                 nama_petugas: petugasName,
                 jabatan: activeStage.nama_tahap,
                 catatan,
                 hasil_verifikasi: hasilVerifikasi,
-                acted_at: now,
                 approved_at: isReject ? null : now,
                 updated_at: now,
             })
