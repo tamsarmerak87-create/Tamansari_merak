@@ -5,6 +5,7 @@ import { normalizeWorkflowRole } from "@/services/verification-workflow";
 import { canHandleWargaStage, getActiveWargaStage, isPendingWargaVerification } from "@/services/warga-verification-workflow";
 
 type AnyRow = Record<string, any>;
+type SafeResult<T> = { data: T; error: AnyRow | null };
 type VerificationRow = {
     id: string;
     pengajuan_id: string;
@@ -23,6 +24,7 @@ function jsonError(message: string, status = 400) {
     console.error("[PETUGAS DETAIL DEBUG] response error", { status, message });
     return NextResponse.json({ ok: false, error: message }, { status });
 }
+function logDataError(label: string, data: AnyRow) { console.error("[PETUGAS DATA ERROR]", label, data); }
 function groupBy<T extends AnyRow>(rows: T[], key: keyof T): Map<string, T[]> { const map = new Map<string, T[]>(); for (const row of rows) { const value = String(row[key] ?? ""); if (!map.has(value)) map.set(value, []); map.get(value)?.push(row); } return map; }
 function activeStatusFromStages(stages: AnyRow[] = []) { return stages.find((stage) => stage.status === "Diproses")?.nama_tahap ?? (stages.every((stage) => stage.status === "Disetujui") ? "Selesai" : "Menunggu"); }
 function canAccessSubmission(stages: AnyRow[] = [], role: string, userId: string) {
@@ -37,6 +39,7 @@ function wargaTask(row: AnyRow): AnyRow {
     return {
         ...row,
         id: row.id,
+        nama: row.nama_lengkap ?? row.nama ?? null,
         task_type: "warga_verification",
         jenis_tugas: "Verifikasi Akun Warga",
         nomor_pengajuan: row.nomor_pengajuan ?? row.nik ?? row.id,
@@ -76,6 +79,26 @@ function logDetailDebug(message: string, data: AnyRow) {
     console.info("[PETUGAS DETAIL DEBUG]", message, data);
 }
 
+async function safeRows<T extends AnyRow>(label: string, query: PromiseLike<{ data: T[] | null; error: AnyRow | null }>, warnings: AnyRow[]): Promise<SafeResult<T[]>> {
+    const { data, error } = await query;
+    if (error) {
+        logDataError(label, { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        warnings.push({ source: label, message: error.message, code: error.code ?? null });
+        return { data: [], error };
+    }
+    return { data: data ?? [], error: null };
+}
+
+async function safeMaybeSingle<T extends AnyRow>(label: string, query: PromiseLike<{ data: T | null; error: AnyRow | null }>, warnings: AnyRow[]): Promise<SafeResult<T | null>> {
+    const { data, error } = await query;
+    if (error) {
+        logDataError(label, { message: error.message, code: error.code, details: error.details, hint: error.hint });
+        warnings.push({ source: label, message: error.message, code: error.code ?? null });
+        return { data: null, error };
+    }
+    return { data: data ?? null, error: null };
+}
+
 async function withDocumentUrls(supabase: ReturnType<typeof createSupabaseAdminClient>, rows: AnyRow[] = []): Promise<AnyRow[]> {
     return Promise.all(rows.map(async (doc) => {
         const storagePath = String(doc.url_file ?? doc.file_path ?? doc.storage_path ?? "").trim();
@@ -111,28 +134,19 @@ export async function GET(request: NextRequest) {
     if (!supabase) return jsonError("Supabase service role belum dikonfigurasi.", 500);
 
     const isLurah = workflowRole === "lurah";
+    const warnings: AnyRow[] = [];
 
     logDetailDebug("request", { idUrl: detailId, userId: session.profile.id, userName: session.profile.nama_lengkap ?? session.profile.username, userRole: session.profile.role, workflowRole });
 
-    const [activeResult, processedResult, returnedResult, allStagesResult, submissionsResult, officersResult, auditsResult, wargaResult] = await Promise.all([
-        supabase.from("verifikasi_pengajuan").select("*").eq("role_petugas", workflowRole).eq("status", "Diproses").order("created_at", { ascending: false }),
-        supabase.from("verifikasi_pengajuan").select("id", { count: "exact", head: true }).eq("petugas_id", session.profile.id).eq("status", "Disetujui"),
-        supabase.from("verifikasi_pengajuan").select("id", { count: "exact", head: true }).eq("petugas_id", session.profile.id).eq("status", "Dikembalikan"),
-        supabase.from("verifikasi_pengajuan").select("*").order("tahap", { ascending: true }),
-        isLurah ? supabase.from("pengajuan_surat").select("*, layanan(*)").order("created_at", { ascending: false }) : Promise.resolve({ data: [], error: null }),
-        supabase.from("petugas").select("id,username,nama_lengkap,jabatan,role,is_active").eq("is_active", true),
-        supabase.from("audit_pengajuan").select("*").eq("user_id", session.profile.id).order("created_at", { ascending: false }),
-        supabase.from("warga_profiles").select("id,nama_lengkap,nama,nik,status_verifikasi,tahap_verifikasi,returned_to_role,handled_by,verification_history,alasan_penolakan,created_at,updated_at").order("updated_at", { ascending: false }),
+    const [activeResult, allStagesResult, submissionsResult, officersResult, auditsResult, wargaResult, petugasNotificationsResult] = await Promise.all([
+        safeRows<VerificationRow>("verifikasi_pengajuan.active", supabase.from("verifikasi_pengajuan").select("id,pengajuan_id,tahap,nama_tahap,role_petugas,status,petugas_id,user_id,catatan,created_at,acted_at").eq("role_petugas", workflowRole).eq("status", "Diproses").order("created_at", { ascending: false }), warnings),
+        safeRows<VerificationRow>("verifikasi_pengajuan.all", supabase.from("verifikasi_pengajuan").select("id,pengajuan_id,tahap,nama_tahap,role_petugas,status,petugas_id,user_id,catatan,created_at,acted_at").order("tahap", { ascending: true }), warnings),
+        isLurah ? safeRows<AnyRow>("pengajuan_surat.monitoring", supabase.from("pengajuan_surat").select("*, layanan(*)").order("created_at", { ascending: false }), warnings) : Promise.resolve({ data: [], error: null }),
+        safeRows<AnyRow>("petugas", supabase.from("petugas").select("id,username,nama_lengkap,jabatan,role,is_active").eq("is_active", true), warnings),
+        safeRows<AnyRow>("audit_pengajuan.mine", supabase.from("audit_pengajuan").select("*").eq("user_id", session.profile.id).order("created_at", { ascending: false }), warnings),
+        safeRows<AnyRow>("warga_profiles.verification", supabase.from("warga_profiles").select("id,nama_lengkap,nik,status_verifikasi,tahap_verifikasi,returned_to_role,handled_by,verification_history,alasan_penolakan,created_at,updated_at").order("updated_at", { ascending: false }), warnings),
+        safeRows<AnyRow>("petugas_notifikasi", supabase.from("petugas_notifikasi").select("*").eq("petugas_id", session.profile.id).order("created_at", { ascending: false }).limit(20), warnings),
     ]);
-
-    if (activeResult.error) { logDetailDebug("error query active stages", { idUrl: detailId, errorQuery: activeResult.error.message }); return jsonError(activeResult.error.message, 500); }
-    if (processedResult.error) { logDetailDebug("error query processed count", { idUrl: detailId, errorQuery: processedResult.error.message }); return jsonError(processedResult.error.message, 500); }
-    if (returnedResult.error) { logDetailDebug("error query returned count", { idUrl: detailId, errorQuery: returnedResult.error.message }); return jsonError(returnedResult.error.message, 500); }
-    if (allStagesResult.error) { logDetailDebug("error query all stages", { idUrl: detailId, errorQuery: allStagesResult.error.message }); return jsonError(allStagesResult.error.message, 500); }
-    if (submissionsResult.error) { logDetailDebug("error query monitoring submissions", { idUrl: detailId, errorQuery: submissionsResult.error.message }); return jsonError(submissionsResult.error.message, 500); }
-    if (officersResult.error) { logDetailDebug("error query officers", { idUrl: detailId, errorQuery: officersResult.error.message }); return jsonError(officersResult.error.message, 500); }
-    if (auditsResult.error) { logDetailDebug("error query audits", { idUrl: detailId, errorQuery: auditsResult.error.message }); return jsonError(auditsResult.error.message, 500); }
-    if (wargaResult.error) { logDetailDebug("error query warga verification", { idUrl: detailId, errorQuery: wargaResult.error.message }); return jsonError(wargaResult.error.message, 500); }
 
     const activeStages = (activeResult.data ?? []) as VerificationRow[];
     const allStages = (allStagesResult.data ?? []) as VerificationRow[];
@@ -141,33 +155,25 @@ export async function GET(request: NextRequest) {
     const detailStageIds = detailId ? allStages.filter((stage) => stage.pengajuan_id === detailId).map((stage) => stage.pengajuan_id) : [];
     const submissionIds = Array.from(new Set([...listSubmissionIds, ...detailStageIds, detailId].filter(Boolean)));
 
-    const [{ data: submissions, error: submissionError }, { data: documents, error: docError }, { data: tracking, error: trackingError }, { data: submissionAudits, error: submissionAuditError }] = await Promise.all([
-        submissionIds.length ? supabase.from("pengajuan_surat").select("*, layanan(*)").in("id", submissionIds) : Promise.resolve({ data: [], error: null }),
-        submissionIds.length ? supabase.from("dokumen_pengajuan").select("*").in("pengajuan_id", submissionIds) : Promise.resolve({ data: [], error: null }),
-        submissionIds.length ? supabase.from("tracking_pengajuan").select("*").in("pengajuan_id", submissionIds).order("created_at", { ascending: true }) : Promise.resolve({ data: [], error: null }),
-        submissionIds.length ? supabase.from("audit_pengajuan").select("*").in("pengajuan_id", submissionIds).order("created_at", { ascending: true }) : Promise.resolve({ data: [], error: null }),
+    const [submissionsResultDetail, documentsResult, trackingResult, submissionAuditsResult] = await Promise.all([
+        submissionIds.length ? safeRows<AnyRow>("pengajuan_surat.detail", supabase.from("pengajuan_surat").select("*, layanan(*)").in("id", submissionIds), warnings) : Promise.resolve({ data: [], error: null }),
+        submissionIds.length ? safeRows<AnyRow>("dokumen_pengajuan", supabase.from("dokumen_pengajuan").select("*").in("pengajuan_id", submissionIds), warnings) : Promise.resolve({ data: [], error: null }),
+        submissionIds.length ? safeRows<AnyRow>("tracking_pengajuan", supabase.from("tracking_pengajuan").select("*").in("pengajuan_id", submissionIds).order("created_at", { ascending: true }), warnings) : Promise.resolve({ data: [], error: null }),
+        submissionIds.length ? safeRows<AnyRow>("audit_pengajuan.detail", supabase.from("audit_pengajuan").select("*").in("pengajuan_id", submissionIds).order("created_at", { ascending: true }), warnings) : Promise.resolve({ data: [], error: null }),
     ]);
-    if (submissionError) { logDetailDebug("error query detail submissions", { idUrl: detailId, submissionIds, errorQuery: submissionError.message }); return jsonError(submissionError.message, 500); }
-    if (docError) { logDetailDebug("error query documents", { idUrl: detailId, submissionIds, errorQuery: docError.message }); return jsonError(docError.message, 500); }
-    if (trackingError) { logDetailDebug("error query tracking", { idUrl: detailId, submissionIds, errorQuery: trackingError.message }); return jsonError(trackingError.message, 500); }
-    if (submissionAuditError) { logDetailDebug("error query submission audits", { idUrl: detailId, submissionIds, errorQuery: submissionAuditError.message }); return jsonError(submissionAuditError.message, 500); }
 
-    const signedDocuments = await withDocumentUrls(supabase, documents ?? []);
-    const submissionMap = new Map((submissions ?? []).map((row: AnyRow) => [String(row.id), row]));
+    const signedDocuments = await withDocumentUrls(supabase, documentsResult.data ?? []);
+    const submissionMap = new Map((submissionsResultDetail.data ?? []).map((row: AnyRow) => [String(row.id), row]));
     let detailSubmission: AnyRow | null = null;
     if (detailId && !submissionMap.has(detailId)) {
-        const { data, error } = await supabase.from("pengajuan_surat").select("*, layanan(*)").eq("id", detailId).maybeSingle();
-        if (error) {
-            logDetailDebug("error query detail submission by id", { idUrl: detailId, errorQuery: error.message, status: 500 });
-            return jsonError(error.message, 500);
-        }
-        detailSubmission = data;
+        const detailSubmissionResult = await safeMaybeSingle<AnyRow>("pengajuan_surat.detail_id", supabase.from("pengajuan_surat").select("*, layanan(*)").eq("id", detailId).maybeSingle(), warnings);
+        detailSubmission = detailSubmissionResult.data;
         if (detailSubmission) submissionMap.set(String(detailSubmission.id), detailSubmission);
     }
     const officerMap = new Map((officersResult.data ?? []).map((row: AnyRow) => [String(row.id), row]));
     const docsByPengajuan = groupBy(signedDocuments, "pengajuan_id");
-    const trackingByPengajuan = groupBy(tracking ?? [], "pengajuan_id");
-    const auditsByPengajuan = groupBy(submissionAudits ?? [], "pengajuan_id");
+    const trackingByPengajuan = groupBy(trackingResult.data ?? [], "pengajuan_id");
+    const auditsByPengajuan = groupBy(submissionAuditsResult.data ?? [], "pengajuan_id");
     const stagesByPengajuan = groupBy(allStages.map((stage) => ({ ...stage, nama_petugas: stage.petugas_id ? officerMap.get(String(stage.petugas_id))?.nama_lengkap ?? officerMap.get(String(stage.petugas_id))?.username ?? null : null })), "pengajuan_id");
 
     function enrichStage(stage: VerificationRow): AnyRow {
@@ -208,7 +214,7 @@ export async function GET(request: NextRequest) {
     }
     const stageCounts = [1, 2, 3, 4, 5].reduce<Record<string, number>>((acc, tahap) => { acc[String(tahap)] = allStages.filter((stage) => stage.tahap === tahap && stage.status === "Diproses").length; return acc; }, {});
     const totalResult = isLurah ? { total: (submissionsResult.data ?? []).length, selesai: (submissionsResult.data ?? []).filter((row: AnyRow) => row.status === "Selesai").length } : { total: 0, selesai: 0 };
-    const stats = { menunggu: tasks.length, diproses: history.length, dikembalikan: history.filter((row) => /kembali|revisi|dikembalikan/i.test(`${row.action ?? row.aksi ?? row.status ?? row.status_sesudah ?? ""}`)).length, lurah: { total: totalResult.total, staff: stageCounts["1"] ?? 0, lapangan: stageCounts["2"] ?? 0, kasi: stageCounts["3"] ?? 0, seklur: stageCounts["4"] ?? 0, lurah: stageCounts["5"] ?? 0, selesai: totalResult.selesai } };
+    const stats = { menunggu: tasks.length, tugas_pengajuan: pengajuanTasks.length, verifikasi_warga: wargaTasks.length, diproses: history.length, dikembalikan: history.filter((row) => /kembali|revisi|dikembalikan/i.test(`${row.action ?? row.aksi ?? row.status ?? row.status_sesudah ?? ""}`)).length, lurah: { total: totalResult.total, staff: stageCounts["1"] ?? 0, lapangan: stageCounts["2"] ?? 0, kasi: stageCounts["3"] ?? 0, seklur: stageCounts["4"] ?? 0, lurah: stageCounts["5"] ?? 0, selesai: totalResult.selesai } };
 
-    return NextResponse.json({ ok: true, petugas: session.profile, stats, tugas: tasks, data: { tasks, wargaTasks, history, detail, detailError, officers: officersResult.data ?? [], monitoring, stats } });
+    return NextResponse.json({ ok: true, petugas: session.profile, stats, tugas: tasks, data: { tasks, wargaTasks, pengajuanTasks, history, detail, detailError, officers: officersResult.data ?? [], monitoring, notifikasi: petugasNotificationsResult.data ?? [], warnings, stats } });
 }
