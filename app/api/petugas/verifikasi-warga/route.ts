@@ -3,10 +3,45 @@ import { getAdminSession, isPetugas } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
 import { appendWargaHistory, canHandleWargaStage, getActiveWargaStage, getAssignedPetugasId, getValidReturnStages, getWargaStageByRole, isPendingWargaVerification, notifyPetugasTarget, notifyWargaAccount, resolveReturnStage, WARGA_WORKFLOW } from "@/services/warga-verification-workflow";
 
+const CHANGE_DOCUMENT_BUCKET = "profile-change-documents";
+const PROFILE_PHOTO_BUCKET = "avatars";
+
 function jsonError(message: string, status = 400) { return NextResponse.json({ ok: false, error: message }, { status }); }
 
 function logWargaQueue(message: string, data: Record<string, any>) {
     console.info("[WARGA VERIFICATION QUEUE]", message, data);
+}
+
+function fileNameFromPath(path?: string | null) { return String(path ?? "").split("/").pop() || "Dokumen"; }
+function guessType(path?: string | null) { const ext = fileNameFromPath(path).split(".").pop()?.toLowerCase(); if (ext === "pdf") return "PDF"; if (["jpg", "jpeg", "png", "webp"].includes(ext ?? "")) return "Gambar"; return ext ? ext.toUpperCase() : "File"; }
+async function signedStorageUrl(supabase: ReturnType<typeof createSupabaseAdminClient>, bucket: string, path?: string | null) {
+    const cleanPath = String(path ?? "").replace(/^\/+/, "");
+    if (!cleanPath) return { url: "", meta: null as Record<string, any> | null };
+    if (/^https?:\/\//i.test(cleanPath)) return { url: cleanPath, meta: null };
+    const [{ data: signed }, { data: meta }] = await Promise.all([
+        supabase.storage.from(bucket).createSignedUrl(cleanPath, 60 * 10),
+        supabase.storage.from(bucket).list(cleanPath.split("/").slice(0, -1).join("/"), { search: fileNameFromPath(cleanPath), limit: 1 }),
+    ]);
+    return { url: signed?.signedUrl ?? "", meta: meta?.find((item) => item.name === fileNameFromPath(cleanPath)) ?? null };
+}
+
+async function enrichWargaDetail(supabase: ReturnType<typeof createSupabaseAdminClient>, row: Record<string, any>) {
+    const [officers, changeRequests] = await Promise.all([
+        supabase.from("petugas").select("id,username,nama_lengkap,jabatan,role,is_active"),
+        supabase.from("warga_profile_change_requests").select("id,change_request_id,user_id,profile_id,jenis_perubahan,data_lama,data_baru,alasan,dokumen_pendukung,status,alasan_petugas,created_at,verified_at,verified_by").eq("profile_id", row.id).order("created_at", { ascending: false }),
+    ]);
+    const officerMap = new Map((officers.data ?? []).map((p: Record<string, any>) => [String(p.id), p]));
+    const documents: Record<string, any>[] = [];
+    if (row.foto_url) {
+        const { url, meta } = await signedStorageUrl(supabase, PROFILE_PHOTO_BUCKET, row.foto_url);
+        documents.push({ id: "foto-profil", nama_dokumen: "Foto Profil", jenis_dokumen: "Foto Profil", nama_file: fileNameFromPath(row.foto_url), file_url: url, preview_url: url, tipe_file: guessType(row.foto_url), ukuran_file: meta?.metadata?.size ?? meta?.metadata?.contentLength ?? null, uploaded_at: meta?.created_at ?? row.updated_at ?? row.created_at, status: url ? "Dokumen tersedia" : "File tidak ditemukan" });
+    }
+    for (const req of changeRequests.data ?? []) {
+        if (!req.dokumen_pendukung) continue;
+        const { url, meta } = await signedStorageUrl(supabase, CHANGE_DOCUMENT_BUCKET, req.dokumen_pendukung);
+        documents.push({ id: req.id, nama_dokumen: `Dokumen Pendukung ${req.jenis_perubahan}`, jenis_dokumen: "Dokumen Pendukung", nama_file: fileNameFromPath(req.dokumen_pendukung), file_url: url, preview_url: url, tipe_file: guessType(req.dokumen_pendukung), ukuran_file: meta?.metadata?.size ?? meta?.metadata?.contentLength ?? null, uploaded_at: req.created_at, status: req.status ?? (url ? "Dokumen tersedia" : "File tidak ditemukan"), change_request: req });
+    }
+    return { ...row, active_stage: getActiveWargaStage(row), return_targets: getValidReturnStages(getActiveWargaStage(row)?.role), documents, profile_change_requests: changeRequests.data ?? [], handled_by_name: row.handled_by ? (officerMap.get(String(row.handled_by))?.nama_lengkap ?? officerMap.get(String(row.handled_by))?.username ?? row.handled_by) : null, verification_history: Array.isArray(row.verification_history) ? row.verification_history.map((h: Record<string, any>) => ({ ...h, nama_petugas: h.nama_petugas ?? (h.petugas_id ? officerMap.get(String(h.petugas_id))?.nama_lengkap : null) })) : [] };
 }
 
 export async function GET(request: NextRequest) {
@@ -27,7 +62,8 @@ export async function GET(request: NextRequest) {
         return { ...row, active_stage: activeStage, return_targets: getValidReturnStages(activeStage?.role) };
     });
     logWargaQueue("GET", { user_id: session.profile.id, role: session.profile.role, requested_id: id, total_found: data?.length ?? 0, pending_candidates: candidates.length, returned_rows: rows.length, sample: (data ?? []).slice(0, 10).map((row) => ({ id: row.id, status_verifikasi: row.status_verifikasi, tahap_verifikasi: row.tahap_verifikasi, returned_to_role: row.returned_to_role, handled_by: row.handled_by, active_role: getActiveWargaStage(row)?.role ?? null })) });
-    return NextResponse.json({ ok: true, data: id ? rows[0] ?? null : rows, stage, return_targets: getValidReturnStages(session.profile.role) });
+    const detail = id && rows[0] ? await enrichWargaDetail(supabase, rows[0]) : null;
+    return NextResponse.json({ ok: true, data: id ? detail : rows, stage, return_targets: getValidReturnStages(session.profile.role) });
 }
 
 export async function POST(request: NextRequest) {
