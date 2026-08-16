@@ -20,7 +20,9 @@ const steps = [
 function getStepIndex(row: Row, history: Row[]) {
     if (row.status_verifikasi === "Terverifikasi") return steps.length - 1;
     if (row.status_verifikasi === "Dikembalikan") return Math.max(1, steps.findIndex((step) => step.role === row.returned_to_role));
-    const statusIndex = steps.findIndex((step) => step.status === row.status_verifikasi || step.label === row.active_stage?.label || step.label === row.tahap_verifikasi);
+    const activeRoleIndex = steps.findIndex((step) => step.role && step.role === row.active_stage?.role);
+    if (activeRoleIndex > -1) return activeRoleIndex;
+    const statusIndex = steps.findIndex((step) => step.status === row.status_verifikasi || step.label === row.tahap_verifikasi);
     if (statusIndex > -1) return statusIndex;
     const lastHistory = [...history].reverse().find((item) => item.status_sesudah || item.returned_to_role);
     if (lastHistory?.returned_to_role) return Math.max(1, steps.findIndex((step) => step.role === lastHistory.returned_to_role));
@@ -72,11 +74,11 @@ export function PetugasWargaVerification({ id }: { id: string }) {
                 <p className="mt-2 break-words font-bold">Status: {row.status_verifikasi} | Tahap: {current}</p>
             </header>
             <section className="grid gap-4 md:grid-cols-2">{[["Nama lengkap", row.nama_lengkap], ["NIK", row.nik], ["Nomor KK", row.nomor_kk], ["Email", row.email], ["Nomor HP", row.nomor_hp ?? row.nomor_whatsapp], ["Alamat", row.alamat], ["Kelurahan", row.kelurahan], ["Kecamatan", row.kecamatan], ["Petugas menangani", row.handled_by ?? "-"]].map(([a, b]) => <div key={String(a)} className="min-w-0 rounded-2xl bg-white p-4 shadow-sm"><p className="text-xs font-black uppercase text-slate-500">{a}</p><p className="break-words font-black text-gov-950">{String(b ?? "-")}</p></div>)}</section>
-            <section className="overflow-x-auto rounded-3xl bg-white p-4 shadow-sm">
-                <div className="flex min-w-[720px] gap-2">{steps.map((step, index) => {
+            <section className="rounded-3xl bg-white p-4 shadow-sm">
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-7">{steps.map((step, index) => {
                     const done = index < currentStep || row.status_verifikasi === "Terverifikasi";
                     const active = index === currentStep && row.status_verifikasi !== "Terverifikasi";
-                    return <div key={step.label} className={`flex-1 rounded-2xl px-3 py-3 text-center text-sm font-black ${done ? "bg-emerald-100 text-emerald-800" : active ? "bg-accent-300 text-gov-950" : "bg-slate-100 text-slate-500"}`}>{done ? "✓" : active ? "●" : "○"} {step.label}</div>;
+                    return <div key={step.label} className={`min-w-0 rounded-2xl px-3 py-3 text-center text-sm font-black ${done ? "bg-emerald-100 text-emerald-800" : active ? "bg-accent-300 text-gov-950" : "bg-slate-100 text-slate-500"}`}>{done ? "✓" : active ? "●" : "○"} {step.label}</div>;
                 })}</div>
             </section>
             <section className="rounded-3xl bg-white p-5 shadow-sm"><h2 className="font-black text-gov-950">Riwayat Verifikasi</h2>{history.length ? history.map((h: Row, i: number) => <div key={i} className="mt-3 rounded-2xl border p-3"><b>{h.nama_petugas ?? h.role}</b><p className="break-words">{h.action}: {h.status_sebelum} -&gt; {h.status_sesudah}</p><p className="text-sm text-slate-500">{h.catatan ?? "Tidak ada catatan"}</p></div>) : <p className="mt-3 font-bold text-slate-500">Belum ada riwayat.</p>}</section>

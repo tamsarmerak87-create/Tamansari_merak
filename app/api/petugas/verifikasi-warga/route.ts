@@ -22,7 +22,10 @@ export async function GET(request: NextRequest) {
     const { data, error } = await query;
     if (error) return jsonError(error.message, 500);
     const candidates = id ? data ?? [] : (data ?? []).filter(isPendingWargaVerification);
-    const rows = candidates.filter((row) => canHandleWargaStage(session.profile!, row)).map((row) => ({ ...row, active_stage: getActiveWargaStage(row), return_targets: getValidReturnStages(session.profile!.role) }));
+    const rows = candidates.filter((row) => canHandleWargaStage(session.profile!, row)).map((row) => {
+        const activeStage = getActiveWargaStage(row);
+        return { ...row, active_stage: activeStage, return_targets: getValidReturnStages(activeStage?.role) };
+    });
     logWargaQueue("GET", { user_id: session.profile.id, role: session.profile.role, requested_id: id, total_found: data?.length ?? 0, pending_candidates: candidates.length, returned_rows: rows.length, sample: (data ?? []).slice(0, 10).map((row) => ({ id: row.id, status_verifikasi: row.status_verifikasi, tahap_verifikasi: row.tahap_verifikasi, returned_to_role: row.returned_to_role, handled_by: row.handled_by, active_role: getActiveWargaStage(row)?.role ?? null })) });
     return NextResponse.json({ ok: true, data: id ? rows[0] ?? null : rows, stage, return_targets: getValidReturnStages(session.profile.role) });
 }
@@ -57,7 +60,8 @@ export async function POST(request: NextRequest) {
     const assignedId = getAssignedPetugasId(warga);
     const nextHandledBy = action === "periksa" ? session.profile.id : assignedId && targetStage?.role === stage.role ? assignedId : null;
     const history = appendWargaHistory(warga, { action, status_sebelum: warga.status_verifikasi, status_sesudah: nextStatus, role: session.profile.role, petugas_id: session.profile.id, nama_petugas: session.profile.nama_lengkap ?? session.profile.username, catatan: alasan || null, returned_to_role: returnStage?.role ?? null });
-    const { data, error } = await supabase.from("warga_profiles").update({ status_verifikasi: nextStatus, tahap_verifikasi: finalApproved ? "Terverifikasi" : targetStage?.label ?? stage.label, handled_by: nextHandledBy, returned_to_role: returnStage?.role ?? null, alasan_penolakan: action === "tolak" ? alasan : null, verified_at: finalApproved ? new Date().toISOString() : null, verified_by: finalApproved ? session.profile.id : null, verification_history: history }).eq("id", wargaId).select("*").single();
+    const updateQuery = supabase.from("warga_profiles").update({ status_verifikasi: nextStatus, tahap_verifikasi: finalApproved ? "Terverifikasi" : targetStage?.label ?? stage.label, handled_by: nextHandledBy, returned_to_role: returnStage?.role ?? null, alasan_penolakan: action === "tolak" ? alasan : null, verified_at: finalApproved ? new Date().toISOString() : null, verified_by: finalApproved ? session.profile.id : null, verification_history: history }).eq("id", wargaId);
+    const { data, error } = await (assignedId ? updateQuery.eq("handled_by", assignedId) : updateQuery.is("handled_by", null)).select("*").single();
     if (error) return jsonError(error.message, 500);
     if (finalApproved) await notifyWargaAccount(warga, "Akun Terverifikasi", "Akun warga Anda sudah terverifikasi oleh Lurah.");
     else if (action === "tolak") await notifyWargaAccount(warga, "Akun Ditolak", "Verifikasi akun warga Anda ditolak.", alasan);
