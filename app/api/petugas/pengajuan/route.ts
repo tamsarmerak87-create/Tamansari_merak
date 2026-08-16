@@ -9,7 +9,7 @@ function jsonError(message: string, status = 400) {
 }
 
 type Action = "proses_tahap" | "verifikasi" | "setujui" | "selesai" | "tolak" | "revisi";
-type StageRow = { id: string; tahap: number; nama_tahap: string; role_petugas: string; status: string; petugas_id?: string | null; user_id?: string | null };
+type StageRow = { id: string; tahap: number; nama_tahap: string; role_petugas: string; status: string; petugas_id?: string | null };
 type ActionDecision = { status: "Disetujui" | "Ditolak"; submissionStatus: string; auditLabel: string; trackingLabel: string };
 
 const STAGE_AUDIT_LABEL: Record<number, string> = {
@@ -54,7 +54,7 @@ function roleLabelForError(role: string) {
 
 function petugasCanProcessStage(stage: StageRow, workflowRole: string, petugasId: string) {
     if (workflowRole === "lurah") return stage.role_petugas === workflowRole;
-    return stage.role_petugas === workflowRole && (stage.petugas_id === petugasId || stage.user_id === petugasId);
+    return stage.role_petugas === workflowRole && (!stage.petugas_id || stage.petugas_id === petugasId);
 }
 
 export async function PATCH(request: NextRequest) {
@@ -86,7 +86,7 @@ export async function PATCH(request: NextRequest) {
     const petugasName = session.profile.nama_lengkap ?? session.profile.username ?? "Petugas Kelurahan";
     const now = new Date().toISOString();
 
-    const { data: stages, error: stageError } = await supabase.from("verifikasi_pengajuan").select("id,tahap,nama_tahap,role_petugas,status,petugas_id,user_id").eq("pengajuan_id", body.id).order("tahap", { ascending: true });
+    const { data: stages, error: stageError } = await supabase.from("verifikasi_pengajuan").select("id,tahap,nama_tahap,role_petugas,status,petugas_id").eq("pengajuan_id", body.id).order("tahap", { ascending: true });
     if (stageError) return jsonError(stageError.message, 500);
     const orderedStages = (stages ?? []) as StageRow[];
     const activeStage = getActiveStage(orderedStages);
@@ -110,7 +110,7 @@ export async function PATCH(request: NextRequest) {
     if (!isReject && activeStage.tahap === 5 && body.action !== "selesai") return jsonError("Tahap Lurah wajib diproses dengan aksi VALIDASI & TERBITKAN SURAT.", 400);
     const decision = actionDecision(body.action, activeStage);
 
-    const { error: verificationError } = await supabase.from("verifikasi_pengajuan").update({ status: decision.status, petugas_id: petugasId, user_id: petugasId, acted_at: now, catatan: catatan ?? null }).eq("id", activeStage.id).in("status", ["Menunggu", "Diproses"]);
+    const { error: verificationError } = await supabase.from("verifikasi_pengajuan").update({ status: decision.status, petugas_id: petugasId, acted_at: now, catatan: catatan ?? null }).eq("id", activeStage.id).in("status", ["Menunggu", "Diproses"]);
     if (verificationError) return jsonError(verificationError.message, 500);
 
     const nextStage = orderedStages.find((stage) => stage.tahap === activeStage.tahap + 1) ?? null;

@@ -135,7 +135,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
             .update({
                 status: "Disetujui",
                 petugas_id: petugasId,
-                user_id: petugasId,
                 nama_petugas: petugasName,
                 jabatan: activeStage.nama_tahap,
                 catatan,

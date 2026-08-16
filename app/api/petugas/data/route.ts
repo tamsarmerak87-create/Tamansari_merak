@@ -14,7 +14,6 @@ type VerificationRow = {
     role_petugas: string;
     status: string;
     petugas_id: string | null;
-    user_id?: string | null;
     catatan: string | null;
     created_at: string | null;
     acted_at: string | null;
@@ -29,7 +28,7 @@ function groupBy<T extends AnyRow>(rows: T[], key: keyof T): Map<string, T[]> { 
 function activeStatusFromStages(stages: AnyRow[] = []) { return stages.find((stage) => stage.status === "Diproses")?.nama_tahap ?? (stages.every((stage) => stage.status === "Disetujui") ? "Selesai" : "Menunggu"); }
 function canAccessSubmission(stages: AnyRow[] = [], role: string, userId: string) {
     if (role === "lurah") return true;
-    return stages.some((stage) => stage.role_petugas === role && ["Menunggu", "Diproses"].includes(String(stage.status ?? ""))) || stages.some((stage) => stage.petugas_id === userId || stage.user_id === userId);
+    return stages.some((stage) => stage.role_petugas === role && ["Menunggu", "Diproses"].includes(String(stage.status ?? ""))) || stages.some((stage) => stage.petugas_id === userId);
 }
 
 function submissionWaitingForRole(row: AnyRow, role: string) {
@@ -156,8 +155,8 @@ export async function GET(request: NextRequest) {
     logDetailDebug("request", { idUrl: detailId, userId: session.profile.id, userName: session.profile.nama_lengkap ?? session.profile.username, userRole: session.profile.role, workflowRole });
 
     const [activeResult, allStagesResult, submissionsResult, officersResult, auditsResult, wargaResult, petugasNotificationsResult] = await Promise.all([
-        safeRows<VerificationRow>("verifikasi_pengajuan.active", supabase.from("verifikasi_pengajuan").select("id,pengajuan_id,tahap,nama_tahap,role_petugas,status,petugas_id,user_id,catatan,created_at,acted_at").eq("role_petugas", workflowRole).in("status", ["Menunggu", "Diproses"]).order("created_at", { ascending: false }), warnings),
-        safeRows<VerificationRow>("verifikasi_pengajuan.all", supabase.from("verifikasi_pengajuan").select("id,pengajuan_id,tahap,nama_tahap,role_petugas,status,petugas_id,user_id,catatan,created_at,acted_at").order("tahap", { ascending: true }), warnings),
+        safeRows<VerificationRow>("verifikasi_pengajuan.active", supabase.from("verifikasi_pengajuan").select("id,pengajuan_id,tahap,nama_tahap,role_petugas,status,petugas_id,catatan,created_at,acted_at").eq("role_petugas", workflowRole).in("status", ["Menunggu", "Diproses"]).order("created_at", { ascending: false }), warnings),
+        safeRows<VerificationRow>("verifikasi_pengajuan.all", supabase.from("verifikasi_pengajuan").select("id,pengajuan_id,tahap,nama_tahap,role_petugas,status,petugas_id,catatan,created_at,acted_at").order("tahap", { ascending: true }), warnings),
         safeRows<AnyRow>(isLurah ? "pengajuan_surat.monitoring" : "pengajuan_surat.petugas_candidates", supabase.from("pengajuan_surat").select("*, layanan(*)").order("created_at", { ascending: false }), warnings),
         safeRows<AnyRow>("petugas", supabase.from("petugas").select("id,username,nama_lengkap,jabatan,role,is_active").eq("is_active", true), warnings),
         safeRows<AnyRow>("audit_pengajuan.mine", supabase.from("audit_pengajuan").select("*").eq("user_id", session.profile.id).order("created_at", { ascending: false }), warnings),
@@ -245,7 +244,7 @@ export async function GET(request: NextRequest) {
         const detailStages = stagesByPengajuan.get(detailId) ?? [];
         const hasAccess = canAccessSubmission(detailStages, workflowRole, session.profile.id);
         const detailDocs = docsByPengajuan.get(detailId) ?? [];
-        logDetailDebug("DETAIL PENGAJUAN DEBUG", { urlId: detailId, userId: session.profile.id, userName: session.profile.nama_lengkap ?? session.profile.username, userRole: session.profile.role, queryId: detailId, hasilQuery: { found: Boolean(submission), table: "pengajuan_surat", fieldId: "id", submissionIds, nomorPengajuan: submission?.nomor_pengajuan ?? null, namaPemohon: submission?.nama_lengkap ?? null, nik: submission?.nik ?? null, status: submission?.status ?? null }, errorQuery: null, jumlahDokumen: detailDocs.length, dokumen: detailDocs.map((doc) => ({ id: doc.id, jenis: doc.jenis, nama_file: doc.nama_file, storage_path: doc.storage_path, hasSignedUrl: Boolean(doc.signed_url), storage_error: doc.storage_error ?? null })), stages: detailStages.map((stage) => ({ id: stage.id, tahap: stage.tahap, role_petugas: stage.role_petugas, status: stage.status, petugas_id: stage.petugas_id, user_id: stage.user_id })), hasilPengecekanKewenangan: hasAccess });
+        logDetailDebug("DETAIL PENGAJUAN DEBUG", { urlId: detailId, userId: session.profile.id, userName: session.profile.nama_lengkap ?? session.profile.username, userRole: session.profile.role, queryId: detailId, hasilQuery: { found: Boolean(submission), table: "pengajuan_surat", fieldId: "id", submissionIds, nomorPengajuan: submission?.nomor_pengajuan ?? null, namaPemohon: submission?.nama_lengkap ?? null, nik: submission?.nik ?? null, status: submission?.status ?? null }, errorQuery: null, jumlahDokumen: detailDocs.length, dokumen: detailDocs.map((doc) => ({ id: doc.id, jenis: doc.jenis, nama_file: doc.nama_file, storage_path: doc.storage_path, hasSignedUrl: Boolean(doc.signed_url), storage_error: doc.storage_error ?? null })), stages: detailStages.map((stage) => ({ id: stage.id, tahap: stage.tahap, role_petugas: stage.role_petugas, status: stage.status, petugas_id: stage.petugas_id })), hasilPengecekanKewenangan: hasAccess });
         if (!submission) {
             detailError = { code: "NOT_FOUND", message: "Pengajuan tidak ditemukan." };
             logDetailDebug("kondisi A: pengajuan benar-benar tidak ditemukan", { idUrl: detailId, status: 404 });
