@@ -69,7 +69,8 @@ export function resolveReturnStage(currentRole: string, requestedRole?: string |
 
 export function appendWargaHistory(warga: WargaRow, entry: Record<string, any>) {
     const existing = Array.isArray(warga.verification_history) ? warga.verification_history : Array.isArray(warga.riwayat_verifikasi) ? warga.riwayat_verifikasi : [];
-    return [...existing, { ...entry, created_at: new Date().toISOString() }];
+    const stage = getActiveWargaStage({ ...warga, status_verifikasi: entry.status_sesudah ?? warga.status_verifikasi, returned_to_role: entry.returned_to_role ?? warga.returned_to_role });
+    return [...existing, { warga_id: warga.id, nama_warga: warga.nama_lengkap ?? warga.nama ?? null, tahap: stage?.label ?? warga.tahap_verifikasi ?? null, ...entry, created_at: new Date().toISOString() }];
 }
 
 export async function notifyWargaAccount(warga: WargaRow, title: string, message: string, catatan?: string | null) {
