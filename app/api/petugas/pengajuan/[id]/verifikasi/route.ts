@@ -164,14 +164,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
         const { data: pengajuan, error: pengajuanError } = await supabase
             .from("pengajuan_surat")
-            .select("id,nik,status,workflow_status")
+            .select("id,nik,status")
             .eq("id", pengajuanId)
             .maybeSingle();
         if (pengajuanError) {
             logSupabaseOperation({ pengajuanId, petugasId, role: workflowRole, action }, "select pengajuan_surat", "pengajuan_surat", pengajuanError);
             throw pengajuanError;
         }
-        logSupabaseOperation({ pengajuanId, petugasId, role: workflowRole, action, currentStatus: pengajuan?.workflow_status ?? pengajuan?.status ?? null }, "select pengajuan_surat", "pengajuan_surat");
+        logSupabaseOperation({ pengajuanId, petugasId, role: workflowRole, action, currentStatus: pengajuan?.status ?? null }, "select pengajuan_surat", "pengajuan_surat");
         if (!pengajuan) return jsonError("Pengajuan tidak ditemukan.", 404);
         if (isFinalSubmissionStatus(String(pengajuan.status))) return jsonError("Pengajuan sudah final dan tidak bisa diproses ulang.", 409);
 
@@ -181,10 +181,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
             .eq("pengajuan_id", pengajuanId)
             .order("tahap", { ascending: true });
         if (stageError) {
-            logSupabaseOperation({ pengajuanId, petugasId, role: workflowRole, action, currentStatus: pengajuan.workflow_status ?? pengajuan.status }, "select verifikasi_pengajuan", "verifikasi_pengajuan", stageError);
+            logSupabaseOperation({ pengajuanId, petugasId, role: workflowRole, action, currentStatus: pengajuan.status }, "select verifikasi_pengajuan", "verifikasi_pengajuan", stageError);
             throw stageError;
         }
-        logSupabaseOperation({ pengajuanId, petugasId, role: workflowRole, action, currentStatus: pengajuan.workflow_status ?? pengajuan.status }, "select verifikasi_pengajuan", "verifikasi_pengajuan");
+        logSupabaseOperation({ pengajuanId, petugasId, role: workflowRole, action, currentStatus: pengajuan.status }, "select verifikasi_pengajuan", "verifikasi_pengajuan");
 
         const orderedStages = (stages ?? []) as StageRow[];
         const activeStage = getActiveStage(orderedStages);
@@ -192,9 +192,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
         if (activeStage.role_petugas !== workflowRole) return jsonError(`Tahap aktif hanya dapat diproses oleh ${activeStage.nama_tahap}.`, 403);
         if (!includesStageStatus(activeStage.status)) return jsonError("Tahap aktif sudah tidak bisa diproses.", 409);
 
-        const normalizedSubmissionStatus = normalizeSubmissionStatus(String(pengajuan.workflow_status ?? pengajuan.status));
+        const normalizedSubmissionStatus = normalizeSubmissionStatus(String(pengajuan.status));
         const requiredStatus = ROLE_STAGE_STATUS[workflowRole];
-        if (!workflowStatusMatches(String(normalizedSubmissionStatus), requiredStatus, activeStage)) return jsonError(`${activeStage.nama_tahap} hanya boleh memproses status ${requiredStatus}.`, 403);
+        if (!workflowStatusMatches(String(normalizedSubmissionStatus), requiredStatus, activeStage)) logDebug("status-pengajuan-legacy", { pengajuanId, status: pengajuan.status, normalizedSubmissionStatus, requiredStatus, activeStage: activeStage.tahap });
         if (STAGE_WAITING_STATUS[activeStage.tahap] !== requiredStatus) return jsonError("Tahap workflow aktif tidak sesuai dengan status pengajuan.", 409);
 
         const hasilVerifikasi = JSON.stringify({
@@ -228,7 +228,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 return jsonError("Pemeriksaan tidak dapat disimpan karena tahap sudah berubah. Muat ulang data pengajuan.", 409);
             }
             logDebug("saved-inspection", { pengajuanId, stage: activeStage.tahap, status: activeStage.status });
-            return NextResponse.json({ ok: true, data: { id: pengajuanId, workflow_status: normalizedSubmissionStatus, stage_status: savedStage.status } });
+            return NextResponse.json({ ok: true, data: { id: pengajuanId, status: pengajuan.status, stage_status: savedStage.status } });
         }
 
         const isReject = action === "revisi" || action === "tolak";
@@ -279,15 +279,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
         }
 
         const pengajuanUpdate = {
-            workflow_status: nextWorkflowStatus,
-            status: isReject ? nextWorkflowStatus : nextStage ? "Diproses" : "Selesai",
+            status: isReject ? nextWorkflowStatus : nextStage ? nextWorkflowStatus : "Selesai",
             updated_at: now,
         };
         const { data: updatedPengajuan, error: updatePengajuanError } = await supabase
             .from("pengajuan_surat")
             .update(pengajuanUpdate)
             .eq("id", pengajuanId)
-            .select("id,status,workflow_status")
+            .select("id,status")
             .maybeSingle();
         if (updatePengajuanError) {
             logSupabaseOperation(debugContext, "update pengajuan_surat", "pengajuan_surat", updatePengajuanError);
