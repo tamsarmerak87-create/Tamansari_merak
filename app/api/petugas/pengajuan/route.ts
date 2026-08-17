@@ -122,12 +122,12 @@ export async function PATCH(request: NextRequest) {
     if (!petugasCanProcessStage(activeStage, workflowRole, petugasId)) return jsonError(`Tahap aktif hanya dapat diproses oleh ${activeStage.nama_tahap} yang ditugaskan.`, 403);
     if (!["Menunggu", "Diproses"].includes(activeStage.status)) return jsonError("Tahap aktif sudah tidak bisa diproses.", 409);
 
-    const { data: pengajuanAktif, error: pengajuanError } = await supabase.from("pengajuan_surat").select("id,nik,status,workflow_status").eq("id", body.id).maybeSingle();
+    const { data: pengajuanAktif, error: pengajuanError } = await supabase.from("pengajuan_surat").select("id,nik,status").eq("id", body.id).maybeSingle();
     if (pengajuanError) return jsonError(pengajuanError.message, 500);
     if (!pengajuanAktif) return jsonError("Pengajuan tidak ditemukan.", 404);
     if (isFinalSubmissionStatus(String(pengajuanAktif.status))) return jsonError("Pengajuan sudah final dan tidak bisa diproses ulang tanpa pembatalan/revisi resmi.", 409);
 
-    const normalizedSubmissionStatus = normalizeSubmissionStatus(String(pengajuanAktif.workflow_status ?? pengajuanAktif.status));
+    const normalizedSubmissionStatus = normalizeSubmissionStatus(String(pengajuanAktif.status));
     const requiredStatus = ROLE_STAGE_STATUS[workflowRole];
     if (normalizedSubmissionStatus !== requiredStatus) return jsonError(`${roleLabelForError(workflowRole)} hanya boleh memproses status ${requiredStatus}.`, 403);
     if (STAGE_WAITING_STATUS[activeStage.tahap] !== requiredStatus) return jsonError("Tahap workflow aktif tidak sesuai dengan status pengajuan.", 409);
@@ -143,7 +143,7 @@ export async function PATCH(request: NextRequest) {
 
     const nextStage = orderedStages.find((stage) => stage.tahap === activeStage.tahap + 1) ?? null;
     const status = decision.submissionStatus;
-    const pengajuanUpdate: Record<string, string | number | null> = { workflow_status: status, status: isReject ? status : activeStage.tahap === 5 ? "Selesai" : "Diproses", updated_at: now, catatan_admin: catatan ?? null };
+    const pengajuanUpdate: Record<string, string | number | null> = { status: isReject ? status : activeStage.tahap === 5 ? "Selesai" : status, updated_at: now, catatan_admin: catatan ?? null };
     if (!isReject && activeStage.tahap === 5) {
         pengajuanUpdate.selesai_at = now;
         pengajuanUpdate.selesai_by = petugasId;

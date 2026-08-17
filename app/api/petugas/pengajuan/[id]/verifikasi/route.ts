@@ -197,10 +197,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
         if (!workflowStatusMatches(String(normalizedSubmissionStatus), requiredStatus, activeStage)) logDebug("status-pengajuan-legacy", { pengajuanId, status: pengajuan.status, normalizedSubmissionStatus, requiredStatus, activeStage: activeStage.tahap });
         if (STAGE_WAITING_STATUS[activeStage.tahap] !== requiredStatus) return jsonError("Tahap workflow aktif tidak sesuai dengan status pengajuan.", 409);
 
-        const hasilVerifikasi = JSON.stringify({
+        const pemeriksaanAudit = {
             status: action === "simpan" ? "Pemeriksaan tersimpan." : action === "revisi" || action === "tolak" ? "Data atau dokumen perlu diperbaiki." : "Data dan dokumen dinyatakan lengkap.",
             pemeriksaan: body?.pemeriksaan ?? { check_status: "checked", check_notes: catatan, checked_at: now, checked_by: petugasId },
-        });
+        };
         const debugContext = { pengajuanId, petugasId, role: workflowRole, action, currentStatus: normalizedSubmissionStatus, currentStage: activeStage.tahap };
 
         if (action === "simpan") {
@@ -208,11 +208,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 .from("verifikasi_pengajuan")
                 .update({
                     petugas_id: petugasId,
-                    nama_petugas: petugasName,
-                    jabatan: activeStage.nama_tahap,
                     catatan,
-                    hasil_verifikasi: hasilVerifikasi,
-                    updated_at: now,
+                    acted_at: now,
                 })
                 .eq("id", activeStage.id)
                 .in("status", ["Menunggu", "Diproses"])
@@ -226,6 +223,25 @@ export async function POST(request: NextRequest, context: RouteContext) {
             if (!savedStage) {
                 logSupabaseNoRows(debugContext, "update verifikasi_pengajuan simpan pemeriksaan", "verifikasi_pengajuan", { stageId: activeStage.id, allowedStatus: ["Menunggu", "Diproses"] });
                 return jsonError("Pemeriksaan tidak dapat disimpan karena tahap sudah berubah. Muat ulang data pengajuan.", 409);
+            }
+            const auditPayload = {
+                pengajuan_id: pengajuanId,
+                user_id: petugasId,
+                nama_petugas: petugasName,
+                role: workflowRole,
+                tahap: STAGE_AUDIT_LABEL[activeStage.tahap] ?? activeStage.nama_tahap,
+                aksi: "SIMPAN_PEMERIKSAAN",
+                action: "SIMPAN_PEMERIKSAAN",
+                status: activeStage.status,
+                status_sebelum: requiredStatus,
+                status_sesudah: requiredStatus,
+                catatan,
+                metadata: { tahap: activeStage.tahap, role: workflowRole, petugas_id: petugasId, pemeriksaan: pemeriksaanAudit.pemeriksaan },
+            };
+            const auditError = await insertAuditPengajuan(supabase, auditPayload, debugContext);
+            if (auditError) {
+                logSupabaseOperation(debugContext, "insert audit_pengajuan simpan pemeriksaan", "audit_pengajuan", auditError);
+                throw auditError;
             }
             logDebug("saved-inspection", { pengajuanId, stage: activeStage.tahap, status: activeStage.status });
             return NextResponse.json({ ok: true, data: { id: pengajuanId, status: pengajuan.status, stage_status: savedStage.status } });
@@ -244,12 +260,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
             .update({
                 status: stageStatus,
                 petugas_id: petugasId,
-                nama_petugas: petugasName,
-                jabatan: activeStage.nama_tahap,
                 catatan,
-                hasil_verifikasi: hasilVerifikasi,
                 acted_at: now,
-                updated_at: now,
             })
             .eq("id", activeStage.id)
             .in("status", ["Menunggu", "Diproses"])
@@ -268,7 +280,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         if (nextStage) {
             const { error: nextStageError } = await supabase
                 .from("verifikasi_pengajuan")
-                .update({ status: "Diproses", updated_at: now })
+                .update({ status: "Diproses" })
                 .eq("id", nextStage.id)
                 .eq("status", "Menunggu");
             if (nextStageError) {
@@ -324,7 +336,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
             status_sebelum: requiredStatus,
             status_sesudah: nextWorkflowStatus,
             catatan,
-            metadata: { tahap: activeStage.tahap, next_tahap: nextStage?.tahap ?? null, role: workflowRole, petugas_id: petugasId, pemeriksaan: body?.pemeriksaan ?? null },
+            metadata: { tahap: activeStage.tahap, next_tahap: nextStage?.tahap ?? null, role: workflowRole, petugas_id: petugasId, pemeriksaan: pemeriksaanAudit.pemeriksaan },
         };
         const auditError = await insertAuditPengajuan(supabase, auditPayload, debugContext);
         if (auditError) {
