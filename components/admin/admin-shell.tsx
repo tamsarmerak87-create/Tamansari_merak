@@ -1551,17 +1551,86 @@ function Pengguna({ rows }: { rows: PendingWarga[] }) {
   );
 }
 function Laporan({ submissions, wargaProfiles }: { submissions: Row[]; wargaProfiles: PendingWarga[] }) {
+  type LaporanActivity = Row & { id: string; created_at: string | null; activity: string; source: string };
+  type StatKey = "totalWarga" | "totalPetugas" | "totalActivities" | "totalPengajuan" | "selesai" | "ditolak" | "menunggu" | "aktivitasWarga" | "aktivitasPetugas" | "verifikasiWarga";
+  const emptyStats: Record<StatKey, number> = { totalWarga: 0, totalPetugas: 0, totalActivities: 0, totalPengajuan: 0, selesai: 0, ditolak: 0, menunggu: 0, aktivitasWarga: 0, aktivitasPetugas: 0, verifikasiWarga: 0 };
+  const [activities, setActivities] = useState<LaporanActivity[]>([]);
+  const [stats, setStats] = useState(emptyStats);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<LaporanActivity | null>(null);
+  const [page, setPage] = useState(1);
+  const [range, setRange] = useState("30");
+  const [filters, setFilters] = useState({ from: "", to: "", actor: "", activity: "", status: "", search: "" });
+
+  const applyRange = (value: string) => {
+    setRange(value);
+    const now = new Date();
+    const iso = (date: Date) => date.toISOString().slice(0, 10);
+    if (value === "custom") return;
+    if (value === "today") setFilters((prev) => ({ ...prev, from: iso(now), to: iso(now) }));
+    if (value === "7" || value === "30") {
+      const from = new Date(now);
+      from.setDate(now.getDate() - Number(value) + 1);
+      setFilters((prev) => ({ ...prev, from: iso(from), to: iso(now) }));
+    }
+    if (value === "month") setFilters((prev) => ({ ...prev, from: iso(new Date(now.getFullYear(), now.getMonth(), 1)), to: iso(now) }));
+  };
+  const fetchReport = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      Object.entries(filters).forEach(([key, value]) => { if (value) params.set(key, value); });
+      const response = await fetch(`/api/admin/laporan?${params.toString()}`, { cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok || !result?.ok) throw new Error(result?.error ?? "Laporan gagal dimuat");
+      setActivities(Array.isArray(result.data?.activities) ? result.data.activities : []);
+      setStats({ ...emptyStats, ...(result.data?.stats ?? {}) });
+      setPage(1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Laporan gagal dimuat");
+    } finally {
+      setLoading(false);
+    }
+  }, [filters]);
+
+  useEffect(() => { applyRange("30"); }, []);
+  useEffect(() => { fetchReport(); }, [fetchReport]);
+
+  const statusBucket = (value?: string | null) => {
+    const lower = String(value ?? "").toLowerCase();
+    if (["selesai", "disetujui", "terverifikasi", "approved"].some((item) => lower.includes(item))) return "Selesai";
+    if (["ditolak", "rejected"].some((item) => lower.includes(item))) return "Ditolak";
+    if (["menunggu", "diproses", "pending", "belum"].some((item) => lower.includes(item))) return "Menunggu";
+    return String(value || "Lainnya");
+  };
+  const countBy = (items: LaporanActivity[], keyer: (item: LaporanActivity) => string) => Object.entries(items.reduce<Record<string, number>>((acc, item) => {
+    const key = keyer(item) || "-";
+    acc[key] = (acc[key] ?? 0) + 1;
+    return acc;
+  }, {})).map(([label, value]) => ({ label, value }));
+  const daily = useMemo(() => countBy(activities, (item) => formatDate(item.created_at)).slice(-14), [activities]);
+  const statusData = useMemo(() => countBy(activities, (item) => statusBucket(item.status_after ?? item.status)), [activities]);
+  const actorData = useMemo(() => [{ label: "Warga", value: stats.aktivitasWarga }, { label: "Petugas", value: stats.aktivitasPetugas }], [stats]);
+  const verifikasiData = useMemo(() => countBy(activities.filter((item) => String(item.source).includes("warga_profiles")), (item) => statusBucket(item.status_after ?? item.status)), [activities]);
+  const workflowData = useMemo(() => countBy(activities.filter((item) => String(item.source).includes("verifikasi") || item.target_type === "verifikasi"), (item) => String(item.activity)).slice(0, 8), [activities]);
+  const pageRows = activities.slice((page - 1) * 25, page * 25);
+  const pageCount = Math.max(1, Math.ceil(activities.length / 25));
+
+  const BarChart = ({ title, data }: { title: string; data: { label: string; value: number }[] }) => {
+    const max = Math.max(1, ...data.map((item) => item.value));
+    return <div className="rounded-[1.75rem] border border-slate-100 bg-white p-5 shadow-soft"><h3 className="text-lg font-black text-gov-950">{title}</h3><div className="mt-5 space-y-3">{data.length === 0 ? <p className="rounded-2xl bg-slate-50 p-5 text-center font-bold text-slate-500">Belum ada data grafik.</p> : data.map((item) => <div key={item.label}><div className="mb-1 flex justify-between gap-3 text-xs font-black text-slate-500"><span className="truncate">{item.label}</span><span>{item.value}</span></div><div className="h-3 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-[linear-gradient(90deg,#f8c537,#0B2C6A)]" style={{ width: `${Math.max(6, (item.value / max) * 100)}%` }} /></div></div>)}</div></div>;
+  };
+
   return (
-    <Panel title="Laporan Pelayanan Digital">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <ReportCard label="Total Warga" value={wargaProfiles.length} />
-        <ReportCard label="Total Pengajuan" value={submissions.length} />
-        <ReportCard label="Selesai" value={submissions.filter((r) => r.status === "Selesai").length} />
-        <ReportCard label="Ditolak" value={submissions.filter((r) => r.status === "Ditolak").length} />
-      </div>
-      <p className="mt-5 rounded-[1.5rem] bg-slate-50 p-5 font-bold leading-7 text-slate-600">
-        Modul laporan siap dikembangkan menjadi export PDF/CSV rekap warga, pengajuan surat, POSBANKUM, dan performa pelayanan petugas.
-      </p>
+    <Panel title="Laporan & Analitik Pelayanan">
+      <div className="rounded-[2rem] bg-[linear-gradient(135deg,#071a33,#0B2C6A)] p-6 text-white shadow-soft"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><p className="text-xs font-black uppercase tracking-[.22em] text-accent-200">Riwayat seluruh aktivitas warga dan petugas</p><h2 className="mt-2 text-3xl font-black">Laporan & Analitik Pelayanan</h2></div><div className="flex flex-wrap gap-2"><button onClick={fetchReport} className="inline-flex items-center gap-2 rounded-2xl bg-accent-300 px-5 py-3 font-black text-gov-950"><RefreshCw size={16} /> Refresh</button>{["CSV", "Excel", "PDF"].map((item) => <button key={item} disabled title="Endpoint export belum tersedia" className="rounded-2xl bg-white/10 px-4 py-3 font-black text-white/40 ring-1 ring-white/15">{item}</button>)}</div></div></div>
+      <div className="mt-5 grid gap-3 rounded-[1.75rem] border border-slate-100 bg-white p-4 shadow-soft md:grid-cols-4 xl:grid-cols-8"><select value={range} onChange={(e) => applyRange(e.target.value)} className="rounded-2xl bg-slate-50 p-3 font-bold"><option value="today">Hari Ini</option><option value="7">7 Hari</option><option value="30">30 Hari</option><option value="month">Bulan Ini</option><option value="custom">Custom</option></select><input type="date" value={filters.from} onChange={(e) => { setRange("custom"); setFilters((p) => ({ ...p, from: e.target.value })); }} className="rounded-2xl bg-slate-50 p-3 font-bold" /><input type="date" value={filters.to} onChange={(e) => { setRange("custom"); setFilters((p) => ({ ...p, to: e.target.value })); }} className="rounded-2xl bg-slate-50 p-3 font-bold" /><input placeholder="Pelaku" value={filters.actor} onChange={(e) => setFilters((p) => ({ ...p, actor: e.target.value }))} className="rounded-2xl bg-slate-50 p-3 font-bold" /><input placeholder="Aktivitas" value={filters.activity} onChange={(e) => setFilters((p) => ({ ...p, activity: e.target.value }))} className="rounded-2xl bg-slate-50 p-3 font-bold" /><input placeholder="Status" value={filters.status} onChange={(e) => setFilters((p) => ({ ...p, status: e.target.value }))} className="rounded-2xl bg-slate-50 p-3 font-bold" /><input placeholder="Search" value={filters.search} onChange={(e) => setFilters((p) => ({ ...p, search: e.target.value }))} className="rounded-2xl bg-slate-50 p-3 font-bold xl:col-span-2" /></div>
+      {error && <div className="mt-5 rounded-[1.5rem] bg-red-50 p-5 font-black text-red-700">{error}</div>}
+      <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-5">{Object.entries({ totalWarga: "Total Warga", totalPetugas: "Total Petugas", totalActivities: "Total Aktivitas", totalPengajuan: "Total Pengajuan", selesai: "Selesai", ditolak: "Ditolak", menunggu: "Menunggu", aktivitasWarga: "Aktivitas Warga", aktivitasPetugas: "Aktivitas Petugas", verifikasiWarga: "Verifikasi Warga" }).map(([key, label]) => <ReportCard key={key} label={label} value={stats[key as StatKey]} />)}</div>
+      {loading ? <div className="mt-6 rounded-[1.75rem] bg-white p-10 text-center font-black text-gov-950 shadow-soft">Memuat laporan...</div> : <><div className="mt-6 grid gap-5 lg:grid-cols-2"><BarChart title="Aktivitas per hari" data={daily} /><BarChart title="Status pelayanan" data={statusData} /><BarChart title="Warga vs Petugas" data={actorData} /><BarChart title="Verifikasi warga" data={verifikasiData} /><BarChart title="Tahapan workflow" data={workflowData} /></div><div className="mt-6 overflow-x-auto rounded-[1.75rem] border border-slate-100 bg-white shadow-soft"><table className="min-w-[980px] w-full text-sm"><thead className="bg-slate-50 text-left text-xs font-black uppercase tracking-[.14em] text-slate-500"><tr>{["Waktu", "Pelaku", "Role", "Aktivitas", "Target", "Status", "Sumber"].map((h) => <th key={h} className="px-4 py-4">{h}</th>)}</tr></thead><tbody>{pageRows.map((row) => <tr key={row.id} onClick={() => setSelected(row)} className="cursor-pointer border-t border-slate-100 align-top transition hover:bg-accent-50"><td className="px-4 py-4 font-bold text-slate-600">{formatDateTime(row.created_at)}</td><td className="px-4 py-4 font-black text-gov-950">{row.actor_name ?? "-"}</td><td className="px-4 py-4 font-bold text-slate-600">{roleLabel(row.actor_role ?? row.actor_type)}</td><td className="px-4 py-4 font-bold text-slate-700">{row.activity}</td><td className="px-4 py-4 font-bold text-slate-600">{row.target_name ?? "-"}</td><td className="px-4 py-4"><span className="rounded-full bg-accent-100 px-3 py-1 text-xs font-black text-gov-950">{row.status ?? row.status_after ?? "-"}</span></td><td className="px-4 py-4 font-bold text-slate-500">{row.source}</td></tr>)}</tbody></table>{activities.length === 0 && <div className="p-10 text-center"><FileText className="mx-auto size-10 text-accent-400" /><p className="mt-3 text-lg font-black text-gov-950">Belum ada aktivitas.</p><p className="font-bold text-slate-500">Coba ubah filter atau tekan Refresh.</p></div>}</div><div className="mt-4 flex items-center justify-between gap-3"><p className="font-bold text-slate-500">25 data per halaman - Halaman {page} dari {pageCount}</p><div className="flex gap-2"><button disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="rounded-xl bg-slate-100 px-4 py-2 font-black disabled:opacity-40">Sebelumnya</button><button disabled={page === pageCount} onClick={() => setPage((p) => Math.min(pageCount, p + 1))} className="rounded-xl bg-gov-950 px-4 py-2 font-black text-white disabled:opacity-40">Berikutnya</button></div></div></>}
+      {selected && <div className="fixed inset-0 z-50 grid place-items-center bg-gov-950/60 p-4 backdrop-blur-sm"><div className="w-full max-w-2xl rounded-[2rem] bg-white p-6 shadow-2xl"><div className="mb-5 flex justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-[.18em] text-accent-500">Detail Aktivitas</p><h3 className="text-2xl font-black text-gov-950">{selected.activity}</h3></div><button onClick={() => setSelected(null)} className="rounded-full bg-slate-100 p-2"><X size={18} /></button></div><div className="grid gap-3 md:grid-cols-2">{[["Pelaku", selected.actor_name], ["Role", roleLabel(selected.actor_role ?? selected.actor_type)], ["Waktu", formatDateTime(selected.created_at)], ["Aktivitas", selected.activity], ["Target", selected.target_name], ["Status sebelum", selected.status_before], ["Status sesudah", selected.status_after], ["Sumber", selected.source]].map(([label, value]) => <div key={label} className="rounded-2xl bg-slate-50 p-4"><p className="text-xs font-black uppercase tracking-widest text-slate-400">{label}</p><p className="mt-1 font-black text-gov-950">{value ?? "-"}</p></div>)}<div className="rounded-2xl bg-slate-50 p-4 md:col-span-2"><p className="text-xs font-black uppercase tracking-widest text-slate-400">Keterangan</p><p className="mt-1 font-bold leading-7 text-slate-700">{selected.description ?? "-"}</p></div></div></div></div>}
     </Panel>
   );
 }
