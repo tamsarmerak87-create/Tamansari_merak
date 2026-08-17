@@ -10,6 +10,7 @@ function jsonError(message: string, status = 400) {
 
 type Action = "proses_tahap" | "verifikasi" | "setujui" | "selesai" | "tolak" | "revisi";
 type StageRow = { id: string; tahap: number; nama_tahap: string; role_petugas: string; status: string; petugas_id?: string | null };
+type SupabaseError = { message?: string; details?: string; hint?: string; code?: string };
 type ActionDecision = { status: "Disetujui" | "Ditolak"; submissionStatus: string; auditLabel: string; trackingLabel: string };
 
 const STAGE_AUDIT_LABEL: Record<number, string> = {
@@ -55,6 +56,33 @@ function roleLabelForError(role: string) {
 function petugasCanProcessStage(stage: StageRow, workflowRole: string, petugasId: string) {
     if (workflowRole === "lurah") return stage.role_petugas === workflowRole;
     return stage.role_petugas === workflowRole && (!stage.petugas_id || stage.petugas_id === petugasId);
+}
+
+function logSupabaseError(operation: string, table: string, error: SupabaseError) {
+    console.error("[PETUGAS PENGAJUAN ERROR]", {
+        operation,
+        table,
+        code: error.code ?? null,
+        message: error.message ?? null,
+        details: error.details ?? null,
+        hint: error.hint ?? null,
+    });
+}
+
+function isMissingColumn(error: SupabaseError, column: string) {
+    return error.code === "42703" && String(error.message ?? "").includes(column);
+}
+
+async function insertAuditPengajuan(supabase: NonNullable<ReturnType<typeof createSupabaseAdminClient>>, payload: Record<string, unknown>) {
+    const { error } = await supabase.from("audit_pengajuan").insert(payload);
+    if (!error) return null;
+    logSupabaseError("insert audit_pengajuan", "audit_pengajuan", error);
+    if (!isMissingColumn(error, "user_id")) return error;
+
+    const { user_id: _userId, ...payloadTanpaUserId } = payload;
+    const retry = await supabase.from("audit_pengajuan").insert(payloadTanpaUserId);
+    if (retry.error) logSupabaseError("insert audit_pengajuan tanpa user_id", "audit_pengajuan", retry.error);
+    return retry.error ?? null;
 }
 
 export async function PATCH(request: NextRequest) {
@@ -157,7 +185,7 @@ export async function PATCH(request: NextRequest) {
         catatan: catatan ?? null,
         metadata: { status_sebelum: requiredStatus, status_sesudah: status, tahap: activeStage.tahap, next_tahap: nextStage?.tahap ?? null, role: workflowRole, checklist: body.checklist ?? null, hasil_verifikasi: body.hasil_verifikasi ?? null, dokumentasi_url: body.dokumentasi_url ?? null },
     };
-    const { error: auditError } = await supabase.from("audit_pengajuan").insert(auditPayload);
+    const auditError = await insertAuditPengajuan(supabase, auditPayload);
     if (auditError) return jsonError(auditError.message, 500);
 
     await createWargaNotification({ pengajuanId: body.id, nik: String(pengajuanAktif.nik ?? ""), status: notificationStatusFor(body.action, activeStage), catatan }).catch((notificationError) => {

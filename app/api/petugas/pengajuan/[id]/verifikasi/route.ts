@@ -61,6 +61,22 @@ function logDebug(event: string, context: Record<string, unknown>) {
     console.log("[VERIFIKASI SAVE DEBUG]", { event, ...context });
 }
 
+function isMissingColumn(error: SupabaseError, column: string) {
+    return error.code === "42703" && String(error.message ?? "").includes(column);
+}
+
+async function insertAuditPengajuan(supabase: NonNullable<ReturnType<typeof createSupabaseAdminClient>>, payload: Record<string, unknown>, context: DebugContext) {
+    const { error } = await supabase.from("audit_pengajuan").insert(payload);
+    if (!error) return null;
+    logSupabaseOperation(context, "insert audit_pengajuan", "audit_pengajuan", error);
+    if (!isMissingColumn(error, "user_id")) return error;
+
+    const { user_id: _userId, ...payloadTanpaUserId } = payload;
+    const retry = await supabase.from("audit_pengajuan").insert(payloadTanpaUserId);
+    if (retry.error) logSupabaseOperation(context, "insert audit_pengajuan tanpa user_id", "audit_pengajuan", retry.error);
+    return retry.error ?? null;
+}
+
 function workflowStatusMatches(actualStatus: string, requiredStatus: string, activeStage: StageRow) {
     if (actualStatus === requiredStatus) return true;
     return activeStage.tahap === 1 && ["MENUNGGU_STAFF", "MENUNGGU_VERIFIKASI"].includes(actualStatus);
@@ -257,6 +273,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
         const auditPayload = {
             pengajuan_id: pengajuanId,
+            user_id: petugasId,
             nama_petugas: petugasName,
             role: workflowRole,
             tahap: STAGE_AUDIT_LABEL[activeStage.tahap] ?? activeStage.nama_tahap,
@@ -268,7 +285,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
             catatan,
             metadata: { tahap: activeStage.tahap, next_tahap: nextStage?.tahap ?? null, role: workflowRole, petugas_id: petugasId, pemeriksaan: body?.pemeriksaan ?? null },
         };
-        const { error: auditError } = await supabase.from("audit_pengajuan").insert(auditPayload);
+        const auditError = await insertAuditPengajuan(supabase, auditPayload, debugContext);
         if (auditError) {
             logSupabaseOperation(debugContext, "insert audit_pengajuan", "audit_pengajuan", auditError);
             throw auditError;
