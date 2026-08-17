@@ -17,8 +17,40 @@ function jsonError(message: string, status = 400) {
     return NextResponse.json({ ok: false, error: message }, { status });
 }
 
-function publicSaveError() {
-    return jsonError("Data belum dapat disimpan. Silakan coba lagi.", 500);
+function supabaseJsonError(error: SupabaseError, status = 500) {
+    console.error("[VERIFIKASI SUPABASE ERROR]", {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+    });
+
+    return NextResponse.json(
+        {
+            ok: false,
+            error: "VERIFIKASI_DB_ERROR",
+            message: error.message,
+            code: error.code,
+            details: error.details,
+            hint: error.hint,
+        },
+        { status }
+    );
+}
+
+function verificationJsonError(error: unknown, status = 500) {
+    const maybeSupabaseError = error as SupabaseError;
+    if (maybeSupabaseError?.code || maybeSupabaseError?.details || maybeSupabaseError?.hint) return supabaseJsonError(maybeSupabaseError, status);
+
+    console.error("[VERIFIKASI ERROR]", error);
+    return NextResponse.json(
+        {
+            ok: false,
+            error: "VERIFIKASI_ERROR",
+            message: error instanceof Error ? error.message : String(error),
+        },
+        { status }
+    );
 }
 
 function logConfigError(operation: string, message: string, context?: Record<string, unknown>) {
@@ -105,7 +137,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
         const supabase = createSupabaseAdminClient();
         if (!supabase) {
             logConfigError("create supabase admin client", "Supabase service role belum dikonfigurasi.", { pengajuanId, petugasId: session.profile.id });
-            return publicSaveError();
+            return NextResponse.json(
+                {
+                    ok: false,
+                    error: "VERIFIKASI_CONFIG_ERROR",
+                    message: "Supabase service role belum dikonfigurasi.",
+                    code: "CONFIG_ERROR",
+                    details: "SUPABASE_URL atau SUPABASE_SERVICE_ROLE_KEY tidak tersedia untuk route server.",
+                    hint: "Pastikan environment variable Supabase production sudah terpasang di Vercel.",
+                },
+                { status: 500 }
+            );
         }
 
         const body = await request.json().catch(() => null) as VerificationBody | null;
@@ -308,7 +350,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
             hint: supabaseError?.hint ?? null,
             error,
         });
-        return publicSaveError();
+        return verificationJsonError(error);
     }
 }
 
