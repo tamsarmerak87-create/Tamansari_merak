@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
             supabase
                 .from("warga_profiles")
                 .select("id,nama_lengkap,nik,email,nomor_hp,nomor_whatsapp,nomor_kk,tempat_lahir,tanggal_lahir,jenis_kelamin,alamat,rt,rw,kelurahan,kecamatan,role,created_at,status_verifikasi,alasan_penolakan")
-                .eq("status_verifikasi", "Belum Terverifikasi")
+                .eq("status_verifikasi", "Menunggu Lurah")
                 .order("created_at", { ascending: true }),
             supabase
                 .from("warga_profiles")
