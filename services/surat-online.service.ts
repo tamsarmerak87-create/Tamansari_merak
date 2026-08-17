@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { createSupabaseAdminClient, createSupabaseBrowserClient } from "@/services/supabase";
+import { assertWargaAccountVerifiedByNik } from "@/services/warga-verification-workflow";
 import { forwardToN8n, getAppBaseUrl } from "@/services/integrations";
 import { createVerificationRows } from "@/services/verification-workflow";
 import { createWargaNotification, type NotificationStatus } from "@/services/warga-notifikasi.service";
@@ -344,6 +345,7 @@ export async function createSubmission(formData: SubmissionRequest) {
         pendukungMeta = readPath("file_pendukung") ? { path: readPath("file_pendukung") ?? "", url: null, name: "Dokumen pendukung", type: "application/pdf", size: 0 } : readMeta("pendukung");
         if (Number.isNaN(Date.parse(payload.tanggal_lahir))) throw new Error("Tanggal lahir tidak valid.");
         if (formData.consent !== true) throw new Error("Persetujuan pernyataan kebenaran wajib diberikan.");
+        await assertWargaAccountVerifiedByNik(payload.nik);
         [ktpMeta, kkMeta, pendukungMeta].filter(Boolean).forEach((file) => {
             if (!file?.path || file.path.includes("..")) throw new Error("Path dokumen tidak valid.");
         });

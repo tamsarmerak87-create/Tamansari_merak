@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getAdminSession, isPetugas } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
-import { appendWargaHistory, canHandleWargaStage, getActiveWargaStage, getAssignedPetugasId, getValidReturnStages, getWargaStageByRole, isPendingWargaVerification, notifyPetugasTarget, notifyWargaAccount, resolveReturnStage, WARGA_WORKFLOW } from "@/services/warga-verification-workflow";
+import { canHandleWargaStage, getActiveWargaStage, getValidReturnStages, getWargaStageByRole, isPendingWargaVerification, processWargaVerificationAction } from "@/services/warga-verification-workflow";
 
 const CHANGE_DOCUMENT_BUCKET = "profile-change-documents";
 const PROFILE_PHOTO_BUCKET = "avatars";
@@ -56,10 +56,14 @@ export async function GET(request: NextRequest) {
     if (id) query = query.eq("id", id);
     const { data, error } = await query;
     if (error) return jsonError(error.message, 500);
-    const candidates = id ? data ?? [] : (data ?? []).filter(isPendingWargaVerification);
-    const rows = candidates.filter((row) => canHandleWargaStage(session.profile!, row)).map((row) => {
+    const candidates = (data ?? []).filter((row) => {
         const activeStage = getActiveWargaStage(row);
-        return { ...row, active_stage: activeStage, return_targets: getValidReturnStages(activeStage?.role) };
+        if (!activeStage || activeStage.role !== stage.role) return false;
+        return isPendingWargaVerification(row) && canHandleWargaStage(session.profile!, row);
+    });
+    const rows = candidates.map((row) => {
+        const activeStage = getActiveWargaStage(row);
+        return { ...row, status_antrean: activeStage?.status ?? null, active_stage: activeStage, return_targets: getValidReturnStages(activeStage?.role) };
     });
     logWargaQueue("GET", { user_id: session.profile.id, role: session.profile.role, requested_id: id, total_found: data?.length ?? 0, pending_candidates: candidates.length, returned_rows: rows.length, sample: (data ?? []).slice(0, 10).map((row) => ({ id: row.id, status_verifikasi: row.status_verifikasi, tahap_verifikasi: row.tahap_verifikasi, returned_to_role: row.returned_to_role, handled_by: row.handled_by, active_role: getActiveWargaStage(row)?.role ?? null })) });
     const detail = id && rows[0] ? await enrichWargaDetail(supabase, rows[0]) : null;
@@ -76,31 +80,12 @@ export async function POST(request: NextRequest) {
     const alasan = String(body.alasan ?? body.catatan ?? "").trim();
     const requestedReturnRole = typeof body.returned_to_role === "string" ? body.returned_to_role : typeof body.returnToRole === "string" ? body.returnToRole : null;
     if (!wargaId) return jsonError("ID warga wajib diisi.");
-    if (!["periksa", "setujui", "kembalikan", "tolak"].includes(action)) return jsonError("Aksi tidak valid.");
+    if (!["periksa", "simpan", "setujui", "kembalikan", "tolak"].includes(action)) return jsonError("Aksi tidak valid.");
     if (["kembalikan", "tolak"].includes(action) && !alasan) return jsonError("Alasan wajib diisi.");
-    const supabase = createSupabaseAdminClient();
-    const { data: warga, error: findError } = await supabase.from("warga_profiles").select("*").eq("id", wargaId).maybeSingle();
-    if (findError) return jsonError(findError.message, 500);
-    if (!warga) return jsonError("Data warga tidak ditemukan.", 404);
-    const stage = getActiveWargaStage(warga);
-    if (!stage || !canHandleWargaStage(session.profile, warga)) return jsonError("Anda tidak berwenang menangani tahap akun warga ini.", 403);
-    const currentIndex = WARGA_WORKFLOW.findIndex((s) => s.role === stage.role);
-    const nextStage = WARGA_WORKFLOW[currentIndex + 1] ?? null;
-    const finalApproved = action === "setujui" && stage.role === "lurah";
-    if (action === "setujui" && stage.role !== "lurah" && !nextStage) return jsonError("Hanya Lurah yang dapat menyelesaikan verifikasi akun warga.", 403);
-    const returnStage = action === "kembalikan" ? resolveReturnStage(stage.role, requestedReturnRole) : null;
-    if (action === "kembalikan" && !returnStage) return jsonError("Tujuan pengembalian tidak valid untuk tahap ini.", 400);
-    const nextStatus = action === "tolak" ? "Ditolak" : action === "kembalikan" ? "Dikembalikan" : action === "periksa" ? stage.status : finalApproved ? "Terverifikasi" : nextStage?.status;
-    if (!nextStatus) return jsonError("Tahap berikutnya tidak valid.");
-    const targetStage = action === "kembalikan" ? returnStage : action === "setujui" ? nextStage : stage;
-    const assignedId = getAssignedPetugasId(warga);
-    const nextHandledBy = action === "periksa" ? session.profile.id : assignedId && targetStage?.role === stage.role ? assignedId : null;
-    const history = appendWargaHistory(warga, { action, status_sebelum: warga.status_verifikasi, status_sesudah: nextStatus, role: session.profile.role, petugas_id: session.profile.id, nama_petugas: session.profile.nama_lengkap ?? session.profile.username, catatan: alasan || null, returned_to_role: returnStage?.role ?? null });
-    const updateQuery = supabase.from("warga_profiles").update({ status_verifikasi: nextStatus, tahap_verifikasi: finalApproved ? "Terverifikasi" : targetStage?.label ?? stage.label, handled_by: nextHandledBy, returned_to_role: returnStage?.role ?? null, alasan_penolakan: action === "tolak" ? alasan : null, verified_at: finalApproved ? new Date().toISOString() : null, verified_by: finalApproved ? session.profile.id : null, verification_history: history }).eq("id", wargaId);
-    const { data, error } = await (assignedId ? updateQuery.eq("handled_by", assignedId) : updateQuery.is("handled_by", null)).select("*").single();
-    if (error) return jsonError(error.message, 500);
-    if (finalApproved) await notifyWargaAccount(warga, "Akun Terverifikasi", "Akun warga Anda sudah terverifikasi oleh Lurah.");
-    else if (action === "tolak") await notifyWargaAccount(warga, "Akun Ditolak", "Verifikasi akun warga Anda ditolak.", alasan);
-    else if (targetStage && action !== "periksa") await notifyPetugasTarget(targetStage, { ...warga, handled_by: nextHandledBy }, "Verifikasi Akun Warga", `${warga.nama_lengkap ?? warga.nik} menunggu tindakan ${targetStage.label}.`, { warga_id: wargaId, status: nextStatus, returned_to_role: returnStage?.role ?? null });
-    return NextResponse.json({ ok: true, data });
+    try {
+        const data = await processWargaVerificationAction({ wargaId, action: action as any, petugas: session.profile, catatan: alasan, returnedToRole: requestedReturnRole, pemeriksaan: body.pemeriksaan ?? null });
+        return NextResponse.json({ ok: true, data });
+    } catch (error: any) {
+        return jsonError(error?.message ?? "Verifikasi akun gagal.", /berwenang/i.test(error?.message ?? "") ? 403 : 400);
+    }
 }

@@ -11,12 +11,24 @@ import { createSupabaseBrowserClient } from "@/services/supabase";
 import { site } from "@/constants/site";
 import { cn } from "@/utils/cn";
 
-const timeline = [
-    { label: "Akun dibuat", state: "done" },
-    { label: "Profil tersimpan", state: "done" },
-    { label: "Menunggu verifikasi petugas", state: "current" },
-    { label: "Akun aktif", state: "upcoming" },
+const workflow = [
+    { label: "Verifikasi Staff", role: "staff_pelayanan", status: "Menunggu Staff Pelayanan" },
+    { label: "Petugas Lapangan", role: "petugas_lapangan", status: "Menunggu Petugas Lapangan" },
+    { label: "Kasi", role: "kepala_seksi", status: "Menunggu Kasi" },
+    { label: "Seklur", role: "seklur", status: "Menunggu Sek Lur" },
+    { label: "Lurah", role: "lurah", status: "Menunggu Lurah" },
 ] as const;
+
+function progress(profile: any) {
+    const activeRole = profile?.status_verifikasi === "Dikembalikan" ? profile?.returned_to_role : profile?.tahap_verifikasi;
+    const activeIndex = profile?.status_verifikasi === "Terverifikasi" ? workflow.length : Math.max(0, workflow.findIndex((s) => s.role === activeRole || s.status === profile?.status_verifikasi));
+    return [
+        { label: "Akun dibuat", state: "done" },
+        { label: "Profil tersimpan", state: "done" },
+        ...workflow.map((step, index) => ({ label: step.label, state: profile?.status_verifikasi === "Terverifikasi" || index < activeIndex ? "done" : index === activeIndex ? "current" : "upcoming" })),
+        { label: "Akun Terverifikasi", state: profile?.status_verifikasi === "Terverifikasi" ? "done" : "upcoming" },
+    ];
+}
 
 export default function VerifyPage() {
     const router = useRouter();
@@ -24,6 +36,8 @@ export default function VerifyPage() {
     const [checking, setChecking] = useState(false);
 
     const verified = useMemo(() => isVerified(profile) || profile?.status_verifikasi === "Terverifikasi", [profile]);
+    const timeline = useMemo(() => progress(profile), [profile]);
+    const currentStep = timeline.find((item) => item.state === "current")?.label ?? profile?.status_verifikasi ?? "Menunggu verifikasi";
 
     useEffect(() => {
         if (!loading && !user) router.replace("/login");
@@ -97,7 +111,7 @@ export default function VerifyPage() {
                 </motion.div>
 
                 <div className="mt-6 text-center">
-                    <p className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-black text-amber-700"><span>🟡</span> Menunggu Verifikasi Petugas</p>
+                    <p className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-black text-amber-700"><span>🟡</span> {currentStep}</p>
                     <h2 className="mt-5 text-3xl font-black text-gov-950 sm:text-4xl">Pendaftaran Berhasil</h2>
                     <p className="mx-auto mt-4 max-w-2xl leading-8 text-slate-600">Data Anda telah berhasil didaftarkan. Petugas Kelurahan Tamansari akan memverifikasi identitas berdasarkan NIK, KK dan data yang diinput.</p>
                 </div>

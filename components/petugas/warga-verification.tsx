@@ -53,6 +53,7 @@ export function PetugasWargaVerification({ id }: { id: string }) {
     const [row, setRow] = useState<Row | null>(null);
     const [reason, setReason] = useState("");
     const [returnToRole, setReturnToRole] = useState("");
+    const [checks, setChecks] = useState<Record<string, boolean>>({});
     const [busy, setBusy] = useState(false);
 
     useEffect(() => {
@@ -72,7 +73,8 @@ export function PetugasWargaVerification({ id }: { id: string }) {
         if (action === "kembalikan" && returnTargets.length && !returnToRole) return alert("Pilih tujuan pengembalian.");
         if (action === "setujui") { const message = row?.active_stage?.role === "lurah" ? "Verifikasi akun warga ini?" : `Teruskan akun ini ke ${nextStage?.label ?? "tahap berikutnya"}?`; if (!confirm(message)) return; }
         setBusy(true);
-        const res = await fetch("/api/petugas/verifikasi-warga", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, action, alasan: reason, returned_to_role: returnToRole }) });
+        const pemeriksaan = { checklist: checks, catatan: reason, checked_at: new Date().toISOString(), checked_by: profile?.id ?? null };
+        const res = await fetch("/api/petugas/verifikasi-warga", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ wargaId: id, action, alasan: reason, returned_to_role: returnToRole, pemeriksaan }) });
         setBusy(false);
         if (res.ok) router.push("/petugas/dashboard");
         else alert((await res.json()).error ?? "Gagal memproses.");
@@ -109,9 +111,12 @@ export function PetugasWargaVerification({ id }: { id: string }) {
             <section className="rounded-3xl bg-white p-5 shadow-sm"><h2 className="font-black text-gov-950">Riwayat Verifikasi</h2>{history.length ? history.map((h: Row, i: number) => <div key={i} className="mt-3 rounded-2xl border p-3"><p className="font-black text-gov-950">{formatDate(h.created_at)}</p><b>{h.nama_petugas ?? h.role} - {h.role ?? "-"}</b><p className="break-words">{h.action}: {h.status_sebelum} -&gt; {h.status_sesudah}</p><p className="text-sm text-slate-500">{h.catatan ? `Alasan/Catatan: ${h.catatan}` : "Tidak ada catatan"}</p></div>) : <p className="mt-3 font-bold text-slate-500">Belum ada riwayat.</p>}</section>
             <section className="rounded-3xl bg-white p-5 shadow-sm">
                 <h2 className="font-black text-gov-950">Aksi</h2>
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    {["Biodata sesuai", "NIK sesuai", "KTP tersedia dan terbaca", "KK tersedia dan terbaca", "Foto wajah sesuai", "Data layak diteruskan"].map((item) => <label key={item} className="rounded-2xl border p-4 font-bold"><input type="checkbox" className="mr-2" checked={Boolean(checks[item])} onChange={(e) => setChecks((prev) => ({ ...prev, [item]: e.target.checked }))} />{item}</label>)}
+                </div>
                 {returnTargets.length > 0 && <label className="mt-3 block text-sm font-black text-slate-600">Tujuan pengembalian<select value={returnToRole} onChange={(e) => setReturnToRole(e.target.value)} className="mt-2 w-full rounded-2xl border p-3 font-bold"><option value="">Pilih tujuan</option>{returnTargets.map((target: Row) => <option key={target.role} value={target.role}>Kembalikan ke {target.label}</option>)}</select></label>}
                 <textarea value={reason} onChange={(e) => setReason(e.target.value)} className="mt-3 min-h-28 w-full rounded-2xl border p-4" placeholder="Alasan wajib untuk kembalikan/tolak" />
-                <div className="mt-4 flex flex-wrap gap-2"><button disabled={busy} onClick={() => act("periksa")} className="rounded-xl bg-slate-100 px-4 py-3 font-black">Periksa</button><button disabled={busy} onClick={() => act("setujui")} className="rounded-xl bg-emerald-600 px-4 py-3 font-black text-white">Setujui / Teruskan</button><button disabled={busy || !returnTargets.length} onClick={() => act("kembalikan")} className="rounded-xl bg-amber-100 px-4 py-3 font-black text-amber-900 disabled:opacity-50">Kembalikan</button><button disabled={busy} onClick={() => act("tolak")} className="rounded-xl bg-red-600 px-4 py-3 font-black text-white">Tolak</button></div>
+                <div className="mt-4 flex flex-wrap gap-2"><button disabled={busy} onClick={() => act("simpan")} className="rounded-xl bg-slate-100 px-4 py-3 font-black">Simpan Pemeriksaan</button><button disabled={busy} onClick={() => act("setujui")} className="rounded-xl bg-emerald-600 px-4 py-3 font-black text-white">Setujui & Lanjutkan</button><button disabled={busy || !returnTargets.length} onClick={() => act("kembalikan")} className="rounded-xl bg-amber-100 px-4 py-3 font-black text-amber-900 disabled:opacity-50">Kembalikan</button><button disabled={busy} onClick={() => act("tolak")} className="rounded-xl bg-red-600 px-4 py-3 font-black text-white">Tolak</button></div>
             </section>
         </div>
     </main>;
