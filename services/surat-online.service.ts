@@ -427,7 +427,6 @@ export async function createSubmission(formData: SubmissionRequest) {
             catatan: payload.catatan || null,
             nomor_pengajuan,
             status: "Menunggu Verifikasi",
-            workflow_status: "MENUNGGU_STAFF",
             file_ktp: ktpUpload?.path ?? null,
             file_kk: kkUpload?.path ?? null,
             file_pendukung: pendukungUpload?.path ?? null,
