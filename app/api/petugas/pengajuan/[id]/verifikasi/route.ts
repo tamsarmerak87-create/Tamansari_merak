@@ -248,7 +248,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 jabatan: activeStage.nama_tahap,
                 catatan,
                 hasil_verifikasi: hasilVerifikasi,
-                approved_at: isReject ? null : now,
+                acted_at: now,
                 updated_at: now,
             })
             .eq("id", activeStage.id)
