@@ -169,7 +169,7 @@ export async function GET(request: NextRequest) {
         applyDateRange(supabase.from("audit_pengajuan").select("*").order("created_at", { ascending: false }), filters),
         applyDateRange(supabase.from("tracking_pengajuan").select("*").order("created_at", { ascending: false }), filters),
         applyDateRange(supabase.from("verifikasi_pengajuan").select("*").order("created_at", { ascending: false }), filters),
-        applyDateRange(supabase.from("pengajuan_surat").select("id,nama_lengkap,layanan_id,status,created_at,updated_at,verified_by,validated_by,lurah_id,lurah_name,layanan:layanan_id(nama)").order("created_at", { ascending: false }), filters),
+        applyDateRange(supabase.from("pengajuan_surat").select("id,nama_lengkap,layanan_id,status,created_at,updated_at,verified_by,lurah_id,lurah_name,layanan:layanan_id(nama)").order("created_at", { ascending: false }), filters),
         applyDateRange(supabase.from("warga_profiles").select("id,nama_lengkap,role,status_verifikasi,created_at,updated_at,verification_history").order("created_at", { ascending: false }), filters),
         supabase.from("petugas").select("id,username,nama_lengkap,jabatan,role,is_active,created_at"),
     ]);
@@ -256,7 +256,7 @@ export async function GET(request: NextRequest) {
     }
 
     for (const item of pengajuanRows) {
-        const staffId = text(item.verified_by ?? item.validated_by ?? item.lurah_id);
+        const staffId = text(item.verified_by ?? item.lurah_id);
         const staff = staffId ? petugasById.get(staffId) : null;
         const actorRole = staffRole(staff) ?? (item.lurah_id ? "lurah" : null);
         const layananName = text(asRecord(item.layanan).nama);
