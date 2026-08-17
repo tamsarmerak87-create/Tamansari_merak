@@ -169,7 +169,7 @@ export async function GET(request: NextRequest) {
         applyDateRange(supabase.from("audit_pengajuan").select("*").order("created_at", { ascending: false }), filters),
         applyDateRange(supabase.from("tracking_pengajuan").select("*").order("created_at", { ascending: false }), filters),
         applyDateRange(supabase.from("verifikasi_pengajuan").select("*").order("created_at", { ascending: false }), filters),
-        applyDateRange(supabase.from("pengajuan_surat").select("id,nama_lengkap,layanan_id,status,workflow_status,created_at,updated_at,verified_by,validated_by,lurah_id,lurah_name,layanan:layanan_id(nama)").order("created_at", { ascending: false }), filters),
+        applyDateRange(supabase.from("pengajuan_surat").select("id,nama_lengkap,layanan_id,status,created_at,updated_at,verified_by,validated_by,lurah_id,lurah_name,layanan:layanan_id(nama)").order("created_at", { ascending: false }), filters),
         applyDateRange(supabase.from("warga_profiles").select("id,nama_lengkap,role,status_verifikasi,created_at,updated_at,verification_history").order("created_at", { ascending: false }), filters),
         supabase.from("petugas").select("id,username,nama_lengkap,jabatan,role,is_active,created_at"),
     ]);
@@ -271,7 +271,7 @@ export async function GET(request: NextRequest) {
             target_id: text(item.id),
             target_name: targetName(item),
             target_type: "pengajuan",
-            status: text(item.workflow_status ?? item.status),
+            status: text(item.status),
             status_before: null,
             status_after: null,
             description: text(item.nama_lengkap) ? `Pengajuan surat oleh ${text(item.nama_lengkap)}` : null,
