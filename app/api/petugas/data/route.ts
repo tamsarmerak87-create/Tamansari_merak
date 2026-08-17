@@ -129,6 +129,25 @@ async function withDocumentUrls(supabase: ReturnType<typeof createSupabaseAdminC
     }));
 }
 
+async function signedUrlFromSuratBucket(supabase: ReturnType<typeof createSupabaseAdminClient>, path?: string | null) {
+    const storagePath = String(path ?? "").trim();
+    if (!storagePath || /^https?:\/\//i.test(storagePath)) return storagePath;
+    const { data, error } = await supabase.storage.from("surat").createSignedUrl(storagePath, 60 * 10);
+    if (error) {
+        logDetailDebug("error signed url identitas", { storagePath, bucket: "surat", errorQuery: error.message });
+        return "";
+    }
+    return data.signedUrl;
+}
+
+async function withIdentityUrls(supabase: ReturnType<typeof createSupabaseAdminClient>, rows: AnyRow[] = []): Promise<AnyRow[]> {
+    return Promise.all(rows.map(async (row) => ({
+        ...row,
+        ktp_signed_url: await signedUrlFromSuratBucket(supabase, row.ktp_url ?? row.file_ktp ?? row.ktp_path ?? row.foto_ktp),
+        kk_signed_url: await signedUrlFromSuratBucket(supabase, row.kk_url ?? row.file_kk ?? row.kk_path ?? row.foto_kk),
+    })));
+}
+
 export async function GET(request: NextRequest) {
     const session = await getAdminSession(request, { cookie: "petugas" });
     const detailId = request.nextUrl.searchParams.get("id")?.trim() || null;
@@ -181,12 +200,17 @@ export async function GET(request: NextRequest) {
     ]);
 
     const signedDocuments = await withDocumentUrls(supabase, documentsResult.data ?? []);
-    const submissionMap = new Map((submissionsResultDetail.data ?? []).map((row: AnyRow) => [String(row.id), row]));
+    const signedSubmissions = await withIdentityUrls(supabase, submissionsResultDetail.data ?? []);
+    const submissionMap = new Map(signedSubmissions.map((row: AnyRow) => [String(row.id), row]));
     let detailSubmission: AnyRow | null = null;
     if (detailId && !submissionMap.has(detailId)) {
         const detailSubmissionResult = await safeMaybeSingle<AnyRow>("pengajuan_surat.detail_id", supabase.from("pengajuan_surat").select("*, layanan(*)").eq("id", detailId).maybeSingle(), warnings);
         detailSubmission = detailSubmissionResult.data;
-        if (detailSubmission) submissionMap.set(String(detailSubmission.id), detailSubmission);
+        if (detailSubmission) {
+            const [signedDetail] = await withIdentityUrls(supabase, [detailSubmission]);
+            detailSubmission = signedDetail;
+            submissionMap.set(String(detailSubmission.id), detailSubmission);
+        }
     }
     const officerMap = new Map((officersResult.data ?? []).map((row: AnyRow) => [String(row.id), row]));
     const docsByPengajuan = groupBy(signedDocuments, "pengajuan_id");

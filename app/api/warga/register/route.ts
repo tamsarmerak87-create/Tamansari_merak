@@ -28,6 +28,22 @@ function validateImage(file: File | null, label: string) {
     if (file.size > MAX_FILE_SIZE) throw new Error("Foto terlalu besar. Silakan pilih foto maksimal 2 MB.");
 }
 
+function isBucketNotFound(error: { message?: string; statusCode?: string | number; error?: string }) {
+    const text = `${error.message ?? ""} ${error.error ?? ""}`.toLowerCase();
+    return error.statusCode === 404 || text.includes("bucket not found") || text.includes("not found");
+}
+
+async function ensureRegistrationBucket(supabaseAdmin: ReturnType<typeof createSupabaseAdminClient>, bucket: string, isPublic: boolean) {
+    const { data, error } = await supabaseAdmin.storage.getBucket(bucket);
+    if (!error && data) return;
+    if (!error || !isBucketNotFound(error)) throw error;
+
+    const created = await supabaseAdmin.storage.createBucket(bucket, { public: isPublic });
+    if (created.error) {
+        throw new Error(`Storage bucket "${bucket}" tidak ditemukan pada Supabase production dan gagal dibuat: ${created.error.message}`);
+    }
+}
+
 function registrationDocumentRow(userId: string, path: string, jenis: "KTP" | "KK") {
     return {
         user_id: userId,
@@ -45,7 +61,10 @@ type RegistrationDocumentRow = ReturnType<typeof registrationDocumentRow>;
 
 async function uploadImage(supabaseAdmin: ReturnType<typeof createSupabaseAdminClient>, bucket: string, path: string, file: File) {
     const { data, error } = await supabaseAdmin.storage.from(bucket).upload(path, file, { upsert: false, contentType: file.type });
-    if (error) throw error;
+    if (error) {
+        if (isBucketNotFound(error)) throw new Error(`Storage bucket "${bucket}" tidak ditemukan pada Supabase production.`);
+        throw error;
+    }
     return data.path;
 }
 
@@ -73,6 +92,9 @@ export async function POST(request: Request) {
             validateImage(kkFile, "KK");
             validateImage(selfieFile, "Foto wajah");
         }
+
+        await ensureRegistrationBucket(supabaseAdmin, WARGA_PROFILE_PHOTO_BUCKET, true);
+        await ensureRegistrationBucket(supabaseAdmin, WARGA_PROFILE_CHANGE_DOCUMENT_BUCKET, false);
 
         const existingProfile = await supabaseAdmin.from("warga_profiles").select("id,email,nik").or(`email.eq.${payload.email},nik.eq.${payload.nik}`).limit(1).maybeSingle();
         if (existingProfile.error) throw existingProfile.error;

@@ -51,7 +51,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const now = new Date().toISOString();
     if (body.action === "confirm") {
         if (!activeDraft) return jsonError("Draft surat belum tersedia.");
-        return NextResponse.json({ ok: true, data: activeDraft });
+        const { data: updatedDraft, error: updateError } = await supabase.from("dokumen_pengajuan").update({ status: "SIAP_DIVERIFIKASI", metadata: { ...(activeDraft.metadata ?? {}), confirmed_at: now, confirmed_by: session.profile.id } }).eq("id", activeDraft.id).select("*").single();
+        if (updateError) return jsonError(updateError.message, 500);
+        await writeAudit(supabase, { pengajuan_id: id, status: "SIAP_DIVERIFIKASI", catatan: "Draft surat hasil pelayanan diteruskan untuk verifikasi berjenjang.", created_at: now });
+        return NextResponse.json({ ok: true, data: updatedDraft });
     }
 
     if (activeDraft || activeReady) return jsonError("Surat aktif sudah tersedia. Tidak dapat membuat surat ganda.", 409);
