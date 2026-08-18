@@ -117,8 +117,8 @@ type WargaPengajuanDetailApiResponse = {
     error?: string;
 };
 
-export type RevisionDocumentInput = { nama_file: string; url_file: string };
-export type RevisionSubmissionInput = Pick<WargaPengajuan, "keperluan" | "catatan" | "alamat" | "rt" | "rw" | "kelurahan" | "kecamatan" | "no_hp" | "email"> & { documents?: RevisionDocumentInput[] };
+export type RevisionDocumentInput = { nama_file: string; url_file: string; type: string; size: number };
+export type RevisionSubmissionInput = Pick<WargaPengajuan, "keperluan" | "catatan" | "alamat" | "rt" | "rw" | "kelurahan" | "kecamatan" | "no_hp" | "email"> & { documents?: RevisionDocumentInput[]; deleted_document_ids?: string[] };
 
 type WargaNotificationRow = {
     id: string;
