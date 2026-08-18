@@ -129,23 +129,36 @@ async function withDocumentUrls(supabase: ReturnType<typeof createSupabaseAdminC
     }));
 }
 
-async function signedUrlFromSuratBucket(supabase: ReturnType<typeof createSupabaseAdminClient>, path?: string | null) {
+async function signedUrlFromProfileDocumentBucket(supabase: ReturnType<typeof createSupabaseAdminClient>, path?: string | null) {
     const storagePath = String(path ?? "").trim();
-    if (!storagePath || /^https?:\/\//i.test(storagePath)) return storagePath;
-    const { data, error } = await supabase.storage.from("surat").createSignedUrl(storagePath, 60 * 10);
+    if (!storagePath) return { signedUrl: "", error: "Path dokumen identitas tidak tersedia." };
+    const { data, error } = await supabase.storage.from("profile-change-documents").createSignedUrl(storagePath, 60 * 10);
     if (error) {
-        logDetailDebug("error signed url identitas", { storagePath, bucket: "surat", errorQuery: error.message });
-        return "";
+        logDetailDebug("error signed url identitas", { storagePath, bucket: "profile-change-documents", errorQuery: error.message });
+        return { signedUrl: "", error: error.message };
     }
-    return data.signedUrl;
+    return { signedUrl: data.signedUrl, error: null };
 }
 
-async function withIdentityUrls(supabase: ReturnType<typeof createSupabaseAdminClient>, rows: AnyRow[] = []): Promise<AnyRow[]> {
-    return Promise.all(rows.map(async (row) => ({
-        ...row,
-        ktp_signed_url: await signedUrlFromSuratBucket(supabase, row.ktp_url ?? row.file_ktp ?? row.ktp_path ?? row.foto_ktp),
-        kk_signed_url: await signedUrlFromSuratBucket(supabase, row.kk_url ?? row.file_kk ?? row.kk_path ?? row.foto_kk),
-    })));
+async function withIdentityUrls(supabase: ReturnType<typeof createSupabaseAdminClient>, rows: AnyRow[] = [], requestsByProfile = new Map<string, AnyRow[]>): Promise<AnyRow[]> {
+    return Promise.all(rows.map(async (row) => {
+        const requests = requestsByProfile.get(String(row.warga_profile_id ?? "")) ?? [];
+        const ktpRequest = requests.find((request) => String(request.jenis_perubahan).toUpperCase() === "KTP");
+        const kkRequest = requests.find((request) => String(request.jenis_perubahan).toUpperCase() === "KK");
+        const [ktp, kk] = await Promise.all([
+            signedUrlFromProfileDocumentBucket(supabase, ktpRequest?.dokumen_pendukung),
+            signedUrlFromProfileDocumentBucket(supabase, kkRequest?.dokumen_pendukung),
+        ]);
+        return {
+            ...row,
+            ktp_signed_url: ktp.signedUrl,
+            kk_signed_url: kk.signedUrl,
+            identity_document_metadata: {
+                ktp: { path: ktpRequest?.dokumen_pendukung ?? "", error: ktp.error },
+                kk: { path: kkRequest?.dokumen_pendukung ?? "", error: kk.error },
+            },
+        };
+    }));
 }
 
 export async function GET(request: NextRequest) {
@@ -200,22 +213,20 @@ export async function GET(request: NextRequest) {
     ]);
 
     const wargaByNik = new Map((wargaResult.data ?? []).filter((row: AnyRow) => row.nik).map((row: AnyRow) => [String(row.nik), row]));
+    const profileIds = Array.from(new Set((wargaResult.data ?? []).map((row: AnyRow) => row.id).filter(Boolean)));
+    const identityRequestsResult = profileIds.length
+        ? await safeRows<AnyRow>("warga_profile_change_requests.identity", supabase.from("warga_profile_change_requests").select("id,profile_id,jenis_perubahan,dokumen_pendukung,created_at").in("profile_id", profileIds).in("jenis_perubahan", ["KTP", "KK"]).order("created_at", { ascending: false }), warnings)
+        : { data: [], error: null };
+    const identityRequestsByProfile = groupBy(identityRequestsResult.data ?? [], "profile_id");
     const submissionsWithIdentityPaths = (submissionsResultDetail.data ?? []).map((row: AnyRow) => {
         const warga = wargaByNik.get(String(row.nik ?? "")) ?? {};
         return {
             ...row,
-            ktp_url: row.ktp_url ?? warga.ktp_url,
-            file_ktp: row.file_ktp ?? warga.file_ktp,
-            ktp_path: row.ktp_path ?? warga.ktp_path,
-            foto_ktp: row.foto_ktp ?? warga.foto_ktp,
-            kk_url: row.kk_url ?? warga.kk_url,
-            file_kk: row.file_kk ?? warga.file_kk,
-            kk_path: row.kk_path ?? warga.kk_path,
-            foto_kk: row.foto_kk ?? warga.foto_kk,
+            warga_profile_id: warga.id ?? null,
         };
     });
     const signedDocuments = await withDocumentUrls(supabase, documentsResult.data ?? []);
-    const signedSubmissions = await withIdentityUrls(supabase, submissionsWithIdentityPaths);
+    const signedSubmissions = await withIdentityUrls(supabase, submissionsWithIdentityPaths, identityRequestsByProfile);
     const submissionMap = new Map(signedSubmissions.map((row: AnyRow) => [String(row.id), row]));
     let detailSubmission: AnyRow | null = null;
     if (detailId && !submissionMap.has(detailId)) {
@@ -225,15 +236,8 @@ export async function GET(request: NextRequest) {
             const warga = wargaByNik.get(String(detailSubmission.nik ?? "")) ?? {};
             const [signedDetail] = await withIdentityUrls(supabase, [{
                 ...detailSubmission,
-                ktp_url: detailSubmission.ktp_url ?? warga.ktp_url,
-                file_ktp: detailSubmission.file_ktp ?? warga.file_ktp,
-                ktp_path: detailSubmission.ktp_path ?? warga.ktp_path,
-                foto_ktp: detailSubmission.foto_ktp ?? warga.foto_ktp,
-                kk_url: detailSubmission.kk_url ?? warga.kk_url,
-                file_kk: detailSubmission.file_kk ?? warga.file_kk,
-                kk_path: detailSubmission.kk_path ?? warga.kk_path,
-                foto_kk: detailSubmission.foto_kk ?? warga.foto_kk,
-            }]);
+                warga_profile_id: warga.id ?? null,
+            }], identityRequestsByProfile);
             detailSubmission = signedDetail;
             submissionMap.set(String(detailSubmission.id), detailSubmission);
         }
