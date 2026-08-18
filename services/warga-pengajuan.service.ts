@@ -117,6 +117,9 @@ type WargaPengajuanDetailApiResponse = {
     error?: string;
 };
 
+export type RevisionDocumentInput = { nama_file: string; url_file: string };
+export type RevisionSubmissionInput = Pick<WargaPengajuan, "keperluan" | "catatan" | "alamat" | "rt" | "rw" | "kelurahan" | "kecamatan" | "no_hp" | "email"> & { documents?: RevisionDocumentInput[] };
+
 type WargaNotificationRow = {
     id: string;
     title?: string | null;
@@ -202,6 +205,29 @@ export async function getMyPengajuanDetail(id: string, profileInput?: WargaProfi
     if (response.status === 404 || response.status === 403) return null;
     if (!response.ok || !result?.ok) throw new Error(result?.error || "Gagal memuat detail pengajuan warga.");
     return result.data ?? null;
+}
+
+async function wargaMutation(id: string, method: "PATCH" | "DELETE", body?: RevisionSubmissionInput) {
+    const { data: sessionData, error: sessionError } = await client().auth.getSession();
+    if (sessionError) throw sessionError;
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) throw new Error("Silakan login terlebih dahulu.");
+    const response = await fetch(`/api/warga/pengajuan/${encodeURIComponent(id)}`, {
+        method,
+        headers: { authorization: `Bearer ${accessToken}`, ...(body ? { "content-type": "application/json" } : {}) },
+        body: body ? JSON.stringify(body) : undefined,
+    });
+    const result = await response.json().catch(() => null) as { ok?: boolean; error?: string; message?: string } | null;
+    if (!response.ok || !result?.ok) throw new Error(result?.error || `Gagal ${method === "DELETE" ? "menghapus" : "mengirim ulang"} pengajuan.`);
+    return result;
+}
+
+export function resubmitMyPengajuan(id: string, input: RevisionSubmissionInput) {
+    return wargaMutation(id, "PATCH", input);
+}
+
+export function deleteMyPengajuan(id: string) {
+    return wargaMutation(id, "DELETE");
 }
 
 export async function getMyFavorit(userId?: string | null) {
