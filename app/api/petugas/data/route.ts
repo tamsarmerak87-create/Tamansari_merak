@@ -131,13 +131,13 @@ async function withDocumentUrls(supabase: ReturnType<typeof createSupabaseAdminC
 
 async function signedUrlFromProfileDocumentBucket(supabase: ReturnType<typeof createSupabaseAdminClient>, path?: string | null) {
     const storagePath = String(path ?? "").trim();
-    if (!storagePath) return { signedUrl: "", error: "Path dokumen identitas tidak tersedia." };
+    if (!storagePath) return { signedUrl: "", error: "Path dokumen identitas tidak tersedia.", bucket: "profile-change-documents" };
     const { data, error } = await supabase.storage.from("profile-change-documents").createSignedUrl(storagePath, 60 * 10);
     if (error) {
         logDetailDebug("error signed url identitas", { storagePath, bucket: "profile-change-documents", errorQuery: error.message });
-        return { signedUrl: "", error: error.message };
+        return { signedUrl: "", error: error.message, bucket: "profile-change-documents" };
     }
-    return { signedUrl: data.signedUrl, error: null };
+    return { signedUrl: data.signedUrl, error: null, bucket: "profile-change-documents" };
 }
 
 async function withIdentityUrls(supabase: ReturnType<typeof createSupabaseAdminClient>, rows: AnyRow[] = [], requestsByProfile = new Map<string, AnyRow[]>): Promise<AnyRow[]> {
@@ -154,8 +154,9 @@ async function withIdentityUrls(supabase: ReturnType<typeof createSupabaseAdminC
             ktp_signed_url: ktp.signedUrl,
             kk_signed_url: kk.signedUrl,
             identity_document_metadata: {
-                ktp: { path: ktpRequest?.dokumen_pendukung ?? "", error: ktp.error },
-                kk: { path: kkRequest?.dokumen_pendukung ?? "", error: kk.error },
+                profile_id: row.warga_profile_id ?? null,
+                ktp: { bucket: ktp.bucket, path: ktpRequest?.dokumen_pendukung ?? "", available: Boolean(ktp.signedUrl), error: ktp.error },
+                kk: { bucket: kk.bucket, path: kkRequest?.dokumen_pendukung ?? "", available: Boolean(kk.signedUrl), error: kk.error },
             },
         };
     }));
@@ -237,10 +238,20 @@ export async function GET(request: NextRequest) {
         const detailSubmissionResult = await safeMaybeSingle<AnyRow>("pengajuan_surat.detail_id", supabase.from("pengajuan_surat").select("*, layanan(*)").eq("id", detailId).maybeSingle(), warnings);
         detailSubmission = detailSubmissionResult.data;
         if (detailSubmission) {
-            const warga = wargaByNik.get(String(detailSubmission.nik ?? "")) ?? {};
+            const detailNik = String(detailSubmission.nik ?? "").trim();
+            let warga = wargaByNik.get(detailNik) ?? null;
+            if (!warga && detailNik) {
+                const detailProfileResult = await safeMaybeSingle<AnyRow>("warga_profiles.identity_detail_by_nik", supabase.from("warga_profiles").select("id,nik").eq("nik", detailNik).maybeSingle(), warnings);
+                warga = detailProfileResult.data;
+                if (warga?.id) {
+                    wargaByNik.set(detailNik, warga);
+                    const detailIdentityRequestsResult = await safeRows<AnyRow>("warga_profile_change_requests.identity_detail", supabase.from("warga_profile_change_requests").select("id,profile_id,jenis_perubahan,dokumen_pendukung,created_at").eq("profile_id", warga.id).in("jenis_perubahan", ["KTP", "KK"]).order("created_at", { ascending: false }), warnings);
+                    identityRequestsByProfile.set(String(warga.id), detailIdentityRequestsResult.data ?? []);
+                }
+            }
             const [signedDetail] = await withIdentityUrls(supabase, [{
                 ...detailSubmission,
-                warga_profile_id: warga.id ?? null,
+                warga_profile_id: warga?.id ?? null,
             }], identityRequestsByProfile);
             detailSubmission = signedDetail;
             submissionMap.set(String(detailSubmission.id), detailSubmission);
