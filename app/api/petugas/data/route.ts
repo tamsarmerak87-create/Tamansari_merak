@@ -179,7 +179,7 @@ export async function GET(request: NextRequest) {
         safeRows<AnyRow>(isLurah ? "pengajuan_surat.monitoring" : "pengajuan_surat.petugas_candidates", supabase.from("pengajuan_surat").select("*, layanan(*)").order("created_at", { ascending: false }), warnings),
         safeRows<AnyRow>("petugas", supabase.from("petugas").select("id,username,nama_lengkap,jabatan,role,is_active").eq("is_active", true), warnings),
         safeRows<AnyRow>("audit_pengajuan.mine", supabase.from("audit_pengajuan").select("*").eq("user_id", session.profile.id).order("created_at", { ascending: false }), warnings),
-        safeRows<AnyRow>("warga_profiles.verification", supabase.from("warga_profiles").select("id,nama_lengkap,nik,status_verifikasi,tahap_verifikasi,returned_to_role,handled_by,verification_history,alasan_penolakan,created_at,updated_at").order("updated_at", { ascending: false }), warnings),
+        safeRows<AnyRow>("warga_profiles.verification", supabase.from("warga_profiles").select("*").order("updated_at", { ascending: false }), warnings),
         safeRows<AnyRow>("petugas_notifikasi", supabase.from("petugas_notifikasi").select("*").eq("petugas_id", session.profile.id).order("created_at", { ascending: false }).limit(20), warnings),
     ]);
 
@@ -199,15 +199,41 @@ export async function GET(request: NextRequest) {
         submissionIds.length ? safeRows<AnyRow>("audit_pengajuan.detail", supabase.from("audit_pengajuan").select("*").in("pengajuan_id", submissionIds).order("created_at", { ascending: true }), warnings) : Promise.resolve({ data: [], error: null }),
     ]);
 
+    const wargaByNik = new Map((wargaResult.data ?? []).filter((row: AnyRow) => row.nik).map((row: AnyRow) => [String(row.nik), row]));
+    const submissionsWithIdentityPaths = (submissionsResultDetail.data ?? []).map((row: AnyRow) => {
+        const warga = wargaByNik.get(String(row.nik ?? "")) ?? {};
+        return {
+            ...row,
+            ktp_url: row.ktp_url ?? warga.ktp_url,
+            file_ktp: row.file_ktp ?? warga.file_ktp,
+            ktp_path: row.ktp_path ?? warga.ktp_path,
+            foto_ktp: row.foto_ktp ?? warga.foto_ktp,
+            kk_url: row.kk_url ?? warga.kk_url,
+            file_kk: row.file_kk ?? warga.file_kk,
+            kk_path: row.kk_path ?? warga.kk_path,
+            foto_kk: row.foto_kk ?? warga.foto_kk,
+        };
+    });
     const signedDocuments = await withDocumentUrls(supabase, documentsResult.data ?? []);
-    const signedSubmissions = await withIdentityUrls(supabase, submissionsResultDetail.data ?? []);
+    const signedSubmissions = await withIdentityUrls(supabase, submissionsWithIdentityPaths);
     const submissionMap = new Map(signedSubmissions.map((row: AnyRow) => [String(row.id), row]));
     let detailSubmission: AnyRow | null = null;
     if (detailId && !submissionMap.has(detailId)) {
         const detailSubmissionResult = await safeMaybeSingle<AnyRow>("pengajuan_surat.detail_id", supabase.from("pengajuan_surat").select("*, layanan(*)").eq("id", detailId).maybeSingle(), warnings);
         detailSubmission = detailSubmissionResult.data;
         if (detailSubmission) {
-            const [signedDetail] = await withIdentityUrls(supabase, [detailSubmission]);
+            const warga = wargaByNik.get(String(detailSubmission.nik ?? "")) ?? {};
+            const [signedDetail] = await withIdentityUrls(supabase, [{
+                ...detailSubmission,
+                ktp_url: detailSubmission.ktp_url ?? warga.ktp_url,
+                file_ktp: detailSubmission.file_ktp ?? warga.file_ktp,
+                ktp_path: detailSubmission.ktp_path ?? warga.ktp_path,
+                foto_ktp: detailSubmission.foto_ktp ?? warga.foto_ktp,
+                kk_url: detailSubmission.kk_url ?? warga.kk_url,
+                file_kk: detailSubmission.file_kk ?? warga.file_kk,
+                kk_path: detailSubmission.kk_path ?? warga.kk_path,
+                foto_kk: detailSubmission.foto_kk ?? warga.foto_kk,
+            }]);
             detailSubmission = signedDetail;
             submissionMap.set(String(detailSubmission.id), detailSubmission);
         }
