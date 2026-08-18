@@ -212,8 +212,12 @@ export async function GET(request: NextRequest) {
         submissionIds.length ? safeRows<AnyRow>("audit_pengajuan.detail", supabase.from("audit_pengajuan").select("*").in("pengajuan_id", submissionIds).order("created_at", { ascending: true }), warnings) : Promise.resolve({ data: [], error: null }),
     ]);
 
-    const wargaByNik = new Map((wargaResult.data ?? []).filter((row: AnyRow) => row.nik).map((row: AnyRow) => [String(row.nik), row]));
-    const profileIds = Array.from(new Set((wargaResult.data ?? []).map((row: AnyRow) => row.id).filter(Boolean)));
+    const submissionNiks = Array.from(new Set((submissionsResultDetail.data ?? []).map((row: AnyRow) => String(row.nik ?? "").trim()).filter(Boolean)));
+    const identityProfilesResult = submissionNiks.length
+        ? await safeRows<AnyRow>("warga_profiles.identity_by_nik", supabase.from("warga_profiles").select("id,nik").in("nik", submissionNiks), warnings)
+        : { data: [], error: null };
+    const wargaByNik = new Map((identityProfilesResult.data ?? []).filter((row: AnyRow) => row.nik).map((row: AnyRow) => [String(row.nik), row]));
+    const profileIds = Array.from(new Set((identityProfilesResult.data ?? []).map((row: AnyRow) => row.id).filter(Boolean)));
     const identityRequestsResult = profileIds.length
         ? await safeRows<AnyRow>("warga_profile_change_requests.identity", supabase.from("warga_profile_change_requests").select("id,profile_id,jenis_perubahan,dokumen_pendukung,created_at").in("profile_id", profileIds).in("jenis_perubahan", ["KTP", "KK"]).order("created_at", { ascending: false }), warnings)
         : { data: [], error: null };
