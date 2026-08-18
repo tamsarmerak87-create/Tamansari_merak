@@ -9,7 +9,7 @@ const WARGA_PROFILE_SAFE_COLUMNS = "id,nama_lengkap,nik,nomor_kk,email,nomor_hp,
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TRACKING_COLUMNS = "id,pengajuan_id,status,keterangan,petugas,created_at";
 const DOKUMEN_COLUMNS = "id,pengajuan_id,nama_file,jenis,url_file,created_at";
-const VERIFIKASI_COLUMNS = "id,pengajuan_id,tahap,nama_tahap,role_petugas,status,nama_petugas,catatan,hasil_verifikasi,created_at,updated_at,acted_at,approved_at";
+const VERIFIKASI_COLUMNS = "id,pengajuan_id,tahap,nama_tahap,role_petugas,status,petugas_id,catatan,created_at,acted_at";
 
 function jsonError(message: string, status = 400) {
     return NextResponse.json({ ok: false, error: message }, { status });
@@ -156,7 +156,6 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
                 nik,
                 nama_lengkap,
                 status,
-                workflow_status,
                 created_at,
                 updated_at,
                 layanan_id,
