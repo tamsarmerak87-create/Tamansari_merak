@@ -48,12 +48,30 @@ async function hydrateDetail(supabase: ReturnType<typeof createSupabaseAdminClie
     if (dokumenResult.error) logSupabaseError("DETAIL DOKUMEN QUERY ERROR", dokumenResult.error);
     if (verifikasiResult.error) logSupabaseError("DETAIL VERIFIKASI QUERY ERROR", verifikasiResult.error);
 
+    const verificationStages = verifikasiResult.data ?? [];
+    // `status` is updated by the live verification routes; workflow_status can contain legacy data.
+    const normalizedStatus = String(pengajuan.status ?? pengajuan.workflow_status ?? "").toUpperCase().replace(/\s+/g, "_");
+    const workflowStopped = ["REVISI", "DITOLAK", "SELESAI", "DIBATALKAN"].includes(normalizedStatus);
+    const activeStage = workflowStopped ? null : verificationStages.find((stage) => stage.status === "Diproses")
+        ?? verificationStages.find((stage) => stage.status === "Menunggu")
+        ?? null;
+    const returnedStage = normalizedStatus === "REVISI"
+        ? [...verificationStages].reverse().find((stage) => stage.status === "Ditolak") ?? null
+        : null;
+    const latestRevisionTracking = normalizedStatus === "REVISI"
+        ? [...(trackingResult.data ?? [])].reverse().find((track) => /revisi|dikembalikan/i.test(`${track.status ?? ""} ${track.keterangan ?? ""}`)) ?? null
+        : null;
+
     return {
         ...pengajuan,
+        workflow_status: pengajuan.status ?? pengajuan.workflow_status,
+        active_stage: activeStage,
+        returned_to_role: returnedStage?.role_petugas ?? null,
+        revision_note: returnedStage?.catatan ?? latestRevisionTracking?.keterangan ?? pengajuan.alasan_penolakan ?? null,
         layanan: layananResult.data ?? { nama: pengajuan.jenis_surat ?? "Layanan tidak tersedia" },
         tracking_pengajuan: trackingResult.data ?? [],
         dokumen_pengajuan: dokumenResult.data ?? [],
-        verifikasi_pengajuan: verifikasiResult.data ?? [],
+        verifikasi_pengajuan: verificationStages,
     };
 }
 
@@ -108,11 +126,13 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
                 nik,
                 nama_lengkap,
                 status,
+                workflow_status,
                 created_at,
                 updated_at,
                 layanan_id,
                 keperluan,
                 catatan,
+                alasan_penolakan,
                 alamat,
                 rt,
                 rw,

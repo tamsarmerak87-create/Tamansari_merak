@@ -80,6 +80,10 @@ export type WargaPengajuan = {
     keperluan?: string | null;
     catatan?: string | null;
     status?: string | null;
+    workflow_status?: string | null;
+    active_stage?: VerifikasiPengajuan | null;
+    returned_to_role?: string | null;
+    revision_note?: string | null;
     created_at?: string | null;
     updated_at?: string | null;
     alasan_penolakan?: string | null;
