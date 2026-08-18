@@ -131,13 +131,17 @@ async function withDocumentUrls(supabase: ReturnType<typeof createSupabaseAdminC
 
 async function signedUrlFromProfileDocumentBucket(supabase: ReturnType<typeof createSupabaseAdminClient>, path?: string | null) {
     const storagePath = String(path ?? "").trim();
-    if (!storagePath) return { signedUrl: "", error: "Path dokumen identitas tidak tersedia.", bucket: "profile-change-documents" };
+    if (!storagePath) return { signedUrl: "", error: "Path dokumen identitas tidak tersedia.", errorCode: "IDENTITY_DOCUMENT_PATH_MISSING", bucket: "profile-change-documents" };
     const { data, error } = await supabase.storage.from("profile-change-documents").createSignedUrl(storagePath, 60 * 10);
     if (error) {
         logDetailDebug("error signed url identitas", { storagePath, bucket: "profile-change-documents", errorQuery: error.message });
-        return { signedUrl: "", error: error.message, bucket: "profile-change-documents" };
+        return { signedUrl: "", error: error.message, errorCode: "IDENTITY_DOCUMENT_SIGN_FAILED", bucket: "profile-change-documents" };
     }
-    return { signedUrl: data.signedUrl, error: null, bucket: "profile-change-documents" };
+    if (!data?.signedUrl) {
+        logDetailDebug("signed url identitas kosong", { storagePath, bucket: "profile-change-documents" });
+        return { signedUrl: "", error: "Storage tidak mengembalikan signed URL.", errorCode: "IDENTITY_DOCUMENT_SIGNED_URL_EMPTY", bucket: "profile-change-documents" };
+    }
+    return { signedUrl: data.signedUrl, error: null, errorCode: null, bucket: "profile-change-documents" };
 }
 
 async function withIdentityUrls(supabase: ReturnType<typeof createSupabaseAdminClient>, rows: AnyRow[] = [], requestsByProfile = new Map<string, AnyRow[]>): Promise<AnyRow[]> {
@@ -155,8 +159,8 @@ async function withIdentityUrls(supabase: ReturnType<typeof createSupabaseAdminC
             kk_signed_url: kk.signedUrl,
             identity_document_metadata: {
                 profile_id: row.warga_profile_id ?? null,
-                ktp: { bucket: ktp.bucket, path: ktpRequest?.dokumen_pendukung ?? "", available: Boolean(ktp.signedUrl), error: ktp.error },
-                kk: { bucket: kk.bucket, path: kkRequest?.dokumen_pendukung ?? "", available: Boolean(kk.signedUrl), error: kk.error },
+                ktp: { bucket: ktp.bucket, path: ktpRequest?.dokumen_pendukung ?? "", available: Boolean(ktp.signedUrl), error: ktp.error, error_code: ktp.errorCode },
+                kk: { bucket: kk.bucket, path: kkRequest?.dokumen_pendukung ?? "", available: Boolean(kk.signedUrl), error: kk.error, error_code: kk.errorCode },
             },
         };
     }));
