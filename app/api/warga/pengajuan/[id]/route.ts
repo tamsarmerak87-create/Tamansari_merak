@@ -5,7 +5,7 @@ import type { WargaProfile } from "@/services/warga-auth.service";
 type ValidatedWarga = { warga: WargaProfile | null; authUserId: string } | { error: string; status: number };
 type RouteContext = { params: Promise<{ id: string }> };
 
-const WARGA_PROFILE_SAFE_COLUMNS = "id,nama_lengkap,nik,nomor_kk,email,nomor_hp,nomor_whatsapp,tempat_lahir,tanggal_lahir,jenis_kelamin,alamat,rt,rw,kelurahan,kecamatan,foto_url,role,status_verifikasi,alasan_penolakan,created_at,updated_at";
+const WARGA_IDENTITY_COLUMNS = "id,nik";
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TRACKING_COLUMNS = "id,pengajuan_id,status,keterangan,petugas,created_at";
 const DOKUMEN_COLUMNS = "id,pengajuan_id,nama_file,jenis,url_file,created_at";
@@ -86,10 +86,17 @@ async function hydrateDetail(supabase: ReturnType<typeof createSupabaseAdminClie
         supabase.from("verifikasi_pengajuan").select(VERIFIKASI_COLUMNS).eq("pengajuan_id", pengajuan.id).order("tahap", { ascending: true }),
     ]);
 
-    if (layananResult.error) logSupabaseError("DETAIL LAYANAN QUERY ERROR", layananResult.error);
-    if (trackingResult.error) logSupabaseError("DETAIL TRACKING QUERY ERROR", trackingResult.error);
-    if (dokumenResult.error) logSupabaseError("DETAIL DOKUMEN QUERY ERROR", dokumenResult.error);
-    if (verifikasiResult.error) logSupabaseError("DETAIL VERIFIKASI QUERY ERROR", verifikasiResult.error);
+    const relatedErrors = [
+        ["DETAIL LAYANAN QUERY ERROR", layananResult.error],
+        ["DETAIL TRACKING QUERY ERROR", trackingResult.error],
+        ["DETAIL DOKUMEN QUERY ERROR", dokumenResult.error],
+        ["DETAIL VERIFIKASI QUERY ERROR", verifikasiResult.error],
+    ] as const;
+    for (const [label, error] of relatedErrors) {
+        if (!error) continue;
+        logSupabaseError(label, error);
+        throw error;
+    }
 
     const verificationStages = verifikasiResult.data ?? [];
     const trackingRows = trackingResult.data ?? [];
@@ -142,11 +149,17 @@ async function getValidatedWarga(request: NextRequest): Promise<ValidatedWarga> 
     if (userError || !userData.user) return { error: "Session warga tidak valid.", status: 401 as const };
 
     const user = userData.user;
-    const byId = await supabase.from("warga_profiles").select(WARGA_PROFILE_SAFE_COLUMNS).eq("id", user.id).maybeSingle<WargaProfile>();
+    const byId = await supabase.from("warga_profiles").select(WARGA_IDENTITY_COLUMNS).eq("id", user.id).maybeSingle<WargaProfile>();
     if (byId.error) throw byId.error;
     if (byId.data) return { warga: byId.data, authUserId: user.id };
 
-    const byEmail = await supabase.from("warga_profiles").select(WARGA_PROFILE_SAFE_COLUMNS).eq("email", user.email ?? "").maybeSingle<WargaProfile>();
+    // Beberapa instalasi lama menyimpan auth UUID di user_id, sedangkan instalasi baru memakai id.
+    const byUserId = await supabase.from("warga_profiles").select(WARGA_IDENTITY_COLUMNS).eq("user_id", user.id).maybeSingle<WargaProfile>();
+    if (byUserId.error && byUserId.error.code !== "42703") throw byUserId.error;
+    if (byUserId.data) return { warga: byUserId.data, authUserId: user.id };
+
+    if (!user.email) return { warga: null, authUserId: user.id };
+    const byEmail = await supabase.from("warga_profiles").select(WARGA_IDENTITY_COLUMNS).eq("email", user.email).maybeSingle<WargaProfile>();
     if (byEmail.error) throw byEmail.error;
     return { warga: byEmail.data ?? null, authUserId: user.id };
 }
@@ -196,10 +209,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
                 kelurahan,
                 kecamatan,
                 no_hp,
-                email,
-                file_ktp,
-                file_kk,
-                file_pendukung
+                email
             `)
             .eq("id", id)
             .maybeSingle();
