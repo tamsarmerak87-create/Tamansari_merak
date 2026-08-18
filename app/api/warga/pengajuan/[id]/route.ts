@@ -9,7 +9,8 @@ const WARGA_IDENTITY_COLUMNS = "id,nik";
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TRACKING_COLUMNS = "id,pengajuan_id,status,keterangan,petugas,created_at";
 const DOKUMEN_COLUMNS = "id,pengajuan_id,nama_file,jenis,url_file,created_at";
-const VERIFIKASI_COLUMNS = "id,pengajuan_id,tahap,nama_tahap,role_petugas,status,petugas_id,catatan,created_at,updated_at,acted_at,approved_at";
+// Production currently exposes these workflow columns; newer migration fields are optional.
+const VERIFIKASI_COLUMNS = "id,pengajuan_id,tahap,nama_tahap,role_petugas,status,petugas_id,catatan,created_at,acted_at";
 const EDITABLE_FIELDS = ["keperluan", "catatan", "alamat", "rt", "rw", "kelurahan", "kecamatan", "no_hp", "email"] as const;
 const STORAGE_BUCKET = "surat";
 const MAX_REVISION_FILE_SIZE = 1024 * 1024;
@@ -87,15 +88,13 @@ async function hydrateDetail(supabase: ReturnType<typeof createSupabaseAdminClie
     ]);
 
     const relatedErrors = [
-        ["DETAIL LAYANAN QUERY ERROR", layananResult.error],
-        ["DETAIL TRACKING QUERY ERROR", trackingResult.error],
-        ["DETAIL DOKUMEN QUERY ERROR", dokumenResult.error],
-        ["DETAIL VERIFIKASI QUERY ERROR", verifikasiResult.error],
+        ["GET /api/warga/pengajuan/[id] query layanan", layananResult.error],
+        ["GET /api/warga/pengajuan/[id] query tracking_pengajuan", trackingResult.error],
+        ["GET /api/warga/pengajuan/[id] query dokumen_pengajuan", dokumenResult.error],
+        ["GET /api/warga/pengajuan/[id] query verifikasi_pengajuan", verifikasiResult.error],
     ] as const;
     for (const [label, error] of relatedErrors) {
-        if (!error) continue;
-        logSupabaseError(label, error);
-        throw error;
+        if (error) logSupabaseError(label, error);
     }
 
     const verificationStages = verifikasiResult.data ?? [];
@@ -197,7 +196,6 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
                 nik,
                 nama_lengkap,
                 status,
-                workflow_status,
                 created_at,
                 updated_at,
                 layanan_id,
@@ -214,13 +212,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
             .eq("id", id)
             .maybeSingle();
         if (error) {
-            console.error("DETAIL PENGAJUAN QUERY ERROR", {
-                message: error.message,
-                code: error.code,
-                details: error.details,
-                hint: error.hint,
-                id,
-            });
+            logSupabaseError("GET /api/warga/pengajuan/[id] query pengajuan_surat", error);
             throw error;
         }
 
