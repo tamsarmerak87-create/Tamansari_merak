@@ -35,6 +35,16 @@ function logDetailError(error: unknown) {
     });
 }
 
+function normalizedStatus(value: unknown) {
+    return String(value ?? "").trim().toUpperCase().replace(/[\s-]+/g, "_");
+}
+
+function eventTime(row: Record<string, any> | null | undefined) {
+    const value = row?.acted_at ?? row?.approved_at ?? row?.updated_at ?? row?.created_at;
+    const time = value ? new Date(value).getTime() : 0;
+    return Number.isFinite(time) ? time : 0;
+}
+
 async function hydrateDetail(supabase: ReturnType<typeof createSupabaseAdminClient>, pengajuan: Record<string, any>) {
     const [layananResult, trackingResult, dokumenResult, verifikasiResult] = await Promise.all([
         pengajuan.layanan_id ? supabase.from("layanan").select("id,nama,deskripsi").eq("id", pengajuan.layanan_id).maybeSingle() : Promise.resolve({ data: null, error: null }),
@@ -49,27 +59,47 @@ async function hydrateDetail(supabase: ReturnType<typeof createSupabaseAdminClie
     if (verifikasiResult.error) logSupabaseError("DETAIL VERIFIKASI QUERY ERROR", verifikasiResult.error);
 
     const verificationStages = verifikasiResult.data ?? [];
-    // `status` is updated by the live verification routes; workflow_status can contain legacy data.
-    const normalizedStatus = String(pengajuan.status ?? pengajuan.workflow_status ?? "").toUpperCase().replace(/\s+/g, "_");
-    const workflowStopped = ["REVISI", "DITOLAK", "SELESAI", "DIBATALKAN"].includes(normalizedStatus);
-    const activeStage = workflowStopped ? null : verificationStages.find((stage) => stage.status === "Diproses")
+    const trackingRows = trackingResult.data ?? [];
+    const primaryStatus = normalizedStatus(pengajuan.status);
+    const legacyWorkflowStatus = normalizedStatus(pengajuan.workflow_status);
+    const storedStatus = primaryStatus || legacyWorkflowStatus;
+    const latestReturnedStage = [...verificationStages]
+        .filter((stage) => normalizedStatus(stage.status) === "DITOLAK")
+        .sort((a, b) => eventTime(b) - eventTime(a))[0] ?? null;
+    const latestRevisionTracking = [...trackingRows]
+        .filter((track) => /revisi|dikembalikan/i.test(`${track.status ?? ""} ${track.keterangan ?? ""}`))
+        .sort((a, b) => eventTime(b) - eventTime(a))[0] ?? null;
+    const latestRejectionTracking = [...trackingRows]
+        .filter((track) => /ditolak|penolakan/i.test(`${track.status ?? ""} ${track.keterangan ?? ""}`) && !/revisi|dikembalikan/i.test(`${track.status ?? ""} ${track.keterangan ?? ""}`))
+        .sort((a, b) => eventTime(b) - eventTime(a))[0] ?? null;
+    const candidateActiveStage = verificationStages.find((stage) => normalizedStatus(stage.status) === "DIPROSES")
         ?? verificationStages.find((stage) => stage.status === "Menunggu")
         ?? null;
-    const returnedStage = normalizedStatus === "REVISI"
-        ? [...verificationStages].reverse().find((stage) => stage.status === "Ditolak") ?? null
-        : null;
-    const latestRevisionTracking = normalizedStatus === "REVISI"
-        ? [...(trackingResult.data ?? [])].reverse().find((track) => /revisi|dikembalikan/i.test(`${track.status ?? ""} ${track.keterangan ?? ""}`)) ?? null
-        : null;
+    const revisionTime = Math.max(eventTime(latestReturnedStage), eventTime(latestRevisionTracking));
+    const activeTime = eventTime(candidateActiveStage);
+    const terminalStatus = ["SELESAI", "DITOLAK", "DIBATALKAN"].includes(primaryStatus)
+        ? primaryStatus
+        : !primaryStatus && ["SELESAI", "DITOLAK", "DIBATALKAN"].includes(legacyWorkflowStatus)
+            ? legacyWorkflowStatus
+            : undefined;
+    const explicitRevision = primaryStatus === "REVISI" || (!primaryStatus && legacyWorkflowStatus === "REVISI");
+    // A newer active stage means the warga has resubmitted and the workflow is running again.
+    const revisionActive = !terminalStatus && ((explicitRevision && activeTime <= revisionTime) || (revisionTime > 0 && revisionTime >= activeTime));
+    const rejectionActive = !terminalStatus && !revisionActive && eventTime(latestRejectionTracking) >= activeTime && eventTime(latestRejectionTracking) > 0;
+    const effectiveStatus = terminalStatus ?? (revisionActive ? "REVISI" : rejectionActive ? "DITOLAK" : storedStatus);
+    const workflowStopped = ["REVISI", "DITOLAK", "SELESAI", "DIBATALKAN"].includes(effectiveStatus);
+    const activeStage = workflowStopped ? null : candidateActiveStage;
+    const returnedStage = revisionActive ? latestReturnedStage : null;
 
     return {
         ...pengajuan,
-        workflow_status: pengajuan.status ?? pengajuan.workflow_status,
+        status: effectiveStatus || pengajuan.status,
+        workflow_status: effectiveStatus || pengajuan.workflow_status,
         active_stage: activeStage,
         returned_to_role: returnedStage?.role_petugas ?? null,
         revision_note: returnedStage?.catatan ?? latestRevisionTracking?.keterangan ?? pengajuan.alasan_penolakan ?? null,
         layanan: layananResult.data ?? { nama: pengajuan.jenis_surat ?? "Layanan tidak tersedia" },
-        tracking_pengajuan: trackingResult.data ?? [],
+        tracking_pengajuan: trackingRows,
         dokumen_pengajuan: dokumenResult.data ?? [],
         verifikasi_pengajuan: verificationStages,
     };
