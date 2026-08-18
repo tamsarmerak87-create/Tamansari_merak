@@ -5,6 +5,13 @@ import type { WargaProfile } from "@/services/warga-auth.service";
 type ValidatedWarga = { warga: WargaProfile | null; authUserId: string } | { error: string; status: number };
 type RouteContext = { params: Promise<{ id: string }> };
 
+class PatchRequestError extends Error {
+    constructor(message: string, readonly status: number) {
+        super(message);
+        this.name = "PatchRequestError";
+    }
+}
+
 const WARGA_IDENTITY_COLUMNS = "id,nik";
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TRACKING_COLUMNS = "id,pengajuan_id,status,keterangan,petugas,created_at";
@@ -27,6 +34,17 @@ function logSupabaseError(label: string, error: unknown) {
         code: supabaseError.code,
         details: supabaseError.details,
         hint: supabaseError.hint,
+    });
+}
+
+function logPatchError(id: string, step: string, error: unknown) {
+    const supabaseError = error as { message?: string; code?: string; details?: string; hint?: string };
+    console.error(`PATCH /api/warga/pengajuan/[id] STEP ${step}`, {
+        id,
+        message: supabaseError.message ?? (error instanceof Error ? error.message : String(error)),
+        code: supabaseError.code ?? null,
+        details: supabaseError.details ?? null,
+        hint: supabaseError.hint ?? null,
     });
 }
 
@@ -238,10 +256,14 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
 
 export async function PATCH(request: NextRequest, { params }: RouteContext) {
     let rollback: (() => Promise<void>) | null = null;
+    let uploadedPaths: string[] = [];
+    let id = "";
+    let step = "VALIDATE_REQUEST";
     try {
-        const { id } = await params;
+        ({ id } = await params);
         if (!UUID_REGEX.test(id)) return jsonError("ID pengajuan tidak valid.", 400);
 
+        step = "VALIDATE_WARGA";
         const validated = await getValidatedWarga(request);
         if ("error" in validated) return jsonError(validated.error, validated.status);
         const warga = validated.warga;
@@ -253,39 +275,41 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
         const deletedDocumentIds = Array.isArray(body.deleted_document_ids)
             ? body.deleted_document_ids.filter((value): value is string => typeof value === "string" && UUID_REGEX.test(value))
             : [];
-        const uploadedPaths: string[] = [];
         for (const document of documents) {
             const record = typeof document === "object" && document ? document as Record<string, unknown> : {};
             const path = String(record.url_file ?? "").trim();
-            if (!path || path.includes("..") || !path.startsWith(`${validated.authUserId}/`)) return jsonError("Path dokumen perbaikan tidak valid.", 400);
-            if (!ALLOWED_REVISION_TYPES.has(String(record.type ?? ""))) return jsonError("Format file hanya PDF, JPG, JPEG, atau PNG.", 400);
-            const size = Number(record.size);
-            if (!Number.isFinite(size) || size <= 0 || size > MAX_REVISION_FILE_SIZE) return jsonError("Ukuran file maksimal 1 MB.", 400);
+            if (!path || path.includes("..") || !path.startsWith(`${validated.authUserId}/`)) throw new PatchRequestError("Path dokumen perbaikan tidak valid.", 400);
             uploadedPaths.push(path);
+            if (!ALLOWED_REVISION_TYPES.has(String(record.type ?? ""))) throw new PatchRequestError("Format file hanya PDF, JPG, JPEG, atau PNG.", 400);
+            const size = Number(record.size);
+            if (!Number.isFinite(size) || size <= 0 || size > MAX_REVISION_FILE_SIZE) throw new PatchRequestError("Ukuran file maksimal 1 MB.", 400);
             console.info("PATCH REVISION UPLOAD RECEIVED", { fileName: String(record.nama_file ?? "Dokumen"), size, type: String(record.type), stage: "uploaded" });
         }
 
         const supabase = createSupabaseAdminClient();
+        step = "SELECT_PENGAJUAN";
         const { data: pengajuan, error: pengajuanError } = await supabase
             .from("pengajuan_surat")
-            .select("id,nomor_pengajuan,nik,status,workflow_status,file_pendukung,keperluan,catatan,alamat,rt,rw,kelurahan,kecamatan,no_hp,email,updated_at")
+            .select("id,nomor_pengajuan,nik,status,file_pendukung,keperluan,catatan,alamat,rt,rw,kelurahan,kecamatan,no_hp,email,updated_at")
             .eq("id", id)
             .maybeSingle();
         if (pengajuanError) throw pengajuanError;
-        if (!pengajuan) return jsonError("Pengajuan tidak ditemukan.", 404);
-        if (pengajuan.nik !== warga.nik) return jsonError("Pengajuan bukan milik akun ini.", 403);
+        if (!pengajuan) throw new PatchRequestError("Pengajuan tidak ditemukan.", 404);
+        if (pengajuan.nik !== warga.nik) throw new PatchRequestError("Pengajuan bukan milik akun ini.", 403);
+
+        step = "SELECT_RETURNED_STAGE";
         const { data: returnedStages, error: stageError } = await supabase
             .from("verifikasi_pengajuan")
-            .select("id,tahap,nama_tahap,role_petugas,status,petugas_id,user_id,nama_petugas,jabatan,catatan,hasil_verifikasi,dokumentasi_url,acted_at,approved_at,updated_at,created_at")
+            .select("id,tahap,nama_tahap,role_petugas,status,petugas_id,catatan,acted_at,created_at")
             .eq("pengajuan_id", id)
             .ilike("status", "ditolak");
         if (stageError) throw stageError;
         const returnedStage = [...(returnedStages ?? [])].sort((a, b) => eventTime(b) - eventTime(a))[0];
-        const terminal = isTerminalStatus(pengajuan.status) || isTerminalStatus(pengajuan.workflow_status);
-        const revisionAllowed = !terminal && (isRevisionStatus(pengajuan.status) || isRevisionStatus(pengajuan.workflow_status));
-        console.info("PATCH REVISION STATUS", { submissionId: id, before: pengajuan.status, workflowBefore: pengajuan.workflow_status, returnedStage: returnedStage?.tahap ?? null });
-        if (!revisionAllowed) return jsonError("Hanya pengajuan yang berstatus perlu revisi yang dapat dikirim ulang.", 409);
-        if (!returnedStage) return jsonError("Tahap revisi pengajuan tidak ditemukan.", 409);
+        const terminal = isTerminalStatus(pengajuan.status);
+        const revisionAllowed = !terminal && isRevisionStatus(pengajuan.status) && normalizedStatus(returnedStage?.status) === "DITOLAK";
+        console.info("PATCH REVISION STATUS", { submissionId: id, before: pengajuan.status, returnedStage: returnedStage?.tahap ?? null, returnedStageStatus: returnedStage?.status ?? null });
+        if (!revisionAllowed) throw new PatchRequestError("Hanya pengajuan yang berstatus perlu revisi yang dapat dikirim ulang.", 409);
+        if (!returnedStage) throw new PatchRequestError("Tahap revisi pengajuan tidak ditemukan.", 409);
 
         const updatePayload: Record<string, string | null> = { status: "Diproses", updated_at: new Date().toISOString() };
         for (const field of EDITABLE_FIELDS) {
@@ -293,13 +317,14 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
             const value = body[field];
             updatePayload[field] = typeof value === "string" && value.trim() ? value.trim() : null;
         }
-        if (!updatePayload.keperluan && "keperluan" in body) return jsonError("Keperluan wajib diisi.", 400);
+        if (!updatePayload.keperluan && "keperluan" in body) throw new PatchRequestError("Keperluan wajib diisi.", 400);
 
+        step = "SELECT_DELETED_DOCUMENTS";
         const oldDocumentResult = deletedDocumentIds.length > 0
             ? await supabase.from("dokumen_pengajuan").select("id,pengajuan_id,nama_file,jenis,url_file,created_at").eq("pengajuan_id", id).in("id", deletedDocumentIds)
             : { data: [], error: null };
         if (oldDocumentResult.error) throw oldDocumentResult.error;
-        if ((oldDocumentResult.data ?? []).length !== deletedDocumentIds.length) return jsonError("Dokumen yang akan dihapus tidak valid.", 400);
+        if ((oldDocumentResult.data ?? []).length !== deletedDocumentIds.length) throw new PatchRequestError("Dokumen yang akan dihapus tidak valid.", 400);
         const oldPaths = (oldDocumentResult.data ?? []).flatMap((row) => storagePaths(row.url_file));
         const oldDocumentIds = (oldDocumentResult.data ?? []).map((row) => row.id);
         let insertedDocumentIds: string[] = [];
@@ -309,11 +334,13 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
         let oldDocumentsDeleted = false;
 
         rollback = async () => {
-            if (trackingId) await supabase.from("tracking_pengajuan").delete().eq("id", trackingId);
+            if (trackingId) {
+                const result = await supabase.from("tracking_pengajuan").delete().eq("id", trackingId);
+                if (result.error) logPatchError(id, "ROLLBACK_TRACKING", result.error);
+            }
             if (pengajuanChanged) {
                 const originalPengajuan = {
                     status: pengajuan.status,
-                    workflow_status: pengajuan.workflow_status,
                     file_pendukung: pengajuan.file_pendukung,
                     keperluan: pengajuan.keperluan,
                     catatan: pengajuan.catatan,
@@ -326,25 +353,26 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
                     email: pengajuan.email,
                     updated_at: pengajuan.updated_at,
                 };
-                await supabase.from("pengajuan_surat").update(originalPengajuan).eq("id", id).eq("nik", warga.nik);
+                const result = await supabase.from("pengajuan_surat").update(originalPengajuan).eq("id", id).eq("nik", warga.nik);
+                if (result.error) logPatchError(id, "ROLLBACK_PENGAJUAN", result.error);
             }
             if (stageChanged) {
-                await supabase.from("verifikasi_pengajuan").update({
+                const result = await supabase.from("verifikasi_pengajuan").update({
                     status: returnedStage.status,
                     petugas_id: returnedStage.petugas_id,
-                    user_id: returnedStage.user_id,
-                    nama_petugas: returnedStage.nama_petugas,
-                    jabatan: returnedStage.jabatan,
                     catatan: returnedStage.catatan,
-                    hasil_verifikasi: returnedStage.hasil_verifikasi,
-                    dokumentasi_url: returnedStage.dokumentasi_url,
                     acted_at: returnedStage.acted_at,
-                    approved_at: returnedStage.approved_at,
-                    updated_at: returnedStage.updated_at,
                 }).eq("id", returnedStage.id).eq("status", "Diproses");
+                if (result.error) logPatchError(id, "ROLLBACK_RETURNED_STAGE", result.error);
             }
-            if (insertedDocumentIds.length > 0) await supabase.from("dokumen_pengajuan").delete().in("id", insertedDocumentIds);
-            if (oldDocumentsDeleted && (oldDocumentResult.data ?? []).length > 0) await supabase.from("dokumen_pengajuan").insert(oldDocumentResult.data);
+            if (insertedDocumentIds.length > 0) {
+                const result = await supabase.from("dokumen_pengajuan").delete().in("id", insertedDocumentIds);
+                if (result.error) logPatchError(id, "ROLLBACK_NEW_DOCUMENTS", result.error);
+            }
+            if (oldDocumentsDeleted && (oldDocumentResult.data ?? []).length > 0) {
+                const result = await supabase.from("dokumen_pengajuan").insert(oldDocumentResult.data);
+                if (result.error) logPatchError(id, "ROLLBACK_OLD_DOCUMENTS", result.error);
+            }
         };
 
         if (documents.length > 0) {
@@ -352,6 +380,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
                 const record = document as Record<string, unknown>;
                 return { pengajuan_id: id, nama_file: String(record.nama_file ?? "Dokumen Pendukung"), jenis: "Pendukung", url_file: String(record.url_file) };
             });
+            step = "INSERT_NEW_DOCUMENTS";
             const insertDocuments = await supabase.from("dokumen_pengajuan").insert(rows).select("id");
             if (insertDocuments.error) throw insertDocuments.error;
             insertedDocumentIds = (insertDocuments.data ?? []).map((row) => row.id);
@@ -363,28 +392,23 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
             updatePayload.file_pendukung = currentPaths.length > 1 ? JSON.stringify(currentPaths) : currentPaths[0] ?? null;
         }
 
-        updatePayload.workflow_status = "Diproses";
-
+        step = "REACTIVATE_RETURNED_STAGE";
         const stageUpdate = await supabase.from("verifikasi_pengajuan").update({
             status: "Diproses",
             petugas_id: null,
-            user_id: null,
-            nama_petugas: null,
-            jabatan: null,
-            hasil_verifikasi: null,
-            dokumentasi_url: null,
             acted_at: null,
-            approved_at: null,
-            updated_at: new Date().toISOString(),
         }).eq("id", returnedStage.id).ilike("status", "ditolak").select("id").maybeSingle();
         if (stageUpdate.error) throw stageUpdate.error;
         if (!stageUpdate.data) throw new Error("Tahap revisi telah berubah.");
         stageChanged = true;
-        const pengajuanUpdate = await supabase.from("pengajuan_surat").update(updatePayload).eq("id", id).eq("nik", warga.nik).eq("status", pengajuan.status).select("id,nomor_pengajuan,status,workflow_status").maybeSingle();
+
+        step = "UPDATE_PENGAJUAN";
+        const pengajuanUpdate = await supabase.from("pengajuan_surat").update(updatePayload).eq("id", id).eq("nik", warga.nik).eq("status", pengajuan.status).select("id,nomor_pengajuan,status").maybeSingle();
         if (pengajuanUpdate.error) throw pengajuanUpdate.error;
         if (!pengajuanUpdate.data) throw new Error("Status pengajuan telah berubah.");
         pengajuanChanged = true;
 
+        step = "INSERT_TRACKING";
         const tracking = await supabase.from("tracking_pengajuan").insert({
             pengajuan_id: id,
             status: "Diproses",
@@ -395,21 +419,30 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
         trackingId = tracking.data.id;
 
         if (oldDocumentIds.length > 0) {
+            step = "DELETE_OLD_DOCUMENTS";
             const deleteOldDocuments = await supabase.from("dokumen_pengajuan").delete().in("id", oldDocumentIds).eq("pengajuan_id", id);
             if (deleteOldDocuments.error) throw deleteOldDocuments.error;
             oldDocumentsDeleted = true;
         }
         rollback = null;
-        console.info("PATCH REVISION COMPLETED", { submissionId: id, after: pengajuanUpdate.data.status, workflowAfter: pengajuanUpdate.data.workflow_status, newDocumentCount: documents.length, removedDocumentCount: oldDocumentIds.length });
+        console.info("PATCH REVISION COMPLETED", { submissionId: id, after: pengajuanUpdate.data.status, resumedStage: returnedStage.tahap, newDocumentCount: documents.length, removedDocumentCount: oldDocumentIds.length });
         if (oldPaths.length > 0) {
+            step = "CLEANUP_OLD_STORAGE";
             const storageCleanup = await supabase.storage.from(STORAGE_BUCKET).remove([...new Set(oldPaths.filter((path) => !uploadedPaths.includes(path)))]);
-            if (storageCleanup.error) logSupabaseError("PATCH OLD STORAGE CLEANUP ERROR", storageCleanup.error);
+            if (storageCleanup.error) logPatchError(id, step, storageCleanup.error);
         }
 
         return NextResponse.json({ ok: true, message: "Perbaikan pengajuan berhasil dikirim ulang.", data: pengajuanUpdate.data });
     } catch (error) {
-        if (rollback) await rollback().catch((rollbackError) => logSupabaseError("PATCH PENGAJUAN ROLLBACK ERROR", rollbackError));
-        logSupabaseError("PATCH PENGAJUAN WARGA ERROR", error);
+        logPatchError(id, step, error);
+        if (rollback) await rollback().catch((rollbackError) => logPatchError(id, "ROLLBACK_UNEXPECTED", rollbackError));
+        if (uploadedPaths.length > 0) {
+            const storageCleanup = await createSupabaseAdminClient().storage.from(STORAGE_BUCKET).remove([...new Set(uploadedPaths)]);
+            if (storageCleanup.error) logPatchError(id, "ROLLBACK_NEW_STORAGE", storageCleanup.error);
+            else console.info("PATCH REVISION NEW STORAGE ROLLED BACK", { submissionId: id, fileCount: new Set(uploadedPaths).size });
+            uploadedPaths = [];
+        }
+        if (error instanceof PatchRequestError) return jsonError(error.message, error.status);
         return jsonError(publicMutationError(error, "Gagal mengirim ulang perbaikan pengajuan."), 500);
     }
 }
@@ -425,14 +458,14 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
         if (!warga?.nik) return jsonError("Profil warga tidak ditemukan.", 404);
 
         const supabase = createSupabaseAdminClient();
-        const { data: pengajuan, error } = await supabase.from("pengajuan_surat").select("id,nik,status,workflow_status,file_ktp,file_kk,file_pendukung").eq("id", id).maybeSingle();
+        const { data: pengajuan, error } = await supabase.from("pengajuan_surat").select("id,nik,status,file_ktp,file_kk,file_pendukung").eq("id", id).maybeSingle();
         if (error) throw error;
         if (!pengajuan) return jsonError("Pengajuan tidak ditemukan.", 404);
         if (pengajuan.nik !== warga.nik) return jsonError("Pengajuan bukan milik akun ini.", 403);
-        if (isTerminalStatus(pengajuan.status) || isTerminalStatus(pengajuan.workflow_status)) {
+        if (isTerminalStatus(pengajuan.status)) {
             return jsonError("Pengajuan yang sudah selesai, ditolak, atau dibatalkan tidak dapat dihapus.", 409);
         }
-        if (!isRevisionStatus(pengajuan.status) && !isRevisionStatus(pengajuan.workflow_status)) return jsonError("Hanya pengajuan yang berstatus perlu revisi yang dapat dihapus.", 409);
+        if (!isRevisionStatus(pengajuan.status)) return jsonError("Hanya pengajuan yang berstatus perlu revisi yang dapat dihapus.", 409);
 
         const { data: documents, error: documentError } = await supabase.from("dokumen_pengajuan").select("url_file").eq("pengajuan_id", id);
         if (documentError) throw documentError;
