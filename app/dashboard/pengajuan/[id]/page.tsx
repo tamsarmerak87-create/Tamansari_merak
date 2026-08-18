@@ -65,7 +65,8 @@ function submissionStatus(item: WargaPengajuan) {
 }
 
 function isRevision(item: WargaPengajuan) {
-    return submissionStatus(item) === "REVISI";
+    const status = submissionStatus(item);
+    return status === "REVISI" || status.includes("DIKEMBALIKAN") || Boolean(item.returned_to_role && !item.active_stage);
 }
 
 function isRejected(item: WargaPengajuan) {
@@ -79,7 +80,10 @@ function timelineFrom(item: WargaPengajuan): TrackingStage[] {
     const lastDone = stages.reduce((max, stage) => isDoneStatus(stage.status) ? Math.max(max, journeySteps.findIndex((step) => step.toLowerCase() === stage.nama_tahap.toLowerCase())) : max, 0);
     const returned = isRevision(item);
     const rejected = isRejected(item);
-    const activeIndex = complete ? journeySteps.length - 1 : stages.findIndex((stage) => isActiveStatus(stage.status)) + 1;
+    const activeStageName = item.active_stage ? normalizeStage(item.active_stage).nama_tahap : null;
+    const activeIndex = complete ? journeySteps.length - 1 : activeStageName
+        ? journeySteps.findIndex((step) => step.toLowerCase() === activeStageName.toLowerCase())
+        : stages.findIndex((stage) => isActiveStatus(stage.status)) + 1;
 
     return journeySteps.map((step, index) => {
         const existing = byName.get(step.toLowerCase());

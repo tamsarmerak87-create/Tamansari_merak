@@ -40,7 +40,7 @@ function normalizedStatus(value: unknown) {
 }
 
 function eventTime(row: Record<string, any> | null | undefined) {
-    const value = row?.acted_at ?? row?.approved_at ?? row?.updated_at ?? row?.created_at;
+    const value = row?.acted_at ?? row?.created_at;
     const time = value ? new Date(value).getTime() : 0;
     return Number.isFinite(time) ? time : 0;
 }
@@ -61,8 +61,6 @@ async function hydrateDetail(supabase: ReturnType<typeof createSupabaseAdminClie
     const verificationStages = verifikasiResult.data ?? [];
     const trackingRows = trackingResult.data ?? [];
     const primaryStatus = normalizedStatus(pengajuan.status);
-    const legacyWorkflowStatus = normalizedStatus(pengajuan.workflow_status);
-    const storedStatus = primaryStatus || legacyWorkflowStatus;
     const latestReturnedStage = [...verificationStages]
         .filter((stage) => normalizedStatus(stage.status) === "DITOLAK")
         .sort((a, b) => eventTime(b) - eventTime(a))[0] ?? null;
@@ -73,20 +71,18 @@ async function hydrateDetail(supabase: ReturnType<typeof createSupabaseAdminClie
         .filter((track) => /ditolak|penolakan/i.test(`${track.status ?? ""} ${track.keterangan ?? ""}`) && !/revisi|dikembalikan/i.test(`${track.status ?? ""} ${track.keterangan ?? ""}`))
         .sort((a, b) => eventTime(b) - eventTime(a))[0] ?? null;
     const candidateActiveStage = verificationStages.find((stage) => normalizedStatus(stage.status) === "DIPROSES")
-        ?? verificationStages.find((stage) => stage.status === "Menunggu")
+        ?? verificationStages.find((stage) => normalizedStatus(stage.status) === "MENUNGGU")
         ?? null;
     const revisionTime = Math.max(eventTime(latestReturnedStage), eventTime(latestRevisionTracking));
     const activeTime = eventTime(candidateActiveStage);
-    const terminalStatus = ["SELESAI", "DITOLAK", "DIBATALKAN"].includes(primaryStatus)
-        ? primaryStatus
-        : !primaryStatus && ["SELESAI", "DITOLAK", "DIBATALKAN"].includes(legacyWorkflowStatus)
-            ? legacyWorkflowStatus
-            : undefined;
-    const explicitRevision = primaryStatus === "REVISI" || (!primaryStatus && legacyWorkflowStatus === "REVISI");
-    // A newer active stage means the warga has resubmitted and the workflow is running again.
-    const revisionActive = !terminalStatus && ((explicitRevision && activeTime <= revisionTime) || (revisionTime > 0 && revisionTime >= activeTime));
+    const terminalStatus = ["SELESAI", "DITOLAK", "DIBATALKAN"].includes(primaryStatus) ? primaryStatus : undefined;
+    const resubmittedAfterRevision = revisionTime > 0 && activeTime > revisionTime;
+    const revisionActive = !terminalStatus && revisionTime > 0 && !resubmittedAfterRevision;
     const rejectionActive = !terminalStatus && !revisionActive && eventTime(latestRejectionTracking) >= activeTime && eventTime(latestRejectionTracking) > 0;
-    const effectiveStatus = terminalStatus ?? (revisionActive ? "REVISI" : rejectionActive ? "DITOLAK" : storedStatus);
+    // Menunggu is a stage-level state; an active submission remains in the app's Diproses status.
+    const resumedWorkflowStatus = candidateActiveStage ? "DIPROSES" : primaryStatus;
+    const effectiveStatus = terminalStatus
+        ?? (revisionActive ? "REVISI" : rejectionActive ? "DITOLAK" : resubmittedAfterRevision ? resumedWorkflowStatus : primaryStatus);
     const workflowStopped = ["REVISI", "DITOLAK", "SELESAI", "DIBATALKAN"].includes(effectiveStatus);
     const activeStage = workflowStopped ? null : candidateActiveStage;
     const returnedStage = revisionActive ? latestReturnedStage : null;
@@ -94,7 +90,6 @@ async function hydrateDetail(supabase: ReturnType<typeof createSupabaseAdminClie
     return {
         ...pengajuan,
         status: effectiveStatus || pengajuan.status,
-        workflow_status: effectiveStatus || pengajuan.workflow_status,
         active_stage: activeStage,
         returned_to_role: returnedStage?.role_petugas ?? null,
         revision_note: returnedStage?.catatan ?? latestRevisionTracking?.keterangan ?? pengajuan.catatan ?? null,
