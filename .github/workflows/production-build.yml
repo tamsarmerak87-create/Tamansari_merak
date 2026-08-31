@@ -1,0 +1,58 @@
+name: Tamansari Production Build
+
+on:
+  push:
+    branches:
+      - upgrade-source-terbaru
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm exec -- tsc --noEmit --pretty false
+
+      - name: Run regression tests
+        run: npm run test:regression
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Verify public Supabase build variables
+        shell: bash
+        run: |
+          if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ]; then
+            echo "NEXT_PUBLIC_SUPABASE_URL is missing"
+            exit 1
+          fi
+          if [ -z "$NEXT_PUBLIC_SUPABASE_ANON_KEY" ]; then
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY is missing"
+            exit 1
+          fi
+
+      - name: Build production application
+        run: npm run build
