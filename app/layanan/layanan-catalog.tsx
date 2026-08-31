@@ -90,7 +90,7 @@ function serviceGroupLabel(service: PublicService) {
 }
 
 export function LayananCatalog({ services, mode = "full" }: Props) {
-    const adminServices = useMemo(() => services.filter((item) => item.category === "administrasi").slice(0, 33), [services]);
+    const adminServices = useMemo(() => services.filter((item) => item.category === "administrasi" && item.online).slice(0, 33), [services]);
     const isHome = mode === "home";
     const [query, setQuery] = useState("");
     const [activeCategory, setActiveCategory] = useState<CategoryKey>("all");

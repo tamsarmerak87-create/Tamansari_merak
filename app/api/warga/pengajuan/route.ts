@@ -1,14 +1,15 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseAdminClient } from "@/services/supabase";
 import type { WargaProfile } from "@/services/warga-auth.service";
-import type { DokumenPengajuan, TrackingPengajuan, VerifikasiPengajuan, WargaPengajuan } from "@/services/warga-pengajuan.service";
+import { isServiceResultDocument, type DokumenPengajuan, type TrackingPengajuan, type VerifikasiPengajuan, type WargaPengajuan } from "@/services/warga-pengajuan.service";
 
 type ValidatedWarga = { warga: WargaProfile | null } | { error: string; status: number };
 
-const WARGA_PROFILE_SAFE_COLUMNS = "id,nama_lengkap,nik,nomor_kk,email,nomor_hp,nomor_whatsapp,tempat_lahir,tanggal_lahir,jenis_kelamin,alamat,rt,rw,kelurahan,kecamatan,foto_url,role,status_verifikasi,alasan_penolakan,created_at,updated_at";
-const PENGAJUAN_COLUMNS = "id,nomor_pengajuan,nik,nama_lengkap,layanan_id,status,created_at,updated_at";
+const WARGA_PROFILE_SAFE_COLUMNS = "id,nama_lengkap,nik,nomor_kk,email,nomor_hp,nomor_whatsapp,tempat_lahir,tanggal_lahir,jenis_kelamin,status_perkawinan,status_pekerjaan,alamat,rt,rw,kelurahan,kecamatan,foto_url,role,status_verifikasi,alasan_penolakan,created_at,updated_at";
+const PENGAJUAN_COLUMNS = "id,nomor_pengajuan,nik,nama_lengkap,layanan_id,status,created_at,updated_at,final_pdf_url,verification_token,document_locked,issued_at";
+const MEMORY_COLUMNS = "id,layanan_id,keperluan,additional_data,created_at";
 const TRACKING_COLUMNS = "id,pengajuan_id,status,keterangan,petugas,created_at";
-const DOKUMEN_COLUMNS = "id,pengajuan_id,nama_file,jenis,url_file,created_at";
+const DOKUMEN_COLUMNS = "id,pengajuan_id,nama_file,jenis,url_file,created_at,status,metadata";
 const VERIFIKASI_COLUMNS = "id,pengajuan_id,tahap,nama_tahap,role_petugas,status,nama_petugas,catatan,hasil_verifikasi,created_at,updated_at,acted_at,approved_at";
 
 function jsonError(message: string, status = 400) {
@@ -53,7 +54,8 @@ function hydrateRows(rows: WargaPengajuan[], related: {
         ...row,
         layanan: row.layanan ?? related.layanan.get(row.layanan_id ?? "") ?? { nama: "Layanan tidak tersedia" },
         tracking_pengajuan: [...(related.tracking.get(row.id) ?? [])].sort((a, b) => new Date(a.created_at ?? "").getTime() - new Date(b.created_at ?? "").getTime()),
-        dokumen_pengajuan: [...(related.dokumen.get(row.id) ?? [])].sort((a, b) => new Date(b.created_at ?? "").getTime() - new Date(a.created_at ?? "").getTime()),
+        // Keep dokumen_pengajuan.url_file as the canonical private object path.
+        dokumen_pengajuan: [...(related.dokumen.get(row.id) ?? [])].map((doc) => isServiceResultDocument(doc) ? { ...doc } : { ...doc }).sort((a, b) => new Date(b.created_at ?? "").getTime() - new Date(a.created_at ?? "").getTime()),
         verifikasi_pengajuan: [...(related.verifikasi.get(row.id) ?? [])].sort((a, b) => (a.tahap ?? 0) - (b.tahap ?? 0)),
     }));
 }
@@ -67,6 +69,15 @@ export async function GET(request: NextRequest) {
         console.log("WARGA VALID:", Boolean(warga));
 
         const supabase = createSupabaseAdminClient();
+        const memoryServiceId = request.nextUrl.searchParams.get("memory_service_id")?.trim();
+        if (memoryServiceId) {
+            if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(memoryServiceId)) return jsonError("Layanan tidak valid.");
+            const memoryResult = await supabase.from("pengajuan_surat").select(MEMORY_COLUMNS).eq("nik", warga.nik).eq("layanan_id", memoryServiceId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+            if (memoryResult.error) throw memoryResult.error;
+            const row = memoryResult.data as { additional_data?: Record<string, unknown>; keperluan?: string; created_at?: string } | null;
+            const additional = row?.additional_data ?? {};
+            return NextResponse.json({ ok: true, data: row ? { created_at: row.created_at, keperluan: row.keperluan, nikah: additional.nikah, pasangan: additional.pasangan, orang_tua: additional.orang_tua, wali: additional.wali, dokumen_pernah_digunakan: Array.isArray(additional.dokumen) && additional.dokumen.length > 0 } : null });
+        }
         const { data, error } = await supabase
             .from("pengajuan_surat")
             .select(PENGAJUAN_COLUMNS)

@@ -250,6 +250,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
         const isReject = action === "revisi" || action === "tolak";
         if (isReject && !body?.catatan?.trim()) return jsonError("Catatan/alasan penolakan wajib diisi.", 400);
         if (activeStage.tahap === 5 && action === "revisi") return jsonError("Tahap Lurah hanya dapat menyelesaikan atau menolak pengajuan.", 400);
+        if (activeStage.tahap === 5 && !isReject) {
+            return jsonError("Persetujuan dan finalisasi Lurah hanya dapat dilakukan melalui endpoint surat-ttd.", 409);
+        }
 
         const nextStage = isReject ? null : orderedStages.find((stage) => stage.tahap === activeStage.tahap + 1) ?? null;
         const nextWorkflowStatus = isReject ? (action === "revisi" ? "REVISI" : "DITOLAK") : nextStage ? STAGE_WAITING_STATUS[nextStage.tahap] : "SELESAI";

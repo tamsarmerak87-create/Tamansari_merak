@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getAdminSession, isPetugas } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
+import { DOCUMENT_UNAVAILABLE_MESSAGE, logSubmissionStorageError, normalizeSubmissionObjectPath, SUBMISSION_DOCUMENT_BUCKET } from "@/services/submission-storage";
 import { ROLE_STAGE_STATUS, STAGE_WAITING_STATUS, getActiveStage, isFinalSubmissionStatus, normalizeSubmissionStatus, normalizeWorkflowRole } from "@/services/verification-workflow";
 import { canHandleWargaStage, getActiveWargaStage, isPendingWargaVerification } from "@/services/warga-verification-workflow";
 
@@ -117,13 +118,13 @@ async function safeMaybeSingle<T extends AnyRow>(label: string, query: PromiseLi
 
 async function withDocumentUrls(supabase: ReturnType<typeof createSupabaseAdminClient>, rows: AnyRow[] = []): Promise<AnyRow[]> {
     return Promise.all(rows.map(async (doc) => {
-        const storagePath = String(doc.url_file ?? doc.file_path ?? doc.storage_path ?? "").trim();
+        const storagePath = normalizeSubmissionObjectPath(String(doc.url_file ?? doc.file_path ?? doc.storage_path ?? ""));
         if (!storagePath || /^https?:\/\//i.test(storagePath)) return { ...doc, file_url: storagePath, storage_path: storagePath, status: doc.status ?? "Tersedia" };
 
-        const { data, error } = await supabase.storage.from("surat").createSignedUrl(storagePath, 60 * 10);
+        const { data, error } = await supabase.storage.from(SUBMISSION_DOCUMENT_BUCKET).createSignedUrl(storagePath, 60 * 10);
         if (error) {
-            logDetailDebug("error signed url dokumen", { pengajuanId: doc.pengajuan_id, dokumenId: doc.id, storagePath, bucket: "surat", errorQuery: error.message });
-            return { ...doc, file_url: "", storage_path: storagePath, storage_error: "File tidak ditemukan di storage.", status: doc.status ?? "File tidak ditemukan" };
+            logSubmissionStorageError("petugas_view", error);
+            return { ...doc, file_url: "", storage_path: storagePath, storage_error: DOCUMENT_UNAVAILABLE_MESSAGE, status: doc.status ?? "File tidak ditemukan" };
         }
         return { ...doc, file_url: data.signedUrl, signed_url: data.signedUrl, storage_path: storagePath, status: doc.status ?? "Tersedia" };
     }));
@@ -275,7 +276,7 @@ export async function GET(request: NextRequest) {
     function enrichSubmission(row: AnyRow): AnyRow {
         const stages = stagesByPengajuan.get(String(row.id)) ?? [];
         const activeStage = getActiveStage(stages) ?? null;
-        return { ...row, workflow_status: row.workflow_status ?? activeStatusFromStages(stages), active_stage: activeStage, verifikasi_pengajuan: stages, dokumen_pengajuan: docsByPengajuan.get(String(row.id)) ?? [], tracking_pengajuan: trackingByPengajuan.get(String(row.id)) ?? [], audit_pengajuan: auditsByPengajuan.get(String(row.id)) ?? [] };
+        return { ...row, workflow_status: activeStage ? (STAGE_WAITING_STATUS[Number(activeStage.tahap)] ?? activeStage.status) : activeStatusFromStages(stages) || row.status, active_stage: activeStage, verifikasi_pengajuan: stages, dokumen_pengajuan: docsByPengajuan.get(String(row.id)) ?? [], tracking_pengajuan: trackingByPengajuan.get(String(row.id)) ?? [], audit_pengajuan: auditsByPengajuan.get(String(row.id)) ?? [] };
     }
 
     const wargaRows = (wargaResult.data ?? []) as AnyRow[];

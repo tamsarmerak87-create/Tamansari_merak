@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getAdminSession, requireAdmin } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
 import { appendWargaHistory, notifyWargaAccount } from "@/services/warga-verification-workflow";
+import { isWargaEmploymentStatus, isWargaMaritalStatus, normalizeWargaEmploymentStatus } from "@/lib/warga-profile-options";
 
 type VerificationRequestBody = {
     wargaId?: string;
@@ -20,11 +21,13 @@ type VerificationRequestBody = {
     rw?: string | null;
     kelurahan?: string | null;
     kecamatan?: string | null;
+    status_perkawinan?: string | null;
+    status_pekerjaan?: string | null;
     status_verifikasi?: "Belum Terverifikasi" | "Belum Diverifikasi" | "Menunggu Staff Pelayanan" | "Menunggu Petugas Lapangan" | "Menunggu Kasi" | "Menunggu Sek Lur" | "Menunggu Lurah" | "Dikembalikan" | "Ditolak" | "Terverifikasi";
     alasan_penolakan?: string | null;
 };
 
-const WARGA_SELECT = "id,nama_lengkap,nik,email,nomor_hp,nomor_whatsapp,nomor_kk,tempat_lahir,tanggal_lahir,jenis_kelamin,alamat,rt,rw,kelurahan,kecamatan,status_verifikasi,alasan_penolakan,created_at";
+const WARGA_SELECT = "id,nama_lengkap,nik,email,nomor_hp,nomor_whatsapp,nomor_kk,tempat_lahir,tanggal_lahir,jenis_kelamin,alamat,rt,rw,kelurahan,kecamatan,status_perkawinan,status_pekerjaan,status_verifikasi,alasan_penolakan,created_at";
 
 function jsonError(message: string, status = 400) {
     return NextResponse.json({ ok: false, error: message }, { status });
@@ -120,6 +123,9 @@ export async function PUT(request: NextRequest) {
         if (!body.nama_lengkap?.trim()) return jsonError("Nama lengkap wajib diisi.");
         if (!body.nik?.trim()) return jsonError("NIK wajib diisi.");
         if (!body.email?.trim()) return jsonError("Email wajib diisi.");
+        if (!body.status_perkawinan || !isWargaMaritalStatus(body.status_perkawinan)) return jsonError("Status perkawinan tidak valid.");
+        const status_pekerjaan = normalizeWargaEmploymentStatus(body.status_pekerjaan);
+        if (!isWargaEmploymentStatus(status_pekerjaan)) return jsonError("Status pekerjaan tidak valid.");
 
         const supabase = createSupabaseAdminClient();
         const { data: current, error: currentError } = await supabase.from("warga_profiles").select("id,role").eq("id", wargaId).maybeSingle();
@@ -131,6 +137,8 @@ export async function PUT(request: NextRequest) {
             nama_lengkap: body.nama_lengkap.trim(),
             nik: body.nik.trim(),
             email: body.email.trim(),
+            status_perkawinan: body.status_perkawinan,
+            status_pekerjaan,
         };
         for (const key of ["nomor_hp", "nomor_whatsapp", "nomor_kk", "tempat_lahir", "tanggal_lahir", "jenis_kelamin", "alamat", "rt", "rw", "kelurahan", "kecamatan"] as const) {
             const value = textValue(body[key]);

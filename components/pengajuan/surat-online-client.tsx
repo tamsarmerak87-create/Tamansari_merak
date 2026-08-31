@@ -4,6 +4,7 @@ import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
     ArrowRight,
@@ -34,6 +35,7 @@ import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/card";
 import { site } from "@/constants/site";
 import { removeSubmissionAttachments, searchSubmission, submissionSchema, uploadSubmissionAttachment } from "@/services/surat-online.service";
+import { SUBMISSION_DOCUMENT_BUCKET } from "@/services/submission-storage";
 import type { PublicService } from "@/types";
 import { cn } from "@/utils/cn";
 import QRCode from "qrcode";
@@ -41,8 +43,15 @@ import { createSupabaseBrowserClient } from "@/services/supabase";
 import { useWargaAuth } from "@/components/auth/warga-auth-provider";
 import { BuktiPengajuanPrint } from "@/components/pengajuan/BuktiPengajuanPrint";
 import { getAppBaseUrl } from "@/services/integrations";
+import { compressWargaFile } from "@/services/warga-file-compress";
+import { getServiceStatement } from "@/services/submission-trust";
+import { MarriageSubmissionForm } from "@/components/pengajuan/marriage-submission-form";
+import { MARRIAGE_SERVICE_ID, MARRIAGE_SERVICE_NAME } from "@/services/marriage-submission";
 
 type ServiceCatalogItem = PublicService & { estimate: string };
+type TemplateField = { name: string; label: string; type?: "text" | "textarea" | "date" | "select"; required?: boolean; options?: string[]; source?: string };
+type RawTemplateField = { key?: string; name?: string; label?: string; type?: "text" | "textarea" | "date" | "select"; required?: boolean; options?: string[]; source?: string };
+type PublicTemplate = { template_id: string; version: number; field_schema: RawTemplateField[]; status: string; signer_role: string };
 
 function createEmptyForm(serviceId = "") {
     return {
@@ -57,6 +66,7 @@ function createEmptyForm(serviceId = "") {
         maritalStatus: "",
         job: "",
         address: "",
+        currentAddress: "",
         rt: "",
         rw: "",
         village: "Tamansari",
@@ -81,7 +91,7 @@ const stats = [
     { label: "Respon Cepat", icon: Bell },
 ];
 
-const steps = ["Data Pemohon", "Data Pengajuan", "Dokumen Pendukung", "Review", "Persetujuan", "Ajukan"];
+const steps = ["Data Pemohon", "Data Pengajuan", "Dokumen Pendukung", "Pernyataan & Tanda Tangan", "Review", "Ajukan"];
 const timeline = ["Permohonan Diterima", "Verifikasi", "Diproses", "Ditandatangani", "Selesai"];
 const statusList = ["Menunggu", "Diproses", "Verifikasi", "Ditolak", "Selesai"];
 const allowedTypes = ["application/pdf", "image/jpeg", "image/png"];
@@ -128,6 +138,7 @@ const fieldLabels: Record<string, string> = {
     maritalStatus: "Status perkawinan",
     job: "Pekerjaan",
     address: "Alamat",
+    currentAddress: "Alamat Sekarang",
     rt: "RT",
     rw: "RW",
     village: "Kelurahan",
@@ -138,6 +149,8 @@ const fieldLabels: Record<string, string> = {
     support: "Dokumen pendukung",
     consent: "Pernyataan kebenaran",
 };
+const DOMISILI_SERVICE_NAME = "PENERBITAN SURAT KETERANGAN DOMISILI";
+const isDomisiliService = (serviceName?: string) => serviceName === DOMISILI_SERVICE_NAME;
 
 function Field({ label, error, children }: { label: string; error?: string; children: ReactNode }) {
     return (
@@ -153,43 +166,20 @@ function formatFileSize(size: number) {
     return size >= 1024 * 1024 ? `${(size / 1024 / 1024).toFixed(2)} MB` : `${Math.max(1, Math.round(size / 1024))} KB`;
 }
 
-function canvasToBlob(canvas: HTMLCanvasElement, quality: number) {
-    return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
-}
-
-async function compressCameraImage(file: File) {
-    if (!file.type.startsWith("image/") || file.size <= MAX_SUPPORT_FILE_SIZE) return file;
-
-    const image = new window.Image();
-    const objectUrl = URL.createObjectURL(file);
-    await new Promise<void>((resolve, reject) => {
-        image.onload = () => resolve();
-        image.onerror = () => reject(new Error("Gagal membaca foto."));
-        image.src = objectUrl;
-    });
-    URL.revokeObjectURL(objectUrl);
-
-    let width = image.naturalWidth;
-    let height = image.naturalHeight;
-    let quality = 0.82;
-
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.max(1, Math.round(width));
-        canvas.height = Math.max(1, Math.round(height));
-        canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height);
-        const blob = await canvasToBlob(canvas, quality);
-        if (blob && blob.size <= MAX_SUPPORT_FILE_SIZE) return new File([blob], file.name.replace(/\.[^.]+$/, ".jpg"), { type: "image/jpeg", lastModified: Date.now() });
-        width *= 0.82;
-        height *= 0.82;
-        quality = Math.max(0.45, quality - 0.08);
-    }
-
-    throw new Error("Ukuran file maksimal 1 MB.");
+function getPurposePlaceholder(serviceName = "") {
+    const normalized = serviceName.toLowerCase();
+    if (normalized.includes("domisili")) return "Contoh: Untuk persyaratan masuk sekolah ( tulis nama sekolah )";
+    if (normalized.includes("tidak mampu")) return "Contoh: Untuk persyaratan pengajuan bantuan pendidikan an/ ( nama anak )";
+    if (normalized.includes("skck")) return "Contoh: Untuk persyaratan melamar pekerjaan";
+    if (normalized.includes("usaha")) return "Contoh: Untuk persyaratan pengajuan KUR di bank ( nama bank )";
+    if (normalized.includes("kelahiran")) return "Contoh: Untuk keperluan pembuatan akta kelahiran";
+    if (normalized.includes("kematian")) return "Contoh: Untuk keperluan administrasi kependudukan";
+    return serviceName ? `Contoh: Untuk keperluan ${serviceName.toLowerCase()}` : "Contoh: Tuliskan tujuan penggunaan surat";
 }
 
 export default function SuratOnlineClient({ services, initialServiceId = "", formOnly = false }: { services: PublicService[]; initialServiceId?: string; formOnly?: boolean }) {
-    const serviceCatalog = useMemo<ServiceCatalogItem[]>(() => services.filter((item) => item.category === "administrasi").slice(0, 33).map((item, index) => ({
+    const router = useRouter();
+    const serviceCatalog = useMemo<ServiceCatalogItem[]>(() => services.filter((item) => item.category === "administrasi" && item.online).slice(0, 33).map((item, index) => ({
         ...item,
         estimate: item.output?.replace(/^Estimasi\s+/i, "") || (index % 3 === 0 ? "1 hari kerja" : index % 3 === 1 ? "2 hari kerja" : "3 hari kerja"),
     })), [services]);
@@ -208,10 +198,62 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
     const [statusError, setStatusError] = useState("");
     const [statusResults, setStatusResults] = useState<StatusItem[]>([]);
     const [lastStatusQuery, setLastStatusQuery] = useState("");
+    const [templatesByService, setTemplatesByService] = useState<Record<string, PublicTemplate | null>>({});
+    const [additionalData, setAdditionalData] = useState<Record<string, string>>({});
+    const [currentStep, setCurrentStep] = useState(1);
 
     const { user, profile } = useWargaAuth();
 
     const selectedService = useMemo(() => serviceCatalog.find((item) => item.id === selectedId) ?? serviceCatalog[0], [serviceCatalog, selectedId]);
+    const selectedIsDomisili = isDomisiliService(selectedService?.title);
+    const selectedTemplate = selectedService ? templatesByService[selectedService.id] : null;
+    const normalizedTemplateFields: TemplateField[] = (selectedTemplate?.field_schema ?? [])
+        .map((field) => ({
+            name: field.name ?? field.key ?? "",
+            label: field.label ?? field.name ?? field.key ?? "",
+            type: field.type ?? "text",
+            required: Boolean(field.required),
+            options: Array.isArray(field.options) ? field.options : [],
+            source: field.source ?? "additional",
+        }))
+        .filter((field) => Boolean(field.name));
+    const additionalFields = normalizedTemplateFields.filter(
+        (field) => field.source === "additional"
+            && field.name !== "keperluan"
+            && field.name !== "alamat_asal"
+            && field.name !== "alamat_sekarang",
+    );
+    const serviceStatement = useMemo(() => getServiceStatement(selectedService?.title ?? "").statement, [selectedService?.title]);
+
+    function validateStep(step: number): boolean {
+        if (step === 1) return Boolean(normalizedProfile.religion && form.nik && form.name && form.kk && form.birthplace && form.birthdate && form.gender && form.maritalStatus && form.job && form.address && form.rt && form.rw && form.village && form.district && form.phone && form.email);
+        if (step === 2) return Boolean(form.serviceId && form.purpose.trim() && (!selectedIsDomisili || form.currentAddress.trim()) && (!additionalFields.some((field) => field.required && !String(additionalData[field.name] ?? "").trim())));
+        if (step === 3) return files.support.length > 0 && files.support.length <= MAX_SUPPORT_FILES && files.support.every((file) => allowedTypes.includes(file.type) && file.size <= MAX_SUPPORT_FILE_SIZE);
+        if (step === 4) return Boolean(form.consent);
+        // Review is read-only: its validity is derived from the completed
+        // input stages and must not run submit/provider validation again.
+        if (step === 5) return [1, 2, 3, 4].every((previousStep) => validateStep(previousStep));
+        return true;
+    }
+
+    function goToStep(step: number) {
+        if (step < currentStep) return setCurrentStep(step);
+        for (let previous = 1; previous < step; previous += 1) {
+            if (!validateStep(previous)) { setCurrentStep(previous); setErrors((value) => ({ ...value, workflow: `Lengkapi tahap ${previous} terlebih dahulu.` })); return; }
+        }
+        setCurrentStep(step);
+        document.getElementById("form-pengajuan")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    useEffect(() => {
+        fetch("/api/surat-online/layanan")
+            .then((response) => response.json())
+            .then((result) => {
+                if (!result?.ok || !Array.isArray(result.data)) return;
+                setTemplatesByService(Object.fromEntries(result.data.map((item: { id: string; template?: PublicTemplate | null }) => [item.id, item.template ?? null])));
+            })
+            .catch(() => setTemplatesByService({}));
+    }, []);
 
     const profileValue = (key: string) => {
         const value = (profile as Record<string, unknown> | null | undefined)?.[key];
@@ -219,9 +261,9 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
     };
 
     const normalizedProfile = {
-        religion: form.religion || profileValue("agama") || "Tidak dicantumkan",
-        maritalStatus: form.maritalStatus || profileValue("status_perkawinan") || "Tidak dicantumkan",
-        job: form.job || profileValue("pekerjaan") || "Tidak dicantumkan",
+        religion: profileValue("agama"),
+        maritalStatus: profileValue("status_perkawinan"),
+        job: profileValue("status_pekerjaan"),
         ktpPath: profileValue("file_ktp") || profileValue("ktp_path") || profileValue("foto_ktp") || null,
         kkPath: profileValue("file_kk") || profileValue("kk_path") || profileValue("foto_kk") || null,
     };
@@ -255,9 +297,11 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
         try {
             const currentFiles = files[key] ?? [];
             if (currentFiles.length + selectedFiles.length > MAX_SUPPORT_FILES) throw new Error(`Dokumen pendukung maksimal ${MAX_SUPPORT_FILES} file.`);
-            const nextFiles = await Promise.all(selectedFiles.map((file) => (source === "camera" ? compressCameraImage(file) : file)));
+            setErrors((prev) => ({ ...prev, [key]: "Mengompres file..." }));
+            const nextFiles = await Promise.all(selectedFiles.map((file) => compressWargaFile(file)));
             if (nextFiles.some((file) => file.size > MAX_SUPPORT_FILE_SIZE)) throw new Error("Ukuran file maksimal 1 MB per file.");
             setFiles((prev) => ({ ...prev, [key]: [...prev[key], ...nextFiles] }));
+            setErrors((prev) => ({ ...prev, [key]: "File siap diupload" }));
         } catch (error) {
             setErrors((prev) => ({ ...prev, [key]: error instanceof Error ? error.message : "Ukuran file maksimal 1 MB per file." }));
         } finally {
@@ -279,7 +323,7 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
             jenis_kelamin: form.gender,
             agama: normalizedProfile.religion,
             status_perkawinan: normalizedProfile.maritalStatus,
-            pekerjaan: normalizedProfile.job,
+            status_pekerjaan: normalizedProfile.job,
             alamat: form.address,
             rt_rw: rtRw,
             kelurahan: form.village,
@@ -291,40 +335,30 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
             catatan: form.note,
         };
         const requiredFields: (keyof FormState)[] = ["serviceId", "nik", "kk", "name", "birthplace", "birthdate", "gender", "address", "rt", "rw", "village", "district", "phone", "email", "purpose"];
-        console.log("=== DEBUG VALIDASI PENGAJUAN ===");
-        console.log("formData:", form);
-        console.log("service:", selectedService);
-        console.log("layanan:", selectedService);
-        console.log("keperluan:", form.purpose);
-        console.log("uploadedFiles:", files);
-        console.log("isAgreed:", form.consent);
-        console.log("requiredFields:", requiredFields);
-        console.log("[SERVICE ID]", selectedService?.id);
-        console.log("[SERVICE DATA]", selectedService);
-        console.log("KEPERLUAN UI:", form.purpose);
-        console.log("FORM STATE:", form);
-        console.log("[UPLOADED DOCUMENTS]", files);
-        console.log("[FILE PENDUKUNG]", files.support);
-        console.log("[AGREEMENT STATE]", form.consent);
+        if (selectedIsDomisili) requiredFields.push("currentAddress");
         try {
             submissionSchema.parse(payload);
         } catch (error) {
             if (error instanceof Error && "issues" in error) (error as { issues: { path: (string | number)[]; message: string }[] }).issues.forEach((issue) => {
                 const key = String(issue.path[0] ?? "");
-                const map: Record<string, string> = { layanan_id: "serviceId", nama_lengkap: "name", nomor_kk: "kk", tempat_lahir: "birthplace", tanggal_lahir: "birthdate", jenis_kelamin: "gender", agama: "religion", status_perkawinan: "maritalStatus", pekerjaan: "job", alamat: "address", rt_rw: "rt", kelurahan: "village", kecamatan: "district", nomor_hp: "phone", keperluan: "purpose" };
+                const map: Record<string, string> = { layanan_id: "serviceId", nama_lengkap: "name", nomor_kk: "kk", tempat_lahir: "birthplace", tanggal_lahir: "birthdate", jenis_kelamin: "gender", agama: "religion", status_perkawinan: "maritalStatus", status_pekerjaan: "job", alamat: "address", rt_rw: "rt", kelurahan: "village", kecamatan: "district", nomor_hp: "phone", keperluan: "purpose" };
                 const formKey = map[key] ?? key;
                 next[formKey] = issue.message;
                 if (!missingFields.includes(fieldLabels[formKey] ?? formKey)) missingFields.push(fieldLabels[formKey] ?? formKey);
-                console.log("[SUBMIT BLOCKED] schema validation", { field: formKey, message: issue.message });
             });
         }
         requiredFields.forEach((key) => {
             const value = form[key];
             const empty = value === undefined || value === null || (typeof value === "string" && value.trim() === "");
-            console.log("[REQUIRED FIELD]", key, "VALUE:", value, "EMPTY:", empty);
             if (empty) {
                 next[key] = "Wajib diisi";
                 if (!missingFields.includes(fieldLabels[key])) missingFields.push(fieldLabels[key]);
+            }
+        });
+        additionalFields.forEach((field) => {
+            if (field.required && !String(additionalData[field.name] ?? "").trim()) {
+                next[`additional.${field.name}`] = `${field.label} wajib diisi`;
+                missingFields.push(field.label);
             }
         });
         const support = files.support;
@@ -332,63 +366,53 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
             next.support = `Dokumen pendukung maksimal ${MAX_SUPPORT_FILES} file.`;
             missingFields.push(`Dokumen pendukung (maksimal ${MAX_SUPPORT_FILES} file)`);
         } else if (support.some((file) => !allowedTypes.includes(file.type))) {
-            console.log("[SUBMIT BLOCKED] format dokumen pendukung tidak valid", { types: support.map((file) => file.type) });
             next.support = "Format harus PDF, JPG, atau PNG";
             missingFields.push("Dokumen pendukung (format PDF/JPG/PNG)");
         } else if (support.some((file) => file.size > MAX_SUPPORT_FILE_SIZE)) {
-            console.log("[SUBMIT BLOCKED] ukuran dokumen pendukung terlalu besar", { sizes: support.map((file) => file.size) });
             next.support = "Ukuran file maksimal 1 MB per file.";
             missingFields.push("Dokumen pendukung (maksimal 1MB per file)");
         }
         if (!form.consent) {
-            console.log("[SUBMIT BLOCKED] persetujuan false");
             next.consent = "Pernyataan persetujuan wajib dicentang";
             missingFields.push(fieldLabels.consent);
         }
-        console.log("[MISSING FIELDS]", missingFields);
         setErrors(next);
         return { valid: Object.keys(next).length === 0, missingFields, errors: next };
     }
 
     async function submit(e?: FormEvent) {
         e?.preventDefault();
-        console.log("=== HANDLE SUBMIT DIMULAI ===");
-        console.log("[AGREEMENT]", form.consent);
-        console.log({
-            consent: form.consent,
-            responsibility: form.responsibility,
-            serviceId: form.serviceId,
-            purpose: form.purpose,
-            supportFile: files.support.map((file) => ({ name: file.name, type: file.type, size: file.size })),
-        });
+        const purpose = form.purpose?.trim() ?? "";
         try {
             if (user && profile?.status_verifikasi !== "Akun Terverifikasi" && profile?.status_verifikasi !== "Terverifikasi") {
-                console.log("[SUBMIT BLOCKED] profil belum valid", { status_verifikasi: profile?.status_verifikasi });
                 alert("Akun Anda belum diverifikasi. Silakan verifikasi akun sebelum mengajukan layanan.");
                 return;
             }
             if (!selectedService) {
-                console.log("[SUBMIT BLOCKED] layanan tidak ditemukan", { serviceId: form.serviceId });
                 alert("Layanan tidak ditemukan. Silakan pilih layanan yang tersedia.");
                 return;
             }
-            if (!form.purpose.trim()) console.log("[SUBMIT BLOCKED] keperluan kosong");
-            if (!form.consent) console.log("[SUBMIT BLOCKED] persetujuan false");
             if (isSubmitting) {
-                console.log("[SUBMIT BLOCKED] submit sebelumnya masih berjalan");
                 return;
             }
-            if (files.support.length > 0) console.log("[SUBMIT CHECK] dokumen pendukung tersedia", files.support.map((file) => ({ name: file.name, type: file.type, size: file.size })));
+            const requiredProfileFields = [
+                [normalizedProfile.religion, "Data agama pada profil warga belum tersedia."],
+                [normalizedProfile.maritalStatus, "Data status perkawinan pada profil warga belum tersedia."],
+                [normalizedProfile.job, "Data status pekerjaan pada profil warga belum tersedia."],
+            ] as const;
+            const missingProfileField = requiredProfileFields.find(([value]) => !value.trim());
+            if (missingProfileField) {
+                alert(missingProfileField[1]);
+                return;
+            }
             const validation = validate();
             if (!validation.valid) {
-                console.log("[SUBMIT BLOCKED] validasi form gagal", { errors: validation.errors, missingFields: validation.missingFields });
                 const details = validation.missingFields.length > 0 ? validation.missingFields : Object.keys(validation.errors).map((key) => fieldLabels[key] ?? key);
                 alert(`Mohon lengkapi bagian berikut:\n\n${details.map((field) => `• ${field}`).join("\n")}`);
                 return;
             }
             const confirmationMessage = `Apakah Anda yakin ingin mengirim permohonan?\n\nNama: ${form.name || "-"}\nLayanan: ${selectedService?.title ?? "-"}\nDokumen pendukung: ${files.support.length} berkas\nData identitas: dari Profil Terverifikasi`;
             if (!window.confirm(confirmationMessage)) {
-                console.log("[SUBMIT BLOCKED] warga membatalkan konfirmasi");
                 return;
             }
             setIsSubmitting(true);
@@ -402,7 +426,7 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
                 jenis_kelamin: form.gender,
                 agama: normalizedProfile.religion,
                 status_perkawinan: normalizedProfile.maritalStatus,
-                pekerjaan: normalizedProfile.job,
+                status_pekerjaan: normalizedProfile.job,
                 alamat: form.address,
                 rt_rw: `${form.rt}/${form.rw}`,
                 kelurahan: form.village,
@@ -410,8 +434,13 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
                 nomor_hp: form.phone,
                 email: form.email,
                 jenis_surat: selectedService?.title ?? "",
-                keperluan: form.purpose,
+                keperluan: purpose,
                 catatan: form.note,
+                additional_data: {
+                    ...additionalData,
+                    alamat_asal: form.address,
+                    ...(selectedIsDomisili ? { alamat_sekarang: form.currentAddress } : {}),
+                },
             };
             const ownerId = form.nik || profile?.nik || user?.id || "warga";
             const uploadedPaths: string[] = [];
@@ -423,7 +452,7 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
             };
 
             try {
-                if (process.env.NODE_ENV !== "production") console.info("[surat-online]", { stage: "file_upload", bucket: "surat", files: { pendukung: files.support.length } });
+                if (process.env.NODE_ENV !== "production") console.info("[surat-online]", { stage: "file_upload", bucket: SUBMISSION_DOCUMENT_BUCKET, files: { pendukung: files.support.length } });
                 const nomorPengajuan = `draft-${Date.now()}`;
                 const pendukungUploads = await Promise.all(files.support.map((file, index) => uploadSubmissionAttachment(`pendukung-${index + 1}` as "pendukung", file, ownerId, nomorPengajuan)));
                 pendukungUploads.forEach((upload) => {
@@ -445,26 +474,47 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
                     physical_proof_generated_at: form.physicalProofGeneratedAt || new Date().toISOString(),
                     materai_status: "NOT_CONFIGURED",
                 };
-                console.log("=== AKAN SUBMIT PENGAJUAN ===");
-                console.log("POST /api/surat-online/pengajuan");
-                console.log("PAYLOAD:", submitPayload);
+                const supabase = createSupabaseBrowserClient();
+                const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+                const accessToken = sessionData.session?.access_token;
+                if (sessionError || !accessToken) throw new Error("Sesi warga tidak ditemukan. Silakan login kembali.");
                 const response = await fetch("/api/surat-online/pengajuan", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
+                        Authorization: `Bearer ${accessToken}`,
                     },
                     body: JSON.stringify(submitPayload),
                 });
-                const result = await response.json();
+                const responseText = await response.text();
+                let result: Record<string, unknown> | null = null;
+                try {
+                    result = responseText ? JSON.parse(responseText) as Record<string, unknown> : null;
+                } catch {
+                    result = null;
+                }
 
-                console.log("=== HASIL SUBMIT ===");
-                console.log("STATUS:", response.status);
-                console.log("RESULT:", result);
-                if (!response.ok || !result?.ok) throw new Error(typeof result?.error === "string" ? result.error : result?.error?.message ?? "Gagal mengirim pengajuan.");
+                if (!response.ok || !result?.ok) {
+                    const body = result ?? responseText;
+                    console.error("[PENGAJUAN API ERROR]", {
+                        status: response.status,
+                        statusText: response.statusText,
+                        body,
+                    });
+                    const apiError = result?.error;
+                    const message = typeof apiError === "string"
+                        ? apiError
+                        : apiError && typeof apiError === "object" && "message" in apiError
+                            ? String(apiError.message)
+                            : responseText || `Gagal mengirim pengajuan (HTTP ${response.status}).`;
+                    throw new Error(message);
+                }
                 uploadedPaths.length = 0;
                 setTicket((result.data as SubmissionResult).nomor_pengajuan);
                 setSuccessData(result.data as SubmissionResult);
                 setSubmitted(true);
+                alert(typeof result.message === "string" ? result.message : "Pengajuan berhasil dikirim.");
+                router.push("/dashboard/pengajuan");
             } catch (error) {
                 await cleanupUploadedFiles();
                 throw error;
@@ -502,25 +552,25 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
 
     useEffect(() => {
         if (!profile) return;
-        const timeout = window.setTimeout(() => {
-            setForm((prev) => ({
-                ...prev,
-                nik: profile.nik || prev.nik,
-                kk: profile.nomor_kk || prev.kk,
-                name: profile.nama_lengkap || prev.name,
-                birthplace: profile.tempat_lahir || prev.birthplace,
-                birthdate: profile.tanggal_lahir || prev.birthdate,
-                gender: profile.jenis_kelamin || prev.gender,
-                address: profile.alamat || prev.address,
-                rt: profile.rt || prev.rt,
-                rw: profile.rw || prev.rw,
-                village: profile.kelurahan || prev.village,
-                district: profile.kecamatan || prev.district,
-                phone: profile.nomor_whatsapp || prev.phone,
-                email: profile.email || prev.email,
-            }));
-        }, 0);
-        return () => window.clearTimeout(timeout);
+        setForm((prev) => ({
+            ...prev,
+            nik: profile.nik || prev.nik,
+            kk: profile.nomor_kk || prev.kk,
+            name: profile.nama_lengkap || prev.name,
+            birthplace: profile.tempat_lahir || prev.birthplace,
+            birthdate: profile.tanggal_lahir || prev.birthdate,
+            gender: profile.jenis_kelamin || prev.gender,
+            religion: profile.agama || prev.religion,
+            maritalStatus: profile.status_perkawinan || "-",
+            job: profile.status_pekerjaan || "-",
+            address: profile.alamat || "",
+            rt: profile.rt || prev.rt,
+            rw: profile.rw || prev.rw,
+            village: profile.kelurahan || prev.village,
+            district: profile.kecamatan || prev.district,
+            phone: profile.nomor_whatsapp || prev.phone,
+            email: profile.email || prev.email,
+        }));
     }, [profile]);
 
     useEffect(() => {
@@ -566,6 +616,8 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
         };
     }, [lastStatusQuery]);
 
+    if (selectedService && (selectedService.id === MARRIAGE_SERVICE_ID || selectedService.title === MARRIAGE_SERVICE_NAME)) return <MarriageSubmissionForm />;
+
     return (
         <main className="min-h-screen overflow-x-hidden bg-[#f7f4eb] text-slate-800">
             {!formOnly ? <section className="relative overflow-hidden bg-[radial-gradient(circle_at_18%_12%,rgba(226,183,90,.38),transparent_30%),linear-gradient(135deg,#071a33_0%,#0f2f57_50%,#fff7df_50%,#fffaf0_100%)] px-5 pb-16 pt-28 sm:px-10 lg:px-20 lg:pb-24">
@@ -593,24 +645,25 @@ export default function SuratOnlineClient({ services, initialServiceId = "", for
 
             {!formOnly ? <section id="layanan" className="px-5 py-14 sm:px-10 lg:px-20"><div className="mx-auto max-w-[1440px]"><div className="max-w-3xl"><span className="font-black uppercase tracking-[.2em] text-accent-600">Pilih pelayanan</span><h2 className="mt-3 font-display text-4xl font-black text-gov-950 md:text-5xl">Satu portal untuk seluruh pengajuan warga.</h2></div><div className="mt-8 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">{serviceCatalog.map((item, i) => <motion.button key={item.id} type="button" onClick={() => pickService(item.id)} initial={{ opacity: 0, y: 18 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: Math.min(i * 0.02, 0.25) }} whileHover={{ scale: 1.03 }} className={cn("min-h-[280px] rounded-[24px] border bg-white p-5 text-left shadow-soft transition focus:outline-none focus:ring-4 focus:ring-accent-200", selectedId === item.id ? "border-accent-400" : "border-white")}><div className="grid size-12 place-items-center rounded-2xl bg-gov-950 text-white"><FileText size={22} /></div><h3 className="mt-5 text-xl font-black text-gov-950">{item.title}</h3><p className="mt-3 line-clamp-3 leading-7 text-slate-650">{item.description}</p><p className="mt-4 inline-flex items-center gap-2 rounded-full bg-accent-100 px-3 py-1 text-sm font-black text-gov-950"><Clock size={15} />{item.estimate}</p><span className="mt-5 flex min-h-11 items-center justify-center rounded-2xl bg-gov-950 px-4 text-sm font-black text-white">Ajukan</span></motion.button>)}</div></div></section> : null}
 
-            <section id="form-pengajuan" className={cn("px-5 sm:px-10 lg:px-20", formOnly ? "py-10 pt-28 lg:py-14 lg:pt-32" : "py-14")}><div className={cn("mx-auto grid gap-6", formOnly ? "max-w-5xl" : "max-w-[1440px] lg:grid-cols-[1fr_360px]")}>{formOnly ? <div className="text-center"><span className="font-black uppercase tracking-[.2em] text-accent-600">Pengajuan Layanan</span><h1 className="mt-3 font-display text-3xl font-black text-gov-950 md:text-5xl">{selectedService?.title ?? "Layanan"}</h1></div> : null}<GlassCard className="rounded-[24px] bg-white/90"><Stepper />{submitted ? <Success ticket={ticket} data={successData} service={successData?.jenis_surat ?? selectedService?.title ?? "-"} estimate={selectedService?.estimate ?? "-"} /> : <form onSubmit={submit} className="mt-8 space-y-8"><ApplicantForm form={form} errors={errors} serviceCatalog={serviceCatalog} update={update} setSelectedId={setSelectedId} /><UploadDocs files={files} errors={errors} setFile={setFile} removeFile={(index) => setFiles((prev) => ({ ...prev, support: prev.support.filter((_, itemIndex) => itemIndex !== index) }))} /><Review form={form} service={selectedService?.title ?? "-"} files={files} /><AgreementCard form={form} service={selectedService?.title ?? "-"} files={files} errors={errors} update={update} /><Button type="submit" variant="gold" disabled={isSubmitting} onClick={() => { console.log("=== TOMBOL AJUKAN PERMOHONAN DIKLIK ==="); alert("Tombol submit terpanggil"); }}>{isSubmitting ? "Mengajukan..." : "Ajukan Permohonan"} <Send size={18} /></Button></form>}</GlassCard>{!formOnly ? <InfoSidebar /> : null}</div></section>
+            <section id="form-pengajuan" className={cn("px-5 sm:px-10 lg:px-20", formOnly ? "py-10 pt-28 lg:py-14 lg:pt-32" : "py-14")}><div className={cn("mx-auto grid gap-6", formOnly ? "max-w-5xl" : "max-w-[1440px] lg:grid-cols-[1fr_360px]")}><div className={cn(!formOnly && "lg:col-span-2")}><Button type="button" variant="glass" onClick={() => router.push("/dashboard/pengajuan")}>← Kembali ke Dashboard</Button></div>{formOnly ? <div className="text-center"><span className="font-black uppercase tracking-[.2em] text-accent-600">Pengajuan Layanan</span><h1 className="mt-3 font-display text-3xl font-black text-gov-950 md:text-5xl">{selectedService?.title ?? "Layanan"}</h1></div> : null}<GlassCard className="rounded-[24px] bg-white/90"><Stepper currentStep={currentStep} onSelect={goToStep} />{submitted ? <Success ticket={ticket} data={successData} service={successData?.jenis_surat ?? selectedService?.title ?? "-"} estimate={selectedService?.estimate ?? "-"} /> : <form onSubmit={submit} className="mt-8 space-y-8">{errors.workflow ? <p className="rounded-2xl bg-red-50 p-4 text-sm font-bold text-red-700">{errors.workflow}</p> : null}{currentStep <= 2 ? <ApplicantForm form={form} errors={errors} serviceCatalog={serviceCatalog} selectedServiceName={selectedService?.title ?? ""} isDomisiliService={selectedIsDomisili} update={update} setSelectedId={setSelectedId} fields={additionalFields} additionalData={additionalData} setAdditionalData={setAdditionalData} section={currentStep} /> : null}{currentStep === 3 ? <UploadDocs files={files} errors={errors} setFile={setFile} removeFile={(index) => setFiles((prev) => ({ ...prev, support: prev.support.filter((_, itemIndex) => itemIndex !== index) }))} /> : null}{currentStep === 4 ? <StatementAndTrust form={form} service={selectedService?.title ?? "-"} statement={serviceStatement} files={files} errors={errors} update={update} /> : null}{currentStep === 5 ? <Review form={form} service={selectedService?.title ?? "-"} files={files} additionalData={additionalData} statement={serviceStatement} onEdit={goToStep} /> : null}{currentStep === 6 ? <div className="rounded-[24px] bg-gov-50 p-5"><h2 className="text-2xl font-black text-gov-950">Ajukan</h2><p className="mt-3 font-bold">Apakah Anda yakin seluruh data yang diajukan sudah benar?</p></div> : null}<div className="flex flex-col-reverse gap-3 border-t pt-5 sm:flex-row sm:justify-between">{currentStep > 1 ? <Button type="button" variant="glass" onClick={() => goToStep(currentStep - 1)}>Kembali</Button> : <span />}{currentStep < 6 ? <Button type="button" variant="gold" onClick={() => goToStep(currentStep + 1)}>Lanjut <ArrowRight size={18} /></Button> : <Button type="submit" variant="gold" disabled={isSubmitting}>{isSubmitting ? "Mengajukan..." : "Ya, Ajukan"} <Send size={18} /></Button>}</div></form>}</GlassCard>{!formOnly ? <InfoSidebar /> : null}</div></section>
 
             {!formOnly ? <section id="cek-status" className="px-5 py-16 sm:px-10 lg:px-20"><div className="mx-auto grid max-w-[1440px] gap-6 lg:grid-cols-2"><GlassCard className="rounded-[24px] bg-white/90"><span className="font-black uppercase tracking-[.2em] text-accent-600">Cek Status Permohonan</span><h2 className="mt-3 text-3xl font-black text-gov-950">Pantau progres dengan nomor tiket atau NIK.</h2><div className="mt-6 flex flex-col gap-3 sm:flex-row"><input className={cn(inputClass, "flex-1")} placeholder="Contoh: TMS-2026-123456 atau NIK" value={statusQuery} onChange={(e) => setStatusQuery(e.target.value)} /><Button type="button" onClick={checkStatus} disabled={statusLoading}><Search size={18} />{statusLoading ? "Memuat..." : "Cek Status"}</Button></div>{statusChecked ? <StatusResult results={statusResults} loading={statusLoading} error={statusError} /> : <div className="mt-6 rounded-[24px] border border-dashed border-slate-200 p-6 text-center text-sm font-bold text-slate-500">Empty state: masukkan nomor tiket atau NIK untuk melihat progres permohonan.</div>}</GlassCard><GlassCard className="rounded-[24px] bg-white/90"><h3 className="text-2xl font-black text-gov-950">Status yang tersedia</h3><div className="mt-5 grid gap-3 sm:grid-cols-2">{statusList.map((item) => <div key={item} className="rounded-2xl bg-gov-50 p-4 font-black text-gov-950">{item}</div>)}</div><div className="mt-6 rounded-2xl bg-red-50 p-4 text-sm font-bold text-red-700">Error state: nomor tiket tidak ditemukan akan tampil di area ini.</div><div className="mt-3 animate-pulse rounded-2xl bg-slate-100 p-4 text-sm font-bold text-slate-500">Loading skeleton: digunakan saat sistem mengambil data status.</div></GlassCard></div></section> : null}
         </main>
     );
 }
 
-function Stepper() {
-    return <div className="flex flex-wrap gap-3">{steps.map((step, i) => <div key={step} className="flex min-h-11 flex-1 items-center gap-2 rounded-2xl bg-gov-50 px-3 text-sm font-black text-gov-950"><span className="grid size-7 shrink-0 place-items-center rounded-full bg-accent-300">{i + 1}</span>{step}</div>)}</div>;
+function Stepper({ currentStep, onSelect }: { currentStep: number; onSelect: (step: number) => void }) {
+    return <><div className="sm:hidden"><p className="text-sm font-black">Tahap {currentStep} dari 6</p><p className="mt-1 text-xl font-black text-gov-950">{steps[currentStep - 1]}</p><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full bg-accent-400 transition-all" style={{ width: `${currentStep / 6 * 100}%` }} /></div></div><div className="hidden grid-cols-3 gap-3 sm:grid lg:grid-cols-6">{steps.map((step, i) => { const number = i + 1; return <button type="button" key={step} disabled={number > currentStep} onClick={() => onSelect(number)} className={cn("min-h-20 rounded-2xl px-3 text-xs font-black transition", number === currentStep ? "bg-gov-950 text-white ring-4 ring-accent-200" : number < currentStep ? "bg-emerald-100 text-emerald-800" : "bg-gov-50 text-slate-400")}><span className="mx-auto mb-1 grid size-7 place-items-center rounded-full bg-accent-300 text-gov-950">{number < currentStep ? <Check size={16} /> : number}</span>{step}</button>; })}</div></>;
 }
 
 function ReadOnlyInfo({ label, value }: { label: string; value?: string }) {
     return <div className="rounded-2xl border border-slate-100 bg-white p-4"><p className="text-xs font-black uppercase tracking-[.16em] text-slate-500">{label}</p><p className="mt-2 font-black text-gov-950">{value || "-"}</p></div>;
 }
 
-function ApplicantForm({ form, errors, serviceCatalog, update, setSelectedId }: { form: FormState; errors: Record<string, string>; serviceCatalog: ServiceCatalogItem[]; update: (name: keyof FormState, value: string | boolean) => void; setSelectedId: (id: string) => void }) {
-    const identity = [["Nama Lengkap", form.name], ["NIK", form.nik], ["Tempat/Tanggal Lahir", `${form.birthplace || "-"} / ${form.birthdate || "-"}`], ["Jenis Kelamin", form.gender], ["Alamat", form.address], ["RT/RW", `${form.rt || "-"}/${form.rw || "-"}`], ["Kelurahan", form.village], ["Kecamatan", form.district], ["No. HP", form.phone], ["Email", form.email]];
-    return <div><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-2xl font-black text-gov-950">Data Pemohon</h2><span className="mt-2 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-700">✓ Data dari Profil Terverifikasi</span></div><Link href="/dashboard/profil" className="text-sm font-black text-gov-950 underline">Ubah di Profil</Link></div><div className="mt-5 grid gap-4 md:grid-cols-2">{identity.map(([label, value]) => <ReadOnlyInfo key={label} label={label} value={value} />)}</div><div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-800"><p className="font-black">Dokumen Identitas</p><p className="mt-2">✓ KTP - Terverifikasi</p><p>✓ Kartu Keluarga - Terverifikasi</p><p className="mt-2">Dokumen identitas diambil dari Profil Akun Warga dan tidak perlu diunggah kembali.</p></div><div className="mt-8"><h2 className="text-2xl font-black text-gov-950">Data Pengajuan</h2><div className="mt-5 grid gap-4 md:grid-cols-2"><Field label="Pilih Pelayanan" error={errors.serviceId}><select className={inputClass} value={form.serviceId} onChange={(e) => { update("serviceId", e.target.value); setSelectedId(e.target.value); }}>{serviceCatalog.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></Field><Field label="Keperluan" error={errors.purpose}><textarea className={cn(inputClass, "min-h-28 py-3")} value={form.purpose} onChange={(e) => update("purpose", e.target.value)} /></Field><Field label="Keterangan"><textarea className={cn(inputClass, "min-h-28 py-3")} value={form.note} onChange={(e) => update("note", e.target.value)} /></Field></div></div></div>;
+function ApplicantForm({ form, errors, serviceCatalog, selectedServiceName, isDomisiliService, update, setSelectedId, fields, additionalData, setAdditionalData, section }: { form: FormState; errors: Record<string, string>; serviceCatalog: ServiceCatalogItem[]; selectedServiceName: string; isDomisiliService: boolean; update: (name: keyof FormState, value: string | boolean) => void; setSelectedId: (id: string) => void; fields: TemplateField[]; additionalData: Record<string, string>; setAdditionalData: (value: Record<string, string>) => void; section: number }) {
+    const identity = [["Nama Lengkap", form.name], ["NIK", form.nik], ["Nomor KK", form.kk], ["Tempat Lahir", form.birthplace], ["Tanggal Lahir", form.birthdate], ["Jenis Kelamin", form.gender], ["Agama", form.religion], ["Status Perkawinan", form.maritalStatus], ["Status Pekerjaan", form.job], ["Alamat", form.address], ["RT", form.rt], ["RW", form.rw], ["Kelurahan", form.village], ["Kecamatan", form.district], ["Nomor HP", form.phone], ["Email", form.email]];
+    if (section === 1) return <div><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-2xl font-black text-gov-950">Data Pemohon</h2><span className="mt-2 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-700">Data read-only dari Profil Warga</span></div><Link href="/dashboard/profil" className="rounded-xl bg-gov-950 px-4 py-3 text-center text-sm font-black text-white">UBAH PROFIL</Link></div><div className="mt-5 grid gap-4 md:grid-cols-2">{identity.map(([label, value]) => <ReadOnlyInfo key={label} label={label} value={value} />)}</div></div>;
+    return <div><h2 className="text-2xl font-black text-gov-950">Data Pengajuan</h2><p className="mt-2 text-sm font-bold text-slate-600">Isi hanya data yang berkaitan dengan layanan.</p><div className="mt-5 grid gap-4 md:grid-cols-2"><Field label="Layanan" error={errors.serviceId}><select className={inputClass} value={form.serviceId} onChange={(e) => { update("serviceId", e.target.value); setSelectedId(e.target.value); setAdditionalData({}); }}>{serviceCatalog.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></Field><Field label="Keperluan *" error={errors.purpose}><textarea name="purpose" className={cn(inputClass, "min-h-28 py-3")} value={form.purpose} onChange={(e) => update("purpose", e.target.value)} placeholder={getPurposePlaceholder(selectedServiceName)} required /></Field>{isDomisiliService ? <Field label="Alamat Sekarang *" error={errors.currentAddress}><textarea className={cn(inputClass, "min-h-24 py-3")} value={form.currentAddress} onChange={(e) => update("currentAddress", e.target.value)} /></Field> : null}{fields.map((field) => <Field key={field.name} label={`${field.label}${field.required ? " *" : ""}`} error={errors[`additional.${field.name}`]}><textarea className={cn(inputClass, "min-h-24 py-3")} value={additionalData[field.name] ?? ""} onChange={(e) => setAdditionalData({ ...additionalData, [field.name]: e.target.value })} /></Field>)}</div></div>;
 }
 
 function UploadDocs({ files, errors, setFile, removeFile }: { files: UploadState; errors: Record<string, string>; setFile: (key: FileKey, event: ChangeEvent<HTMLInputElement>, source?: "camera" | "file") => void; removeFile: (index: number) => void }) {
@@ -626,7 +679,7 @@ function UploadDocs({ files, errors, setFile, removeFile }: { files: UploadState
             }
         });
 
-        setPreviewUrls(urls);
+        void Promise.resolve().then(() => setPreviewUrls(urls));
         return () => {
             Object.values(urls).forEach((url) => URL.revokeObjectURL(url));
         };
@@ -640,8 +693,14 @@ function UploadDocs({ files, errors, setFile, removeFile }: { files: UploadState
 
     return <div><h2 className="text-2xl font-black text-gov-950">Dokumen Pendukung</h2><p className="mt-2 text-sm font-bold text-slate-600">Unggah hanya dokumen khusus yang diminta layanan. Format PDF/JPG/PNG, maksimal 1 MB per file.</p><div className="mt-5 rounded-[24px] border-2 border-dashed border-slate-200 bg-white p-5"><CloudUpload className="text-accent-500" size={34} /><div className="mt-4 flex flex-col gap-3 sm:flex-row"><label className="inline-flex min-h-12 cursor-pointer items-center justify-center rounded-2xl bg-gov-950 px-5 text-sm font-black text-white transition hover:bg-gov-800">📷 Ambil Foto<input type="file" accept="image/jpeg,image/png" capture="environment" className="sr-only" onChange={(e) => setFile("support", e, "camera")} /></label><label className="inline-flex min-h-12 cursor-pointer items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-black text-gov-950 transition hover:border-accent-400">📁 Pilih File<input type="file" accept="image/jpeg,image/png,application/pdf" className="sr-only" onChange={(e) => setFile("support", e, "file")} /></label></div>{supportFiles.length ? <div className="mt-4 grid gap-3 lg:grid-cols-2">{supportFiles.map((file, index) => { const previewKey = `${file.name}-${file.lastModified}-${index}`; const previewUrl = previewUrls[previewKey]; const isPdf = file.type === "application/pdf"; return <div key={previewKey} className="flex min-h-[105px] gap-3 rounded-2xl border border-slate-200 bg-gov-50 p-3 text-sm font-bold text-gov-950 shadow-sm"><div className="h-[75px] w-[100px] shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white">{previewUrl ? <img src={previewUrl} alt={`Preview ${file.name}`} className="h-full w-full object-cover" /> : <div className="flex h-full w-full flex-col items-center justify-center bg-red-50 text-red-600"><FileArchive size={28} /><span className="mt-1 text-[10px] font-black">PDF</span></div>}</div><div className="flex min-w-0 flex-1 flex-col justify-center"><p className="flex items-center gap-2 truncate"><span className="grid size-5 shrink-0 place-items-center rounded-full bg-emerald-100 text-emerald-700"><Check size={13} /></span><span className="truncate">{file.name}</span></p><p className="mt-1 text-xs font-black text-slate-500">{formatFileSize(file.size)}</p><div className="mt-2 flex flex-wrap gap-2">{isPdf ? <button type="button" onClick={() => openPdfPreview(file)} className="rounded-xl bg-white px-3 py-1.5 text-xs font-black text-gov-950 underline shadow-sm">Lihat PDF</button> : null}<button type="button" onClick={() => removeFile(index)} className="rounded-xl bg-white px-3 py-1.5 text-xs font-black text-red-600 underline shadow-sm">Hapus/Ganti</button></div></div></div>; })}</div> : <p className="mt-4 rounded-xl bg-slate-50 px-3 py-2 text-sm font-bold text-slate-500">Belum ada dokumen pendukung dipilih.</p>}{errors.support ? <span className="mt-2 block text-xs font-bold text-red-600">{errors.support}</span> : null}</div></div>;
 }
-function Review({ form, service, files }: { form: FormState; service: string; files: UploadState }) {
-    return <div className="rounded-[24px] bg-gov-50 p-5"><h2 className="text-2xl font-black text-gov-950">Review Pengajuan</h2><p className="mt-2 text-sm font-black text-emerald-700">✓ Diambil dari Profil Terverifikasi</p><div className="mt-4 grid gap-2 text-sm md:grid-cols-2"><p><b>Nama:</b> {form.name || "-"}</p><p><b>NIK:</b> {form.nik || "-"}</p><p><b>Alamat:</b> {form.address || "-"}</p><p><b>Jenis layanan:</b> {service}</p><p><b>Keperluan:</b> {form.purpose || "-"}</p><p><b>Dokumen pendukung:</b> {files.support.length ? files.support.map((file) => file.name).join(", ") : "Tidak ada"}</p></div><p className="mt-4 rounded-2xl bg-white p-4 text-sm font-bold text-slate-700">Data identitas pemohon otomatis menggunakan data Profil Akun Warga yang telah diverifikasi oleh petugas.</p></div>;
+function StatementAndTrust({ form, service, statement, files, errors, update }: { form: FormState; service: string; statement: string; files: UploadState; errors: Record<string, string>; update: (name: keyof FormState, value: string | boolean) => void }) {
+    return <div className="space-y-5"><AgreementCard form={form} service={service} files={files} errors={errors} update={update} /><div className="rounded-[24px] border bg-white p-5"><h3 className="text-xl font-black">Pernyataan khusus layanan</h3><p className="mt-3 leading-7">“{statement}”</p><p className="mt-4 text-sm font-bold">Nama: {form.name || "-"}<br />NIK: {form.nik || "-"}<br />Tanggal: {new Date().toLocaleDateString("id-ID")}</p></div><div className="grid gap-4 md:grid-cols-2"><div className="rounded-[24px] border bg-white p-5"><h3 className="text-xl font-black">Meterai Elektronik</h3><p className="mt-2 text-sm">Meterai elektronik digunakan apabila dipersyaratkan pada dokumen.</p><p className="mt-4 font-black text-slate-600">Status: BELUM DIGUNAKAN</p><Button type="button" variant="glass" className="mt-4" disabled title="Provider resmi belum dikonfigurasi">Gunakan e-Meterai</Button></div><div className="rounded-[24px] border bg-white p-5"><h3 className="text-xl font-black">Tanda Tangan Digital</h3><p className="mt-2 text-sm">Konfirmasi tanda tangan digital dapat dilakukan dari HP, laptop, atau desktop setelah provider resmi tersedia.</p><p className="mt-4 font-black text-slate-600">Status: BELUM DITANDATANGANI</p><Button type="button" variant="glass" className="mt-4" disabled title="Provider resmi belum dikonfigurasi">Konfirmasi tanda tangan digital</Button></div></div></div>;
+}
+
+function Review({ form, service, files, additionalData, statement, onEdit }: { form: FormState; service: string; files: UploadState; additionalData: Record<string, string>; statement: string; onEdit: (step: number) => void }) {
+    const domisili = isDomisiliService(service);
+    const applicant = `Nama: ${form.name} • NIK: ${form.nik} • KK: ${form.kk} • Tempat/Tanggal Lahir: ${form.birthplace}, ${form.birthdate} • Jenis Kelamin: ${form.gender} • Agama: ${form.religion} • Status Perkawinan: ${form.maritalStatus} • Status Pekerjaan: ${form.job} • Alamat: ${form.address}, RT ${form.rt}/RW ${form.rw}, ${form.village}, ${form.district} • Nomor HP: ${form.phone} • Email: ${form.email}`;
+    return <div className="space-y-4"><h2 className="text-2xl font-black text-gov-950">Review Pengajuan</h2><p><b>{domisili ? "Alamat Asal" : "Alamat"}:</b> {form.address || "-"}</p>{domisili ? <p><b>Alamat Sekarang:</b> {form.currentAddress || "-"}</p> : null}<p><b>Keperluan:</b> {form.purpose || "-"}</p>{[["Data Pemohon", applicant, 1], ["Data Pengajuan", `${service} • ${form.purpose} • ${Object.values(additionalData).filter(Boolean).join(" • ")}`, 2], ["Dokumen", files.support.map((file) => file.name).join(", "), 3], ["Pernyataan", statement, 4], ["Meterai", "BELUM DIGUNAKAN (tidak dipersyaratkan konfigurasi awal)", 4], ["Tanda Tangan", "BELUM DITANDATANGANI (tidak dipersyaratkan konfigurasi awal)", 4]].map(([title, value, step]) => <div key={String(title)} className="rounded-[20px] bg-gov-50 p-4"><div className="flex items-center justify-between gap-3"><h3 className="font-black">{title}</h3><button type="button" className="text-sm font-black underline" onClick={() => onEdit(Number(step))}>EDIT</button></div><p className="mt-2 break-words text-sm">{value || "-"}</p></div>)}</div>;
 }
 
 function proofHtml(form: FormState, service: string, id: string) {
@@ -704,11 +763,3 @@ function StatusResult({ results, loading, error }: { results: StatusItem[]; load
     const printData = { ...item, tracking_url: trackingUrl, jenis_surat: serviceName, status: currentStatus };
     return <div className="mt-6 rounded-[24px] bg-gov-50 p-5"><p className="font-black text-gov-950">Status: {currentStatus}</p><p className="mt-2 text-sm font-bold text-slate-650">Nomor: {item.nomor_pengajuan} • Petugas: {latest?.petugas ?? item.petugas ?? "-"} • Realtime aktif</p><div className="mt-4 h-3 overflow-hidden rounded-full bg-white"><div className={cn("h-full", currentStatus === "Ditolak" ? "bg-red-500" : currentStatus === "Selesai" ? "bg-emerald-500" : "bg-gov-500")} style={{ width: `${currentStatus === "Ditolak" ? 100 : Math.min(progress * 20, 100)}%` }} /></div><div className="mt-5 grid gap-3">{stepsToShow.map((step, i) => { const active = step === "Ditolak" ? currentStatus === "Ditolak" : i < progress; return <div key={step} className="flex items-start gap-3"><span className={cn("grid size-8 shrink-0 place-items-center rounded-full", active ? currentStatus === "Ditolak" && step === "Ditolak" ? "bg-red-500 text-white" : currentStatus === "Selesai" ? "bg-emerald-500 text-white" : "bg-gov-500 text-white" : "bg-white text-slate-400")}><Check size={16} /></span><span className="font-bold"><span className="block">{step}</span>{tracking[i] ? <span className="block text-xs text-slate-500">{tracking[i].created_at ? new Date(tracking[i].created_at).toLocaleString("id-ID") : "-"} • {tracking[i].keterangan ?? "-"} • Petugas: {tracking[i].petugas ?? "-"}</span> : null}</span></div>; })}</div><div className="mt-5 flex flex-col gap-2 sm:flex-row"><Button type="button" variant="primary" title="Cetak atau simpan bukti pengajuan sebagai PDF" className="w-full sm:w-auto" onClick={() => setPreviewOpen(true)}><Printer size={18} />Cetak Bukti Pengajuan</Button></div><div className="mt-5 rounded-2xl bg-white p-4"><p className="font-black text-gov-950">Dokumen</p><div className="mt-2 grid gap-2 text-sm font-bold">{(item.dokumen_pengajuan ?? []).map((doc) => { const url = doc.url_file ?? doc.file_url ?? "#"; return <a key={`${doc.jenis ?? doc.jenis_dokumen}-${url}`} className="text-gov-950 underline" href={url} target="_blank" rel="noreferrer">{doc.jenis ?? doc.jenis_dokumen ?? doc.nama_file ?? "Dokumen"}</a>; })}</div></div>{previewOpen ? <div className="fixed inset-0 z-[80] overflow-y-auto bg-slate-950/70 p-4 backdrop-blur-sm no-print"><div className="mx-auto max-w-5xl rounded-[28px] bg-white p-4 shadow-2xl sm:p-6"><div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-black uppercase tracking-[.18em] text-accent-600">Pratinjau Bukti Pengajuan</p><h3 className="text-2xl font-black text-gov-950">Dokumen A4 siap cetak</h3></div><div className="flex flex-col gap-2 sm:flex-row"><Button type="button" variant="glass" onClick={() => setPreviewOpen(false)}>Tutup</Button><Button type="button" variant="primary" title="Cetak atau simpan bukti pengajuan sebagai PDF" onClick={() => window.print()}><Printer size={18} />Cetak Bukti</Button></div></div><div className="max-h-[78vh] overflow-auto rounded-2xl bg-slate-100 p-3"><BuktiPengajuanPrint data={printData} serviceName={serviceName} qrDataUrl={qrDataUrl} className="mx-auto" /></div></div></div> : null}<div className="print-only-holder" aria-hidden={!previewOpen}><BuktiPengajuanPrint data={printData} serviceName={serviceName} qrDataUrl={qrDataUrl} /></div></div>;
 }
-
-
-
-
-
-
-
-

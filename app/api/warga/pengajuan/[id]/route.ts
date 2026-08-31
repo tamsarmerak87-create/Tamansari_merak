@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseAdminClient } from "@/services/supabase";
+import { isServiceResultDocument } from "@/services/warga-pengajuan.service";
 import type { WargaProfile } from "@/services/warga-auth.service";
+import { SUBMISSION_DOCUMENT_BUCKET } from "@/services/submission-storage";
 
 type ValidatedWarga = { warga: WargaProfile | null; authUserId: string } | { error: string; status: number };
 type RouteContext = { params: Promise<{ id: string }> };
@@ -15,11 +17,11 @@ class PatchRequestError extends Error {
 const WARGA_IDENTITY_COLUMNS = "id,nik";
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TRACKING_COLUMNS = "id,pengajuan_id,status,keterangan,petugas,created_at";
-const DOKUMEN_COLUMNS = "id,pengajuan_id,nama_file,jenis,url_file,created_at";
+const DOKUMEN_COLUMNS = "id,pengajuan_id,nama_file,jenis,url_file,created_at,status,metadata";
 // Production currently exposes these workflow columns; newer migration fields are optional.
 const VERIFIKASI_COLUMNS = "id,pengajuan_id,tahap,nama_tahap,role_petugas,status,petugas_id,catatan,created_at,acted_at";
 const EDITABLE_FIELDS = ["keperluan", "catatan", "alamat", "rt", "rw", "kelurahan", "kecamatan", "no_hp", "email"] as const;
-const STORAGE_BUCKET = "surat";
+const STORAGE_BUCKET = SUBMISSION_DOCUMENT_BUCKET;
 const MAX_REVISION_FILE_SIZE = 1024 * 1024;
 const ALLOWED_REVISION_TYPES = new Set(["application/pdf", "image/jpeg", "image/png"]);
 
@@ -124,6 +126,9 @@ async function hydrateDetail(supabase: ReturnType<typeof createSupabaseAdminClie
     const latestRevisionTracking = [...trackingRows]
         .filter((track) => /revisi|dikembalikan/i.test(`${track.status ?? ""} ${track.keterangan ?? ""}`))
         .sort((a, b) => eventTime(b) - eventTime(a))[0] ?? null;
+    const latestResubmissionTracking = [...trackingRows]
+        .filter((track) => /perbaikan.*dikirim ulang|dikirim ulang.*perbaikan/i.test(`${track.status ?? ""} ${track.keterangan ?? ""}`))
+        .sort((a, b) => eventTime(b) - eventTime(a))[0] ?? null;
     const latestRejectionTracking = [...trackingRows]
         .filter((track) => /ditolak|penolakan/i.test(`${track.status ?? ""} ${track.keterangan ?? ""}`) && !/revisi|dikembalikan/i.test(`${track.status ?? ""} ${track.keterangan ?? ""}`))
         .sort((a, b) => eventTime(b) - eventTime(a))[0] ?? null;
@@ -131,7 +136,9 @@ async function hydrateDetail(supabase: ReturnType<typeof createSupabaseAdminClie
         ?? verificationStages.find((stage) => normalizedStatus(stage.status) === "MENUNGGU")
         ?? null;
     const revisionTime = Math.max(eventTime(latestReturnedStage), eventTime(latestRevisionTracking));
-    const activeTime = eventTime(candidateActiveStage);
+    // Tahap yang diaktifkan kembali sengaja tidak memiliki acted_at sampai petugas bertindak.
+    // Tracking kirim ulang menjadi penanda bahwa siklus revisi sebelumnya sudah berakhir.
+    const activeTime = Math.max(eventTime(candidateActiveStage), eventTime(latestResubmissionTracking));
     const terminalStatus = ["SELESAI", "DITOLAK", "DIBATALKAN"].includes(primaryStatus) ? primaryStatus : undefined;
     const resubmittedAfterRevision = revisionTime > 0 && activeTime > revisionTime;
     const revisionActive = !terminalStatus && revisionTime > 0 && !resubmittedAfterRevision;
@@ -152,7 +159,9 @@ async function hydrateDetail(supabase: ReturnType<typeof createSupabaseAdminClie
         revision_note: returnedStage?.catatan ?? latestRevisionTracking?.keterangan ?? pengajuan.catatan ?? null,
         layanan: layananResult.data ?? { nama: pengajuan.jenis_surat ?? "Layanan tidak tersedia" },
         tracking_pengajuan: trackingRows,
-        dokumen_pengajuan: dokumenResult.data ?? [],
+        // Keep the canonical private object path from dokumen_pengajuan.url_file.
+        // Warga document access is always resolved by dokumen_pengajuan.id.
+        dokumen_pengajuan: (dokumenResult.data ?? []).map((doc) => isServiceResultDocument(doc) ? { ...doc } : { ...doc }),
         verifikasi_pengajuan: verificationStages,
     };
 }
@@ -226,6 +235,10 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
                 kecamatan,
                 no_hp,
                 email
+                ,final_pdf_url
+                ,verification_token
+                ,document_locked
+                ,issued_at
             `)
             .eq("id", id)
             .maybeSingle();
@@ -378,7 +391,14 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
         if (documents.length > 0) {
             const rows = documents.map((document) => {
                 const record = document as Record<string, unknown>;
-                return { pengajuan_id: id, nama_file: String(record.nama_file ?? "Dokumen Pendukung"), jenis: "Pendukung", url_file: String(record.url_file) };
+                return {
+                    pengajuan_id: id,
+                    nama_file: String(record.nama_file ?? "Dokumen Pendukung"),
+                    jenis: "Pendukung",
+                    url_file: String(record.url_file),
+                    status: "UPLOADED",
+                    metadata: { source: "WARGA", origin: "WARGA", document_type: "UPLOAD_WARGA", size: Number(record.size) },
+                };
             });
             step = "INSERT_NEW_DOCUMENTS";
             const insertDocuments = await supabase.from("dokumen_pengajuan").insert(rows).select("id");

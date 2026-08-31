@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getAdminSession, isPetugas } from "@/services/admin-session";
+import { getAdminSession, isAdmin, isPetugas } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
 import { canHandleWargaStage, getActiveWargaStage, getValidReturnStages, getWargaStageByRole, isPendingWargaVerification, processWargaVerificationAction } from "@/services/warga-verification-workflow";
 
@@ -45,11 +45,10 @@ async function enrichWargaDetail(supabase: ReturnType<typeof createSupabaseAdmin
 }
 
 export async function GET(request: NextRequest) {
-    const session = await getAdminSession(request, { cookie: "petugas" });
+    const session = await getAdminSession(request, { cookie: "any" });
     if (session.error || !session.profile) return jsonError("Session petugas tidak valid.", 401);
-    if (!isPetugas(session.profile)) return jsonError("Akses khusus petugas.", 403);
+    if (!isAdmin(session.profile) && !isPetugas(session.profile)) return jsonError("Akses khusus petugas.", 403);
     const stage = getWargaStageByRole(session.profile.role);
-    if (!stage) return jsonError("Role tidak memiliki tahap verifikasi warga.", 403);
     const supabase = createSupabaseAdminClient();
     const id = request.nextUrl.searchParams.get("id");
     let query = supabase.from("warga_profiles").select("*").order("created_at", { ascending: false });
@@ -58,7 +57,7 @@ export async function GET(request: NextRequest) {
     if (error) return jsonError(error.message, 500);
     const candidates = (data ?? []).filter((row) => {
         const activeStage = getActiveWargaStage(row);
-        if (!activeStage || activeStage.role !== stage.role) return false;
+        if (!activeStage || (!isAdmin(session.profile) && activeStage.role !== stage?.role)) return false;
         return isPendingWargaVerification(row) && canHandleWargaStage(session.profile!, row);
     });
     const rows = candidates.map((row) => {
@@ -67,13 +66,13 @@ export async function GET(request: NextRequest) {
     });
     logWargaQueue("GET", { user_id: session.profile.id, role: session.profile.role, requested_id: id, total_found: data?.length ?? 0, pending_candidates: candidates.length, returned_rows: rows.length, sample: (data ?? []).slice(0, 10).map((row) => ({ id: row.id, status_verifikasi: row.status_verifikasi, tahap_verifikasi: row.tahap_verifikasi, returned_to_role: row.returned_to_role, handled_by: row.handled_by, active_role: getActiveWargaStage(row)?.role ?? null })) });
     const detail = id && rows[0] ? await enrichWargaDetail(supabase, rows[0]) : null;
-    return NextResponse.json({ ok: true, data: id ? detail : rows, stage, return_targets: getValidReturnStages(session.profile.role) });
+    return NextResponse.json({ ok: true, data: id ? detail : rows, stage: stage ?? "ADMIN", return_targets: getValidReturnStages(stage?.role) });
 }
 
 export async function POST(request: NextRequest) {
-    const session = await getAdminSession(request, { cookie: "petugas" });
+    const session = await getAdminSession(request, { cookie: "any" });
     if (session.error || !session.profile) return jsonError("Session petugas tidak valid.", 401);
-    if (!isPetugas(session.profile)) return jsonError("Akses khusus petugas.", 403);
+    if (!isAdmin(session.profile) && !isPetugas(session.profile)) return jsonError("Akses khusus petugas.", 403);
     const body = await request.json();
     const wargaId = String(body.id ?? body.wargaId ?? "");
     const action = String(body.action ?? "");

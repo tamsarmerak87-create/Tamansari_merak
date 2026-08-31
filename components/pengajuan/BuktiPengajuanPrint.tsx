@@ -24,7 +24,7 @@ export type BuktiPengajuanData = {
     jenis_kelamin?: string;
     agama?: string;
     status_perkawinan?: string;
-    pekerjaan?: string;
+    status_pekerjaan?: string;
     alamat?: string;
     rt?: string;
     rw?: string;
@@ -128,7 +128,8 @@ export function BuktiPengajuanPrint({ data, serviceName, qrDataUrl, className }:
                     <InfoRow label="Tempat/Tanggal Lahir" value={ttl} />
                     <InfoRow label="Jenis Kelamin" value={data.jenis_kelamin} />
                     <InfoRow label="Agama" value={data.agama} />
-                    <InfoRow label="Pekerjaan" value={data.pekerjaan} />
+                    <InfoRow label="Status Perkawinan" value={data.status_perkawinan} />
+                    <InfoRow label="Status Pekerjaan" value={data.status_pekerjaan} />
                     <InfoRow label="RT/RW" value={rtRw} />
                     <InfoRow label="Kelurahan" value={data.kelurahan} />
                     <InfoRow label="Kecamatan" value={data.kecamatan} />

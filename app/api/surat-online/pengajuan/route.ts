@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSubmission, removeSubmissionAttachments } from "@/services/surat-online.service";
+import { createSupabaseAdminClient } from "@/services/supabase";
 
 const FILE_PATH_KEYS = ["file_ktp", "file_kk", "file_pendukung"] as const;
 
@@ -11,15 +12,6 @@ function collectUploadedPaths(body: unknown) {
 export async function POST(request: Request) {
   try {
     const contentType = request.headers.get("content-type") ?? "";
-    const contentLength = Number(request.headers.get("content-length") ?? 0);
-    if (process.env.NODE_ENV !== "production") {
-      console.info("[PENGAJUAN REQUEST]", {
-        endpoint: "/api/surat-online/pengajuan",
-        contentType,
-        payloadBytes: Number.isFinite(contentLength) ? contentLength : 0,
-        hasMultipartFile: contentType.includes("multipart/form-data"),
-      });
-    }
 
     if (!contentType.includes("application/json")) {
       return NextResponse.json(
@@ -28,13 +20,20 @@ export async function POST(request: Request) {
       );
     }
 
+    const accessToken = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim();
+    if (!accessToken) {
+      return NextResponse.json({ ok: false, error: "Sesi warga tidak ditemukan. Silakan login kembali." }, { status: 401 });
+    }
+    const { data: authData, error: authError } = await createSupabaseAdminClient().auth.getUser(accessToken);
+    if (authError || !authData.user) return NextResponse.json({ ok: false, error: "Sesi warga tidak valid. Silakan login kembali." }, { status: 401 });
+
     const body = await request.json();
     const uploadedPaths = collectUploadedPaths(body);
     let data;
     try {
-      data = await createSubmission(body);
+      data = await createSubmission(body, authData.user.id);
     } catch (error) {
-      if (uploadedPaths.length > 0) await removeSubmissionAttachments(uploadedPaths).catch((cleanupError) => console.error("[PENGAJUAN CLEANUP ERROR]", cleanupError));
+      if (uploadedPaths.length > 0) await removeSubmissionAttachments(uploadedPaths).catch(() => console.error("[PENGAJUAN CLEANUP ERROR]", { cleanupFailed: true }));
       throw error;
     }
     return NextResponse.json({
@@ -43,22 +42,27 @@ export async function POST(request: Request) {
       data,
     }, { status: 201 });
   } catch (error) {
-    console.error("[PENGAJUAN ERROR]", error);
+    const errorRecord = error && typeof error === "object" ? error as Record<string, unknown> : null;
+    const message = error instanceof Error
+      ? error.message
+      : typeof errorRecord?.message === "string"
+        ? errorRecord.message
+        : "Gagal mengirim pengajuan.";
+    console.error("[SURAT ONLINE POST ERROR]", {
+      validationError: error instanceof Error && error.name === "ZodError",
+    });
 
-    const message = error instanceof Error ? error.message : "Gagal mengirim pengajuan.";
     const status = message.includes("terlalu besar")
       ? 413
       : message.includes("wajib") || message.includes("tidak valid") || message.includes("harus") || message.includes("tidak ditemukan")
         ? 400
         : 500;
+    const publicMessage = status === 500 ? "Gagal mengirim pengajuan." : message;
 
     return NextResponse.json(
       {
         ok: false,
-        error: message,
-        details: error instanceof Error && "details" in error ? error.details : undefined,
-        hint: error instanceof Error && "hint" in error ? error.hint : undefined,
-        code: error instanceof Error && "code" in error ? error.code : undefined,
+        error: publicMessage,
       },
       { status },
     );

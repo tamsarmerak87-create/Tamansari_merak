@@ -6,8 +6,6 @@ type ServiceConfig = {
     token?: string;
 };
 
-export const PUBLIC_APP_URL = "https://tamansari-merak.vercel.app";
-
 function normalizeUrl(url?: string) {
     return url?.trim().replace(/\/$/, "");
 }
@@ -33,7 +31,11 @@ async function postJson(url: string, body: Json, headers: HeadersInit = {}) {
 }
 
 export function getAppBaseUrl() {
-    return PUBLIC_APP_URL;
+    const configured = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_VERCEL_URL;
+    if (configured) return normalizeUrl(/^https?:\/\//i.test(configured) ? configured : `https://${configured}`)!;
+    if (typeof window !== "undefined") return window.location.origin;
+    if (process.env.NODE_ENV !== "production") return "http://localhost:3000";
+    throw new Error("NEXT_PUBLIC_SITE_URL belum dikonfigurasi.");
 }
 
 export async function forwardToN8n(flow: string, payload: Json) {

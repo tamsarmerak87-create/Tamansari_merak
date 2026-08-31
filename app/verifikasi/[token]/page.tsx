@@ -1,22 +1,29 @@
 import { CheckCircle2, FileText, ShieldAlert } from "lucide-react";
 import { createSupabaseAdminClient } from "@/services/supabase";
+import { isFinalDocument, isVerificationToken, templateFromSnapshot } from "@/services/official-document";
 
-type SuratRow = { nomor_surat?: string | null; nomor_pengajuan?: string | null; status?: string | null; nama_lengkap?: string | null; tanggal_surat?: string | null; lurah_name?: string | null; layanan?: { nama?: string | null } | { nama?: string | null }[] | null };
+type SuratRow = { [key: string]: any; nama_lengkap?: string | null; nomor_surat?: string | null; nomor_pengajuan?: string | null; status?: string | null; tanggal_surat?: string | null; lurah_name?: string | null; signer_jabatan?: string | null; layanan?: { nama?: string | null } | { nama?: string | null }[] | null };
 
 function formatDate(value?: string | null) {
     return value ? new Date(value).toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" }) : "-";
 }
 
+function maskName(value?: string | null) {
+    return value?.trim().split(/\s+/).map((part) => part.length > 2 ? `${part.slice(0, 2)}${"*".repeat(Math.min(part.length - 2, 6))}` : `${part[0] ?? ""}*`).join(" ") || "-";
+}
+
 export default async function VerifikasiSuratPage({ params }: { params: Promise<{ token: string }> }) {
-    const { token } = await params;
+    const { token: code } = await params;
     const supabase = createSupabaseAdminClient();
     const { data } = await supabase
         .from("pengajuan_surat")
-        .select("nomor_surat,nomor_pengajuan,status,workflow_status,nama_lengkap,tanggal_surat,lurah_name,verification_token,layanan(nama)")
-        .eq("verification_token", token)
+        .select("nama_lengkap,nomor_surat,nomor_pengajuan,status,tanggal_surat,issued_at,lurah_name,signer_nip,signer_jabatan,verification_token,verification_code,document_locked,template_snapshot,keperluan,layanan(nama)")
+        .eq("verification_code", code.toUpperCase())
         .maybeSingle();
     const surat = data as SuratRow | null;
-    const valid = Boolean(surat && ["SELESAI", "Selesai"].includes(String(surat.status)));
+    const valid = Boolean(surat && isFinalDocument(surat) && templateFromSnapshot(surat.template_snapshot) && surat.nomor_surat && surat.tanggal_surat && surat.lurah_name && surat.signer_nip && surat.signer_jabatan && surat.verification_code && isVerificationToken(surat.verification_token));
+    const inactive = Boolean(surat && !valid);
+    const pdfToken = valid && surat ? surat.verification_token : null;
     const layanan = Array.isArray(surat?.layanan) ? surat?.layanan[0]?.nama : surat?.layanan?.nama;
 
     return <main className="min-h-screen bg-[#F7F9FC] px-5 py-12 text-slate-800 sm:px-10 lg:px-20">
@@ -26,19 +33,22 @@ export default async function VerifikasiSuratPage({ params }: { params: Promise<
                     {valid ? <CheckCircle2 className="size-4" /> : <ShieldAlert className="size-4" />} Verifikasi Surat
                 </div>
                 <h1 className="mt-6 text-3xl font-black sm:text-5xl">VERIFIKASI SURAT KELURAHAN TAMANSARI</h1>
-                <p className="mt-4 text-lg font-bold text-white/80">{valid ? "Surat Valid" : "Surat Tidak Valid"}</p>
+                <p className="mt-4 text-lg font-bold text-white/80">{valid ? "✓ DOKUMEN TERVERIFIKASI" : inactive ? "⚠ DOKUMEN TIDAK AKTIF" : "✕ DOKUMEN TIDAK DAPAT DIVERIFIKASI"}</p>
             </div>
             <div className="grid gap-4 p-6 sm:grid-cols-2 sm:p-8">
-                <Info label="Nomor Surat" value={surat?.nomor_surat} />
-                <Info label="Nomor Pengajuan" value={surat?.nomor_pengajuan} />
-                <Info label="Jenis Surat" value={layanan} />
-                <Info label="Nama Pemohon" value={surat?.nama_lengkap} />
-                <Info label="Tanggal Terbit" value={formatDate(surat?.tanggal_surat)} />
-                <Info label="Pejabat Penandatangan" value={surat?.lurah_name} />
-                <Info label="Status Surat" value={valid ? "SELESAI / VALID" : (surat?.status ?? "Tidak ditemukan")} />
-                {valid ? <a className="flex items-center justify-center gap-2 rounded-2xl bg-accent-400 px-5 py-3 font-black text-gov-950" href={`/api/surat/${token}/pdf`} target="_blank" rel="noreferrer"><FileText className="size-5" /> Lihat PDF</a> : null}
+                <Info label="Nama" value={valid ? maskName(surat?.nama_lengkap) : undefined} />
+                <Info label="Nomor Surat" value={valid ? surat?.nomor_surat : undefined} />
+                <Info label="Keperluan" value={valid ? surat?.keperluan : undefined} />
+                <Info label="Jenis Surat" value={valid ? layanan : undefined} />
+                <Info label="Tanggal Terbit" value={valid ? formatDate(surat?.tanggal_surat) : undefined} />
+                <Info label="Pejabat Penandatangan" value={valid ? surat?.lurah_name : undefined} />
+                <Info label="NIP" value={valid ? surat?.signer_nip : undefined} />
+                <Info label="Kelurahan" value="Tamansari" />
+                <Info label="Kecamatan" value="Pulomerak" />
+                <Info label="Kota" value="Cilegon" />
+                {pdfToken ? <div className="flex gap-2"><a className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-accent-400 px-5 py-3 font-black text-gov-950" href={`/api/surat/${pdfToken}/pdf`} target="_blank" rel="noreferrer"><FileText className="size-5" /> Lihat PDF</a><a className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-gov-950 px-5 py-3 font-black text-gov-950" href={`/api/surat/${pdfToken}/pdf?download=1`}>Download</a></div> : null}
             </div>
-            <p className="border-t border-slate-100 p-6 text-center text-sm font-bold text-slate-500">Dokumen ini diterbitkan melalui Sistem Pelayanan Digital Kelurahan Tamansari.</p>
+            <p className="border-t border-slate-100 p-6 text-center text-sm font-bold text-slate-500">{valid ? "Dokumen ini terdaftar dan diterbitkan secara elektronik oleh Kelurahan Tamansari." : "Kode verifikasi tidak ditemukan atau dokumen tidak valid."}</p>
         </section>
     </main>;
 }

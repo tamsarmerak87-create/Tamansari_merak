@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable react-hooks/static-components */
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -42,6 +43,7 @@ import {
 import { getCurrentAdminPortalUser, logoutAdminPortal, type AdminPortalProfile } from "@/services/admin-auth.service";
 import { subscribeToTable } from "@/services/supabase";
 import { cn } from "@/utils/cn";
+import { isWargaReligion, normalizeWargaEmploymentStatus, WARGA_EMPLOYMENT_STATUSES, WARGA_MARITAL_STATUSES, WARGA_RELIGIONS } from "@/lib/warga-profile-options";
 
 type Row = Record<string, any>;
 type Toast = { type: "success" | "error" | "loading"; text: string } | null;
@@ -59,12 +61,67 @@ type PendingWarga = {
   tempat_lahir?: string | null;
   tanggal_lahir?: string | null;
   jenis_kelamin?: string | null;
+  agama?: string | null;
   alamat?: string | null;
   rt?: string | null;
   rw?: string | null;
   kelurahan?: string | null;
   kecamatan?: string | null;
+  status_perkawinan?: string | null;
+  status_pekerjaan?: string | null;
 };
+type WargaProfileField = {
+  key: keyof PendingWarga;
+  label: string;
+  type?: "text" | "email" | "tel" | "date";
+  wide?: boolean;
+};
+
+const wargaProfileFields: WargaProfileField[] = [
+  { key: "nama_lengkap", label: "Nama Lengkap" },
+  { key: "nik", label: "NIK" },
+  { key: "email", label: "Email", type: "email" },
+  { key: "nomor_hp", label: "Nomor HP", type: "tel" },
+  { key: "nomor_whatsapp", label: "Nomor WhatsApp", type: "tel" },
+  { key: "nomor_kk", label: "Nomor KK" },
+  { key: "tempat_lahir", label: "Tempat Lahir" },
+  { key: "tanggal_lahir", label: "Tanggal Lahir", type: "date" },
+  { key: "jenis_kelamin", label: "Jenis Kelamin" },
+  { key: "agama", label: "Agama" },
+  { key: "rt", label: "RT" },
+  { key: "rw", label: "RW" },
+  { key: "kelurahan", label: "Kelurahan" },
+  { key: "kecamatan", label: "Kecamatan" },
+  { key: "status_perkawinan", label: "Status Perkawinan" },
+  { key: "status_pekerjaan", label: "Status Pekerjaan" },
+  { key: "alamat", label: "Alamat", wide: true },
+];
+
+function createWargaProfileForm(row: PendingWarga): Partial<PendingWarga> {
+  return Object.fromEntries(wargaProfileFields.map(({ key }) => [key, key === "status_pekerjaan" ? normalizeWargaEmploymentStatus(row[key]) : String(row[key] ?? "")])) as Partial<PendingWarga>;
+}
+
+function validateWargaProfile(values: Partial<PendingWarga>) {
+  if (!String(values.nama_lengkap ?? "").trim() || !String(values.nik ?? "").trim() || !String(values.email ?? "").trim()) {
+    return "Nama lengkap, NIK, dan email wajib diisi.";
+  }
+  if (!WARGA_MARITAL_STATUSES.includes(String(values.status_perkawinan ?? "") as (typeof WARGA_MARITAL_STATUSES)[number])) return "Status perkawinan tidak valid.";
+  if (!WARGA_EMPLOYMENT_STATUSES.includes(normalizeWargaEmploymentStatus(values.status_pekerjaan) as (typeof WARGA_EMPLOYMENT_STATUSES)[number])) return "Status pekerjaan tidak valid.";
+  const agama = String(values.agama ?? "").trim();
+  if (agama && !isWargaReligion(agama)) return "Agama tidak valid.";
+  return null;
+}
+
+function WargaProfileForm({ values, onChange }: { values: Partial<PendingWarga>; onChange: (values: Partial<PendingWarga>) => void }) {
+  return <div className="grid gap-3 md:grid-cols-2">
+    {wargaProfileFields.map(({ key, label, type = "text", wide }) => (
+      <label key={key} className={wide ? "md:col-span-2" : ""}>
+        <span className="text-xs font-black uppercase tracking-widest text-slate-500">{label}</span>
+        {key === "status_perkawinan" || key === "status_pekerjaan" || key === "agama" ? <select value={key === "status_pekerjaan" ? normalizeWargaEmploymentStatus(values[key]) : String(values[key] ?? "")} onChange={(event) => onChange({ ...values, [key]: event.target.value })} className="mt-1 w-full rounded-2xl bg-slate-50 p-3 font-bold outline-none ring-accent-300 focus:ring-2"><option value="">{key === "agama" ? "Pilih Agama" : "Pilih"}</option>{(key === "status_perkawinan" ? WARGA_MARITAL_STATUSES : key === "status_pekerjaan" ? WARGA_EMPLOYMENT_STATUSES : WARGA_RELIGIONS).map((option) => <option key={option} value={option}>{option}</option>)}</select> : key === "alamat" ? <textarea value={String(values[key] ?? "")} onChange={(event) => onChange({ ...values, [key]: event.target.value })} className="mt-1 min-h-24 w-full rounded-2xl bg-slate-50 p-3 font-bold outline-none ring-accent-300 focus:ring-2" /> : <input type={type} value={String(values[key] ?? "")} onChange={(event) => onChange({ ...values, [key]: event.target.value })} className="mt-1 w-full rounded-2xl bg-slate-50 p-3 font-bold outline-none ring-accent-300 focus:ring-2" />}
+      </label>
+    ))}
+  </div>;
+}
 const statuses = [
   "Menunggu Verifikasi",
   "Disetujui",
@@ -209,8 +266,14 @@ function WorkflowStepper({ row }: { row: Row }) {
 function canProcessStage(row: Row, profile?: AdminPortalProfile | null) {
   const stage = activeStage(row);
   const role = profile?.role;
-  if (role === "admin") return Boolean(stage && ["Menunggu", "Diproses"].includes(String(stage.status)) && roleStatus[String(stage.role_petugas)] === normalizedWorkflowStatus(row));
+  // Admin may execute the current stage. The API re-checks the sequence and
+  // authorization from the server session; this is only a presentation gate.
+  if (role === "admin") return Boolean(stage && ["Menunggu", "Diproses"].includes(String(stage.status)));
   return Boolean(stage && role === stage.role_petugas && roleStatus[String(role)] === normalizedWorkflowStatus(row) && workflowRoles.includes(role as typeof workflowRoles[number]));
+}
+
+function isPendingWargaStatus(status?: string | null) {
+  return status === "Belum Terverifikasi";
 }
 
 function isIssued(row: Row) {
@@ -266,6 +329,9 @@ function workflowStatusDisplay(row: Row) {
 
 function accessLabel(row: Row, profile?: AdminPortalProfile | null) {
   const stage = activeStage(row);
+  if (profile?.role === "admin" && stage?.tahap === 4) return "✓ SETUJUI SEKLUR";
+  if (profile?.role === "admin" && stage?.tahap === 5) return "✓ SETUJUI LURAH";
+  if (profile?.role === "admin" && !stage && isIssued(row)) return "✓ PENGAJUAN SELESAI";
   if (profile?.role === "admin") return "Administrator - Monitoring";
   if (!stage) return normalizeStatus(row.status) === "Selesai" ? "Selesai" : "Tidak ada tahap aktif";
   if (stage.tahap === 5 && profile?.role !== "lurah") return "Menunggu Persetujuan Lurah";
@@ -430,22 +496,32 @@ export function AdminShell({
     ["Pengajuan Selesai", stat("Selesai")],
     ["Pengajuan Ditolak", stat("Ditolak")],
   ];
-  const updateStatus = async (row: Row, action: "proses_tahap" | "verifikasi" | "setujui" | "selesai" | "tolak" | "revisi", extra?: { catatan_petugas?: string; alasan_penolakan?: string; hasil_verifikasi?: string; dokumentasi_url?: string; checklist?: Record<string, boolean> }) => {
+  const updateStatus = async (row: Row, action: "proses_tahap" | "validasi_terbitkan" | "verifikasi" | "setujui" | "tolak" | "revisi", extra?: { catatan_petugas?: string; alasan_penolakan?: string; hasil_verifikasi?: string; dokumentasi_url?: string; checklist?: Record<string, boolean> }) => {
     try {
+      console.log("[ADMIN ACTION START]", { id: row.id, action });
       setToast({ type: "loading", text: "Menyimpan perubahan..." });
+      console.log("[ADMIN ACTION FETCH]", { endpoint: "/api/admin/pengajuan", method: "PATCH" });
       const res = await fetch("/api/admin/pengajuan", {
         method: "PATCH",
-        headers: { "content-type": "application/json" },
+        headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({ id: row.id, action, ...extra }),
       });
+      console.log("[ADMIN ACTION RESPONSE]", { status: res.status, statusText: res.statusText });
       const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) throw new Error(json?.error ?? "Gagal memperbarui status");
-      setToast({ type: "success", text: action === "tolak" ? "Pengajuan berhasil ditolak." : action === "revisi" ? "Pengajuan dikembalikan untuk revisi." : action === "selesai" ? "Surat berhasil diterbitkan." : "Tahap verifikasi berhasil diproses." });
+      console.log("[ADMIN ACTION RESPONSE BODY]", json);
+      if (!res.ok || !json?.ok) {
+        console.error("[ADMIN ACTION ERROR]", { endpoint: "/api/admin/pengajuan", status: res.status, statusText: res.statusText, body: json });
+        throw new Error(json?.error || json?.message || `HTTP ${res.status}`);
+      }
+      console.log("[ADMIN ACTION SUCCESS]", { pengajuanId: row.id, action, status: res.status });
+      setToast({ type: "success", text: action === "tolak" ? "Pengajuan berhasil ditolak." : action === "revisi" ? "Pengajuan dikembalikan untuk revisi." : action === "validasi_terbitkan" ? "Surat berhasil diterbitkan." : "Tahap verifikasi berhasil diproses." });
       setSelectedSubmission(null);
       setRejectTarget(null);
     } catch (error) {
-      setToast({ type: "error", text: error instanceof Error ? error.message : "Gagal memperbarui status" });
+      const message = error instanceof Error ? error.message : "Gagal memperbarui status";
+      console.error("[ADMIN ACTION ERROR]", { pengajuanId: row.id, action, message });
+      setToast({ type: "error", text: message });
     } finally {
       await load();
     }
@@ -669,7 +745,7 @@ export function AdminShell({
             {toast.text}
           </div>
         )}
-        {loading ? (
+      {loading ? (
           <Panel title="Loading">Memuat data Supabase...</Panel>
         ) : view === "dashboard" ? (
           <>
@@ -725,7 +801,7 @@ export function AdminShell({
               <h2 className="mt-3 text-2xl font-black">Antrean Verifikasi Akun Warga</h2>
               <p className="mt-2 text-sm font-bold text-white/70">Data diambil dari public.warga_profiles dengan status_verifikasi &quot;Belum Terverifikasi&quot;. Aksi verifikasi akan mengubah status menjadi Terverifikasi dan memicu realtime di halaman warga.</p>
             </div>
-            <WargaVerificationTable rows={pendingWarga} onVerify={verifyWarga} onReject={rejectWarga} onEdit={saveWargaProfile} onDelete={deleteWargaProfile} />
+            <WargaVerificationTable rows={pendingWarga.filter((row) => isPendingWargaStatus(row.status_verifikasi))} onVerify={verifyWarga} onReject={rejectWarga} onEdit={saveWargaProfile} onDelete={deleteWargaProfile} />
           </Panel>
         ) : view === "pengajuan" ? (
           <Panel title="Pengajuan Surat">
@@ -781,7 +857,7 @@ export function AdminShell({
               <VerificationDialog
                 row={selectedSubmission}
                 onClose={() => setSelectedSubmission(null)}
-                onApprove={(payload) => updateStatus(selectedSubmission, activeStage(selectedSubmission)?.tahap === 5 ? "selesai" : "proses_tahap", payload)}
+                onApprove={(payload) => updateStatus(selectedSubmission, activeStage(selectedSubmission)?.tahap === 5 ? "validasi_terbitkan" : "proses_tahap", payload)}
                 onRevise={(reason) => updateStatus(selectedSubmission, "revisi", { alasan_penolakan: reason, catatan_petugas: reason })}
                 onReject={(reason) => updateStatus(selectedSubmission, "tolak", { alasan_penolakan: reason, catatan_petugas: reason })}
               />
@@ -791,9 +867,8 @@ export function AdminShell({
           detail ? (
             <SubmissionDetail
               row={detail}
-              onVerify={setSelectedSubmission}
+              onApprove={(row) => updateStatus(row, activeStage(row)?.tahap === 5 ? "validasi_terbitkan" : "proses_tahap")}
               onProcess={setSelectedSubmission}
-              onComplete={(row) => updateStatus(row, "selesai", { catatan_petugas: "Pengajuan telah selesai dan dokumen dapat dicetak/diunduh." })}
               onReject={rejectSubmission}
               setToast={setToast}
               adminProfile={adminProfile}
@@ -964,7 +1039,7 @@ function VerificationDialog({
 }: {
   row: Row;
   onClose: () => void;
-  onApprove: (payload: { catatan_petugas?: string; hasil_verifikasi?: string; dokumentasi_url?: string; checklist?: Record<string, boolean> }) => void;
+  onApprove: (payload: { catatan_petugas?: string; hasil_verifikasi?: string; dokumentasi_url?: string; checklist?: Record<string, boolean> }) => Promise<void>;
   onRevise: (reason: string) => void;
   onReject: (reason: string) => void;
 }) {
@@ -975,11 +1050,17 @@ function VerificationDialog({
   const [hasil, setHasil] = useState("Sesuai");
   const [dokumentasi, setDokumentasi] = useState("");
   const [checklist, setChecklist] = useState<Record<string, boolean>>({});
+  const [busy, setBusy] = useState(false);
   const title = tahap === 1 ? "VERIFIKASI STAFF PELAYANAN" : tahap === 2 ? "VERIFIKASI LAPANGAN" : tahap === 3 ? "VERIFIKASI KASI" : tahap === 4 ? "VERIFIKASI ADMINISTRASI SEKLUR" : "VALIDASI AKHIR LURAH";
   const checks = tahap === 1 ? ["Data pemohon sesuai", "NIK sesuai", "Dokumen lengkap", "Persyaratan sesuai layanan"] : tahap === 4 ? ["Data benar", "Dokumen lengkap", "Hasil verifikasi lapangan sesuai", "Rekomendasi Kasi sesuai", "Surat siap diajukan kepada Lurah"] : [];
-  const approve = () => {
+  const approve = async () => {
     if (tahap === 5 && !window.confirm("Apakah Anda yakin ingin memvalidasi dan menerbitkan surat ini?\n\nSetelah diterbitkan, surat akan menjadi dokumen resmi dan tercatat dalam audit trail.")) return;
-    onApprove({ catatan_petugas: catatan.trim(), hasil_verifikasi: tahap === 2 ? hasil : undefined, dokumentasi_url: dokumentasi.trim() || undefined, checklist });
+    setBusy(true);
+    try {
+      await onApprove({ catatan_petugas: catatan.trim(), hasil_verifikasi: tahap === 2 ? hasil : undefined, dokumentasi_url: dokumentasi.trim() || undefined, checklist });
+    } finally {
+      setBusy(false);
+    }
   };
   const rejectOrRevise = (kind: "revisi" | "tolak") => {
     const trimmed = reason.trim();
@@ -1016,7 +1097,7 @@ function VerificationDialog({
         <div className="mt-6 flex flex-col gap-3 lg:flex-row lg:justify-end">
           <button type="button" onClick={() => rejectOrRevise("revisi")} className="rounded-2xl bg-amber-500 px-5 py-3 font-black text-white hover:bg-amber-600"><RotateCcw className="inline" size={16} /> KEMBALIKAN / REVISI</button>
           <button type="button" onClick={() => rejectOrRevise("tolak")} className="rounded-2xl bg-red-600 px-5 py-3 font-black text-white hover:bg-red-700"><XCircle className="inline" size={16} /> TOLAK</button>
-          <button type="button" onClick={approve} className={cn("rounded-2xl px-5 py-3 font-black text-white", tahap === 5 ? "bg-emerald-600 hover:bg-emerald-700" : "bg-gov-950 hover:bg-gov-800")}><ShieldCheck className="inline" size={16} /> {tahap === 5 ? "VALIDASI & TERBITKAN SURAT" : tahap === 4 ? "SETUJUI & AJUKAN KE LURAH" : tahap === 2 ? "VERIFIKASI LAPANGAN & LANJUTKAN" : "VERIFIKASI & LANJUTKAN"}</button>
+          <button type="button" disabled={busy} onClick={() => void approve()} className={cn("rounded-2xl px-5 py-3 font-black text-white disabled:cursor-not-allowed disabled:opacity-60", tahap === 5 ? "bg-emerald-600 hover:bg-emerald-700" : "bg-gov-950 hover:bg-gov-800")}><ShieldCheck className="inline" size={16} /> {busy ? "Memproses..." : tahap === 5 ? "VALIDASI & TERBITKAN SURAT" : tahap === 4 ? "SETUJUI & AJUKAN KE LURAH" : tahap === 2 ? "VERIFIKASI LAPANGAN & LANJUTKAN" : "VERIFIKASI & LANJUTKAN"}</button>
         </div>
       </div>
     </div>
@@ -1230,24 +1311,24 @@ function stageTableStatus(row: Row, tahap: number) {
 
 function SubmissionDetail({
   row,
-  onVerify,
+  onApprove,
   onProcess,
-  onComplete,
   onReject,
   setToast,
   adminProfile,
 }: {
   row: Row;
-  onVerify: (row: Row) => void;
+  onApprove: (row: Row) => void;
   onProcess: (row: Row) => void;
-  onComplete: (row: Row) => void;
   onReject: (row: Row) => void;
   setToast: (t: Toast) => void;
   adminProfile: AdminPortalProfile | null;
 }) {
+  const [documentAction, setDocumentAction] = useState<"preview" | "download" | "verify" | null>(null);
   const docs = Array.isArray(row.dokumen_pengajuan) ? row.dokumen_pengajuan : [];
-  const generatedPdfUrl = row.verification_token ? `/api/surat/${row.verification_token}/pdf` : "";
-  const verifyUrl = row.verification_token ? `/verifikasi/${row.verification_token}` : "";
+  const generatedPdfUrl = row.id ? `/api/admin/pengajuan/${row.id}/surat` : "";
+  const downloadPdfUrl = row.id ? `/api/admin/pengajuan/${row.id}/surat?download=1` : "";
+  const verifyUrl = row.id ? `/api/admin/pengajuan/${row.id}/verifikasi` : "";
   const active = activeStage(row);
   const stageRows = stepDefinitions.slice(0, 5).map((step) => {
     const stage = stageByNumber(row, step.tahap);
@@ -1256,7 +1337,8 @@ function SubmissionDetail({
   const notes = stageRows.filter(({ stage }) => stage?.catatan);
   const canAct = canProcessStage(row, adminProfile);
 
-  const primaryLabel = active?.role_petugas === "lurah" ? "✓ VALIDASI & TERBITKAN" : active?.role_petugas === "seklur" ? "✓ AJUKAN KE LURAH" : active?.role_petugas === "kepala_seksi" ? "✓ SETUJUI" : active?.role_petugas === "petugas_lapangan" ? "✓ VERIFIKASI LAPANGAN" : "✓ VERIFIKASI";
+  const primaryAction = active?.tahap === 5 ? "validasi_terbitkan" : "proses_tahap";
+  const primaryLabel = adminProfile?.role === "admin" && active?.tahap === 4 ? "✓ SETUJUI SEKLUR" : adminProfile?.role === "admin" && active?.tahap === 5 ? "✓ VALIDASI & TERBITKAN" : active?.role_petugas === "lurah" ? "✓ VALIDASI & TERBITKAN" : active?.role_petugas === "seklur" ? "✓ AJUKAN KE LURAH" : active?.role_petugas === "kepala_seksi" ? "✓ SETUJUI" : active?.role_petugas === "petugas_lapangan" ? "✓ VERIFIKASI LAPANGAN" : "✓ VERIFIKASI";
 
   return (
     <div className="mx-auto max-w-[1160px] space-y-4">
@@ -1374,15 +1456,16 @@ function SubmissionDetail({
         <div className="grid gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap lg:justify-end">
           {isIssued(row) ? (
             <>
-              <a href={generatedPdfUrl || "#"} target="_blank" rel="noreferrer" className={cn("rounded-2xl px-5 py-3 text-center font-black", generatedPdfUrl ? "bg-gov-950 text-white" : "pointer-events-none bg-slate-200 text-slate-400")}>📄 LIHAT SURAT</a>
-              <a href={generatedPdfUrl || "#"} download className={cn("rounded-2xl px-5 py-3 text-center font-black", generatedPdfUrl ? "bg-accent-400 text-gov-950" : "pointer-events-none bg-slate-200 text-slate-400")}>⬇ DOWNLOAD PDF</a>
-              <a href={verifyUrl || "#"} target="_blank" rel="noreferrer" className={cn("rounded-2xl px-5 py-3 text-center font-black", verifyUrl ? "bg-emerald-600 text-white" : "pointer-events-none bg-slate-200 text-slate-400")}>🔳 VERIFIKASI QR</a>
+              <p className="rounded-2xl bg-emerald-50 px-5 py-3 text-center font-black text-emerald-800">✓ PENGAJUAN SELESAI</p>
+              <a href={generatedPdfUrl || "#"} target="_blank" rel="noreferrer" onClick={() => setDocumentAction("preview")} className={cn("rounded-2xl px-5 py-3 text-center font-black", generatedPdfUrl ? "bg-gov-950 text-white" : "pointer-events-none bg-slate-200 text-slate-400")}>{documentAction === "preview" ? "Memuat..." : "📄 LIHAT SURAT"}</a>
+              <a href={downloadPdfUrl || "#"} onClick={() => setDocumentAction("download")} className={cn("rounded-2xl px-5 py-3 text-center font-black", downloadPdfUrl ? "bg-accent-400 text-gov-950" : "pointer-events-none bg-slate-200 text-slate-400")}>{documentAction === "download" ? "Mengunduh..." : "⬇ DOWNLOAD PDF"}</a>
+              <a href={verifyUrl || "#"} target="_blank" rel="noreferrer" onClick={() => setDocumentAction("verify")} className={cn("rounded-2xl px-5 py-3 text-center font-black", verifyUrl ? "bg-emerald-600 text-white" : "pointer-events-none bg-slate-200 text-slate-400")}>{documentAction === "verify" ? "Memuat..." : "🔳 VERIFIKASI QR"}</a>
             </>
           ) : canAct ? (
             <>
               <button type="button" onClick={() => onProcess(row)} className="rounded-2xl bg-amber-500 px-5 py-3 font-black text-white">KEMBALIKAN</button>
               <button type="button" onClick={() => onReject(row)} className="rounded-2xl bg-red-600 px-5 py-3 font-black text-white">TOLAK</button>
-              <button type="button" onClick={() => onVerify(row)} className="rounded-2xl bg-gov-950 px-5 py-3 font-black text-white">{primaryLabel}</button>
+              <button type="button" onClick={() => { console.log("[ADMIN ACTION CLICK]", { id: row.id, action: primaryAction }); onApprove(row); }} className="rounded-2xl bg-gov-950 px-5 py-3 font-black text-white">{primaryLabel}</button>
             </>
           ) : (
             <p className="rounded-2xl bg-slate-50 p-4 font-black text-slate-600">{accessLabel(row, adminProfile)}</p>
@@ -1524,7 +1607,7 @@ function Layanan({
         {services.map((s) => (
           <div key={s.id} className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 md:flex-row md:items-center md:justify-between">
             <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><b className="text-gov-950">{s.nama}</b><span className={cn("w-fit rounded-full px-3 py-1 text-xs font-black ring-1", s.aktif === false ? "bg-slate-200 text-slate-700 ring-slate-300" : "bg-emerald-100 text-emerald-800 ring-emerald-200")}>{s.aktif === false ? "Nonaktif" : "Aktif"}</span></div>
-            <div className="flex flex-wrap gap-2"><button onClick={() => openEdit(s)} className="inline-flex items-center gap-1 rounded-xl bg-gov-950 px-3 py-2 font-black text-white"><Pencil size={14} /> Edit</button><button onClick={() => toggleServiceStatus(s)} className={cn("inline-flex items-center gap-1 rounded-xl px-3 py-2 font-black text-white", s.aktif === false ? "bg-emerald-600 hover:bg-emerald-700" : "bg-slate-700 hover:bg-slate-800")}>{s.aktif === false ? <CheckCircle2 size={14} /> : <XCircle size={14} />} {s.aktif === false ? "Aktifkan" : "Nonaktifkan"}</button><button onClick={() => deleteService(s)} className="inline-flex items-center gap-1 rounded-xl bg-red-600 px-3 py-2 font-black text-white"><Trash2 size={14} /> Hapus</button></div>
+            <div className="flex flex-wrap gap-2"><a href={`/admin/layanan/${s.id}/template`} className="inline-flex items-center gap-1 rounded-xl bg-accent-400 px-3 py-2 font-black text-gov-950"><FileText size={14} /> Template</a><button onClick={() => openEdit(s)} className="inline-flex items-center gap-1 rounded-xl bg-gov-950 px-3 py-2 font-black text-white"><Pencil size={14} /> Edit</button><button onClick={() => toggleServiceStatus(s)} className={cn("inline-flex items-center gap-1 rounded-xl px-3 py-2 font-black text-white", s.aktif === false ? "bg-emerald-600 hover:bg-emerald-700" : "bg-slate-700 hover:bg-slate-800")}>{s.aktif === false ? <CheckCircle2 size={14} /> : <XCircle size={14} />} {s.aktif === false ? "Aktifkan" : "Nonaktifkan"}</button><button onClick={() => deleteService(s)} className="inline-flex items-center gap-1 rounded-xl bg-red-600 px-3 py-2 font-black text-white"><Trash2 size={14} /> Hapus</button></div>
           </div>
         ))}
       </div>
@@ -1533,20 +1616,93 @@ function Layanan({
   );
 }
 function Pengguna({ rows }: { rows: PendingWarga[] }) {
+  const [users, setUsers] = useState(rows);
+  const [editing, setEditing] = useState<PendingWarga | null>(null);
+  const [deleting, setDeleting] = useState<PendingWarga | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  useEffect(() => { void Promise.resolve().then(() => setUsers(rows)); }, [rows]);
+
+  const refreshUsers = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/admin/pengguna", { cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok || !result?.ok) throw new Error(result?.error ?? "Data pengguna gagal dimuat.");
+      setUsers(Array.isArray(result.data) ? result.data : []);
+    } catch (error) {
+      setMessage({ type: "error", text: error instanceof Error ? error.message : "Data pengguna gagal dimuat." });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveUser = async () => {
+    if (!editing) return;
+    const validationError = validateWargaProfile(editing);
+    if (validationError) {
+      setMessage({ type: "error", text: validationError });
+      return;
+    }
+    setBusy(true);
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/admin/pengguna/${editing.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(createWargaProfileForm(editing)),
+      });
+      const result = await response.json();
+      if (!response.ok || !result?.ok) throw new Error(result?.error ?? "Perubahan gagal disimpan.");
+      setUsers((current) => current.map((user) => user.id === editing.id ? result.data : user));
+      setEditing(null);
+      await refreshUsers();
+      setMessage({ type: "success", text: "Data pengguna berhasil diperbarui." });
+    } catch (error) {
+      setMessage({ type: "error", text: error instanceof Error ? error.message : "Perubahan gagal disimpan." });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteUser = async () => {
+    if (!deleting) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/admin/pengguna/${deleting.id}`, { method: "DELETE" });
+      const result = await response.json();
+      if (!response.ok || !result?.ok) throw new Error(result?.error ?? "Pengguna gagal dihapus.");
+      setUsers((current) => current.filter((user) => user.id !== deleting.id));
+      setDeleting(null);
+      setMessage({ type: "success", text: "Akun dan data pengguna berhasil dihapus." });
+    } catch (error) {
+      setMessage({ type: "error", text: error instanceof Error ? error.message : "Pengguna gagal dihapus." });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <Panel title="Manajemen Pengguna">
-      <div className="grid gap-3 md:grid-cols-3">
-        {rows.slice(0, 12).map((row) => (
-          <div key={row.id} className="rounded-[1.5rem] border border-slate-100 bg-slate-50 p-4">
-            <p className="font-black text-gov-950">{row.nama_lengkap ?? "Warga"}</p>
-            <p className="mt-1 text-sm font-bold text-slate-500">{row.email ?? row.nik ?? "-"}</p>
-            <span className="mt-3 inline-flex rounded-full bg-white px-3 py-1 text-xs font-black text-slate-600 shadow-sm">
-              {row.status_verifikasi ?? "Belum Terverifikasi"}
-            </span>
-          </div>
-        ))}
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div><p className="font-black text-gov-950">Daftar akun warga</p><p className="text-sm font-bold text-slate-500">{users.length} pengguna terdaftar</p></div>
+        <button disabled={busy} onClick={refreshUsers} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gov-950 px-4 py-2.5 font-black text-white disabled:opacity-50"><RefreshCw size={16} className={busy ? "animate-spin" : ""} /> Refresh</button>
       </div>
-      {rows.length === 0 && <p className="font-bold text-slate-500">Belum ada data pengguna.</p>}
+      {message && <div className={cn("mb-4 rounded-2xl px-4 py-3 text-sm font-black", message.type === "success" ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700")}>{message.text}</div>}
+      <div className="overflow-x-auto rounded-2xl border border-slate-200">
+        <table className="min-w-[900px] w-full border-collapse text-left">
+          <thead className="bg-gov-950 text-xs uppercase tracking-wider text-white"><tr><th className="px-4 py-3">Nama</th><th className="px-4 py-3">NIK</th><th className="px-4 py-3">Email</th><th className="px-4 py-3">No. HP</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Aksi</th></tr></thead>
+          <tbody className="divide-y divide-slate-100 bg-white">
+            {users.map((user) => <tr key={user.id} className="hover:bg-slate-50"><td className="px-4 py-3 font-black text-gov-950">{user.nama_lengkap || "Warga"}</td><td className="px-4 py-3 font-bold text-slate-600">{user.nik || "-"}</td><td className="px-4 py-3 font-bold text-slate-600">{user.email || "-"}</td><td className="px-4 py-3 font-bold text-slate-600">{user.nomor_hp || user.nomor_whatsapp || "-"}</td><td className="px-4 py-3"><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">{user.status_verifikasi || "Belum Terverifikasi"}</span></td><td className="px-4 py-3"><div className="flex justify-end gap-2"><button onClick={() => { setEditing({ ...user, ...createWargaProfileForm(user) }); setMessage(null); }} className="inline-flex items-center gap-1 rounded-xl bg-amber-400 px-3 py-2 text-sm font-black text-gov-950"><Pencil size={14} /> Edit</button><button onClick={() => { setDeleting(user); setMessage(null); }} className="inline-flex items-center gap-1 rounded-xl bg-red-600 px-3 py-2 text-sm font-black text-white"><Trash2 size={14} /> Hapus</button></div></td></tr>)}
+          </tbody>
+        </table>
+        {users.length === 0 && <p className="bg-white p-8 text-center font-bold text-slate-500">Belum ada data pengguna.</p>}
+      </div>
+      {editing && <div className="fixed inset-0 z-50 grid place-items-center bg-gov-950/65 p-4 backdrop-blur-sm"><div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-[2rem] bg-white p-6 shadow-2xl"><div className="mb-5 flex items-start justify-between gap-4"><div><h3 className="text-2xl font-black text-gov-950">Edit Pengguna</h3><p className="text-sm font-bold text-slate-500">Perbarui data profil warga. Password dan status verifikasi tidak diubah.</p></div><button onClick={() => setEditing(null)} className="rounded-full bg-slate-100 p-2"><X size={18} /></button></div><WargaProfileForm values={editing} onChange={(values) => setEditing((current) => current ? { ...current, ...values } : current)} /><div className="mt-6 flex justify-end gap-2"><button disabled={busy} onClick={() => setEditing(null)} className="rounded-2xl bg-slate-100 px-5 py-3 font-black text-slate-700">Batal</button><button disabled={busy} onClick={saveUser} className="rounded-2xl bg-gov-950 px-5 py-3 font-black text-white disabled:opacity-50">{busy ? "Menyimpan..." : "Simpan Perubahan"}</button></div></div></div>}
+      {deleting && <div className="fixed inset-0 z-50 grid place-items-center bg-gov-950/65 p-4 backdrop-blur-sm"><div className="w-full max-w-md rounded-[2rem] bg-white p-6 text-center shadow-2xl"><div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-red-100 text-red-600"><AlertTriangle size={28} /></div><h3 className="mt-4 text-2xl font-black text-gov-950">Hapus pengguna?</h3><p className="mt-2 font-bold text-slate-500">Akun <span className="text-gov-950">{deleting.nama_lengkap || deleting.email}</span> dan data terkait akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.</p><div className="mt-6 flex justify-center gap-2"><button disabled={busy} onClick={() => setDeleting(null)} className="rounded-2xl bg-slate-100 px-5 py-3 font-black text-slate-700">Batal</button><button disabled={busy} onClick={deleteUser} className="rounded-2xl bg-red-600 px-5 py-3 font-black text-white disabled:opacity-50">{busy ? "Menghapus..." : "Ya, Hapus"}</button></div></div></div>}
     </Panel>
   );
 }
@@ -1595,8 +1751,8 @@ function Laporan({ submissions, wargaProfiles }: { submissions: Row[]; wargaProf
     }
   }, [filters]);
 
-  useEffect(() => { applyRange("30"); }, []);
-  useEffect(() => { fetchReport(); }, [fetchReport]);
+  useEffect(() => { void Promise.resolve().then(() => applyRange("30")); }, []);
+  useEffect(() => { void Promise.resolve().then(fetchReport); }, [fetchReport]);
 
   const statusBucket = (value?: string | null) => {
     const lower = String(value ?? "").toLowerCase();
@@ -1657,13 +1813,14 @@ function WargaVerificationTable({
 }) {
   const [editing, setEditing] = useState<PendingWarga | null>(null);
   const [form, setForm] = useState<Partial<PendingWarga>>({});
-  const fields: [keyof PendingWarga, string][] = [["nama_lengkap", "Nama lengkap"], ["nik", "NIK"], ["email", "Email"], ["nomor_hp", "Nomor HP"], ["nomor_kk", "Nomor KK"], ["tempat_lahir", "Tempat lahir"], ["tanggal_lahir", "Tanggal lahir"], ["jenis_kelamin", "Jenis kelamin"], ["alamat", "Alamat"], ["rt", "RT"], ["rw", "RW"]];
   const openEdit = (row: PendingWarga) => {
     setEditing(row);
-    setForm(Object.fromEntries(fields.map(([key]) => [key, String((row[key] ?? (key === "nomor_hp" ? row.nomor_whatsapp : "")) ?? "")])) as Partial<PendingWarga>);
+    setForm(createWargaProfileForm(row));
   };
   const submit = () => {
     if (!editing) return;
+    const validationError = validateWargaProfile(form);
+    if (validationError) return window.alert(validationError);
     onEdit(editing, form);
     setEditing(null);
   };
@@ -1728,14 +1885,7 @@ function WargaVerificationTable({
               <div><h3 className="text-2xl font-black text-gov-950">Detail / Edit Warga</h3><p className="text-sm font-bold text-slate-500">ID warga dipertahankan. Password tidak diubah.</p></div>
               <button onClick={() => setEditing(null)} className="rounded-full bg-slate-100 p-2"><X size={18} /></button>
             </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              {fields.map(([key, label]) => (
-                <label key={key} className={key === "alamat" ? "md:col-span-2" : ""}>
-                  <span className="text-xs font-black uppercase tracking-widest text-slate-500">{label}</span>
-                  <input value={String(form[key] ?? "")} onChange={(e) => setForm((prev) => ({ ...prev, [key]: e.target.value }))} className="mt-1 w-full rounded-2xl bg-slate-50 p-3 font-bold outline-none ring-accent-300 focus:ring-2" />
-                </label>
-              ))}
-            </div>
+            <WargaProfileForm values={form} onChange={setForm} />
             <div className="mt-6 flex flex-wrap justify-end gap-2"><button onClick={() => setEditing(null)} className="rounded-2xl bg-slate-100 px-5 py-3 font-black text-slate-700">Batal</button><button onClick={submit} className="rounded-2xl bg-gov-950 px-5 py-3 font-black text-white">Simpan</button></div>
           </div>
         </div>

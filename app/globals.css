@@ -4,6 +4,185 @@
   --mobile-bottom-nav-height: 76px;
 }
 
+@keyframes tamsarFloat {
+
+  0%,
+  100% {
+    transform: translate3d(0, 1px, 0) rotate(-0.3deg) scale(0.995);
+  }
+
+  24% {
+    transform: translate3d(-1px, -2px, 0) rotate(0.2deg) scale(1.003);
+  }
+
+  48% {
+    transform: translate3d(1px, -3px, 0) rotate(0.35deg) scale(1.008);
+  }
+
+  70% {
+    transform: translate3d(0, -1px, 0) rotate(-0.1deg) scale(1);
+  }
+
+  /* A brief whole-character compression suggests a blink without altering the face asset. */
+  73% {
+    transform: translate3d(0, -1px, 0) rotate(-0.1deg) scale(1.002, 0.994);
+  }
+
+  76% {
+    transform: translate3d(0, -1px, 0) rotate(-0.1deg) scale(1);
+  }
+}
+
+@keyframes tamsarGreeting {
+
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0) scale(1);
+  }
+
+  24% {
+    transform: translate3d(-1px, -4px, 0) rotate(-1.35deg) scale(1.018);
+  }
+
+  48% {
+    transform: translate3d(1px, 0, 0) rotate(1deg) scale(0.998);
+  }
+
+  68% {
+    transform: translate3d(0, -2px, 0) rotate(-0.45deg) scale(1.008);
+  }
+}
+
+@keyframes tamsarListening {
+
+  0%,
+  100% {
+    transform: translate3d(-1px, 0, 0) rotate(-0.55deg) scale(0.997);
+  }
+
+  42% {
+    transform: translate3d(1px, -2px, 0) rotate(0.7deg) scale(1.007);
+  }
+
+  72% {
+    transform: translate3d(0, -1px, 0) rotate(0.2deg) scale(1.002);
+  }
+}
+
+@keyframes tamsarSpeaking {
+
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  18% {
+    transform: translate3d(-1px, -2px, 0) rotate(-0.3deg) scale(1.01);
+  }
+
+  42% {
+    transform: translate3d(0, 0, 0) rotate(0.15deg) scale(1.003);
+  }
+
+  64% {
+    transform: translate3d(1px, 1px, 0) rotate(0.35deg) scale(0.998);
+  }
+
+  82% {
+    transform: translate3d(0, -1px, 0) rotate(-0.15deg) scale(1.008);
+  }
+}
+
+@keyframes tamsarThinking {
+
+  0%,
+  100% {
+    transform: translate3d(-1px, 1px, 0) rotate(-0.5deg) scale(0.998);
+    opacity: 0.96;
+  }
+
+  46% {
+    transform: translate3d(1px, -3px, 0) rotate(0.4deg) scale(1.004);
+    opacity: 1;
+  }
+
+  72% {
+    transform: translate3d(0, -2px, 0) rotate(0.1deg) scale(1.002);
+    opacity: 0.985;
+  }
+}
+
+@keyframes tamsarSuccess {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  28% {
+    transform: translate3d(0, -5px, 0) scale(1.04);
+  }
+
+  55% {
+    transform: translate3d(0, 1px, 0) scale(1);
+  }
+
+  76% {
+    transform: translate3d(0, -1px, 0) scale(1.02);
+  }
+
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.tamsar-character-frame {
+  overflow: hidden;
+  contain: layout paint;
+  isolation: isolate;
+}
+
+.tamsar-character {
+  object-fit: contain;
+  transform-origin: 50% 82%;
+  will-change: transform, opacity;
+}
+
+.tamsar-character--idle {
+  animation: tamsarFloat 6.8s ease-in-out infinite;
+}
+
+.tamsar-character--greeting {
+  animation: tamsarGreeting 1.35s cubic-bezier(.22, .75, .3, 1) both;
+}
+
+.tamsar-character--listening {
+  animation: tamsarListening 2.6s ease-in-out infinite;
+}
+
+.tamsar-character--speaking {
+  animation: tamsarSpeaking 1.05s ease-in-out infinite;
+}
+
+.tamsar-character--thinking {
+  animation: tamsarThinking 3.6s ease-in-out infinite;
+}
+
+.tamsar-character--success {
+  animation: tamsarSuccess .65s cubic-bezier(.22, .8, .3, 1) both;
+}
+
+.tamsar-error {
+  border: 1px solid rgba(185, 28, 28, .3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tamsar-character {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+    will-change: auto;
+  }
+}
+
 @keyframes chat-slide-up {
   from {
     opacity: 0;

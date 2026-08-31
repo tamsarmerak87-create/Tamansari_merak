@@ -1,5 +1,5 @@
 import { createSupabaseAdminClient } from "@/services/supabase";
-import type { PetugasProfile, WorkflowRole } from "@/services/admin-session";
+import { isAdminRole, type PetugasProfile, type WorkflowRole } from "@/services/admin-session";
 
 export type WargaVerificationRole = Exclude<WorkflowRole, "admin">;
 export type WargaAction = "periksa" | "simpan" | "setujui" | "kembalikan" | "tolak";
@@ -62,6 +62,8 @@ export function isWargaAssignedToOtherPetugas(user: PetugasProfile, warga: Warga
 
 export function canHandleWargaStage(user: PetugasProfile, warga: WargaRow) {
     const stage = getActiveWargaStage(warga);
+    // ADMIN is the portal owner and may handle any pending verification stage.
+    if (isAdminRole(user.role)) return Boolean(stage && user.is_active !== false && !WARGA_TERMINAL_STATUSES.includes(String(warga.status_verifikasi)));
     return Boolean(stage && stage.role === normalizeWargaRole(user.role) && user.is_active !== false && !isWargaAssignedToOtherPetugas(user, warga) && !WARGA_TERMINAL_STATUSES.includes(String(warga.status_verifikasi)));
 }
 
@@ -155,7 +157,7 @@ export async function processWargaVerificationAction(params: { wargaId: string; 
     const stage = getActiveWargaStage(warga);
     if (!stage || !canHandleWargaStage(params.petugas, warga)) throw new Error("Anda tidak berwenang menangani tahap akun warga ini.");
     const nextStage = WARGA_WORKFLOW[WARGA_WORKFLOW.findIndex((item) => item.role === stage.role) + 1] ?? null;
-    const finalApproved = params.action === "setujui" && stage.role === "lurah";
+    const finalApproved = params.action === "setujui" && (stage.role === "lurah" || isAdminRole(params.petugas.role));
     const returnStage = params.action === "kembalikan" ? resolveReturnStage(stage.role, params.returnedToRole) : null;
     if (params.action === "kembalikan" && !returnStage) throw new Error("Tujuan pengembalian tidak valid untuk tahap ini.");
     if (["kembalikan", "tolak"].includes(params.action) && !String(params.catatan ?? "").trim()) throw new Error("Alasan wajib diisi.");

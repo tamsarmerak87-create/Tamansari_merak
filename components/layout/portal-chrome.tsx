@@ -20,6 +20,7 @@ export function PortalChrome({ children }: { children: React.ReactNode }) {
         return (
             <WargaAuthProvider>
                 <VerificationGuard>{children}</VerificationGuard>
+                <TamsarChatWidget />
             </WargaAuthProvider>
         );
     }

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getAdminSession, requireAdmin } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
+import { DOCUMENT_UNAVAILABLE_MESSAGE, logSubmissionStorageError, normalizeSubmissionObjectPath, SUBMISSION_DOCUMENT_BUCKET } from "@/services/submission-storage";
 
 function jsonError(message: string, status = 400) {
     return NextResponse.json({ ok: false, error: message }, { status });
@@ -37,12 +38,14 @@ export async function GET(request: NextRequest) {
                 .order("nama", { ascending: true }),
             supabase
                 .from("warga_profiles")
-                .select("id,nama_lengkap,nik,email,nomor_hp,nomor_whatsapp,nomor_kk,tempat_lahir,tanggal_lahir,jenis_kelamin,alamat,rt,rw,kelurahan,kecamatan,role,created_at,status_verifikasi,alasan_penolakan")
-                .eq("status_verifikasi", "Menunggu Lurah")
+                .select("id,nama_lengkap,nik,email,nomor_hp,nomor_whatsapp,nomor_kk,tempat_lahir,tanggal_lahir,jenis_kelamin,agama,status_perkawinan,status_pekerjaan,alamat,rt,rw,kelurahan,kecamatan,role,created_at,status_verifikasi,alasan_penolakan")
+                // The admin verification queue is driven by the account status,
+                // not by the separate letter-submission workflow stages.
+                .eq("status_verifikasi", "Belum Terverifikasi")
                 .order("created_at", { ascending: true }),
             supabase
                 .from("warga_profiles")
-                .select("id,nama_lengkap,nik,email,nomor_hp,nomor_whatsapp,nomor_kk,tempat_lahir,tanggal_lahir,jenis_kelamin,alamat,rt,rw,kelurahan,kecamatan,role,created_at,status_verifikasi,alasan_penolakan")
+                .select("id,nama_lengkap,nik,email,nomor_hp,nomor_whatsapp,nomor_kk,tempat_lahir,tanggal_lahir,jenis_kelamin,agama,status_perkawinan,status_pekerjaan,alamat,rt,rw,kelurahan,kecamatan,role,created_at,status_verifikasi,alasan_penolakan")
                 .order("created_at", { ascending: false }),
         ]);
 
@@ -92,8 +95,15 @@ export async function GET(request: NextRequest) {
         : { data: [], error: null };
     if (petugasError) return jsonError(petugasError.message, 500);
 
+    const signedDocuments = await Promise.all((documents ?? []).map(async (doc) => {
+        const path = normalizeSubmissionObjectPath(doc.url_file);
+        if (!path) return { ...doc, file_url: "", storage_error: DOCUMENT_UNAVAILABLE_MESSAGE };
+        const { data, error } = await supabase.storage.from(SUBMISSION_DOCUMENT_BUCKET).createSignedUrl(path, 60 * 10);
+        if (error) { logSubmissionStorageError("admin_view", error); return { ...doc, file_url: "", storage_error: DOCUMENT_UNAVAILABLE_MESSAGE }; }
+        return { ...doc, file_url: data.signedUrl, signed_url: data.signedUrl };
+    }));
     const documentsBySubmission = new Map<string, unknown[]>();
-    for (const doc of documents ?? []) {
+    for (const doc of signedDocuments) {
         const pengajuanId = String(doc.pengajuan_id ?? "");
         if (!documentsBySubmission.has(pengajuanId)) documentsBySubmission.set(pengajuanId, []);
         documentsBySubmission.get(pengajuanId)?.push(doc);

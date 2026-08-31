@@ -48,6 +48,19 @@ export function requireAdmin(user?: { role?: string | null } | null) {
     return isAdmin(user) ? null : "FORBIDDEN" as const;
 }
 
+// Admin owns every admin-portal module; workflow officers keep their existing scope.
+export function canAccessAdmin(user?: { role?: string | null } | null) {
+    return isAdmin(user);
+}
+
+export function canAccessVerification(user?: { role?: string | null } | null) {
+    return isAdmin(user);
+}
+
+export function canManageUsers(user?: { role?: string | null } | null) {
+    return isAdmin(user);
+}
+
 export function hasFullAdminAccess(user?: { role?: string | null } | null) {
     return isAdmin(user);
 }

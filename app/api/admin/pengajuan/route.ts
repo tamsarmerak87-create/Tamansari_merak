@@ -3,12 +3,13 @@ import { getAdminSession, isAdmin, requireAdmin } from "@/services/admin-session
 import { createSupabaseAdminClient } from "@/services/supabase";
 import { ROLE_STAGE_STATUS, STAGE_WAITING_STATUS, VERIFICATION_STAGES, getActiveStage, isFinalSubmissionStatus, normalizeSubmissionStatus, normalizeWorkflowRole } from "@/services/verification-workflow";
 import { createWargaNotification, type NotificationStatus } from "@/services/warga-notifikasi.service";
+import { finalizeOfficialLetter } from "@/services/official-letter-finalization";
 
 function jsonError(message: string, status = 400) {
     return NextResponse.json({ ok: false, error: message }, { status });
 }
 
-type Action = "proses_tahap" | "verifikasi" | "setujui" | "selesai" | "tolak" | "revisi";
+type Action = "proses_tahap" | "validasi_terbitkan" | "verifikasi" | "setujui" | "tolak" | "revisi";
 type StageRow = { id: string; tahap: number; nama_tahap: string; role_petugas: string; status: string };
 type ActionDecision = { status: "Disetujui" | "Ditolak"; submissionStatus: string; auditLabel: string; trackingLabel: string };
 
@@ -68,6 +69,7 @@ export async function PATCH(request: NextRequest) {
 
     if (!body?.id) return jsonError("ID pengajuan wajib diisi.");
     if (!body.action) return jsonError("Aksi pengajuan wajib diisi.");
+    console.log("[ADMIN ACTION START]", { pengajuanId: body.id, action: body.action });
 
     const petugasId = session.profile.id;
     const petugasName = session.profile.nama_lengkap ?? session.profile.username ?? "Petugas Kelurahan";
@@ -84,6 +86,7 @@ export async function PATCH(request: NextRequest) {
     const orderedStages = (stages ?? []) as StageRow[];
     const activeStage = getActiveStage(orderedStages);
     if (!activeStage) return jsonError("Tidak ada tahap aktif yang dapat diproses.", 409);
+    console.log("[ADMIN ACTIVE STAGE]", { pengajuanId: body.id, tahap: activeStage.tahap, status: activeStage.status });
     if (!adminHasFullAccess && activeStage.role_petugas !== workflowRole) return jsonError(`Tahap aktif hanya dapat diproses oleh ${activeStage.nama_tahap}.`, 403);
     if (!["Menunggu", "Diproses"].includes(activeStage.status)) return jsonError("Tahap aktif sudah tidak bisa diproses.", 409);
 
@@ -96,12 +99,40 @@ export async function PATCH(request: NextRequest) {
     if (normalizedSubmissionStatus !== requiredStatus) return jsonError(`${adminHasFullAccess ? "Administrator" : roleLabelForError(workflowRole!)} hanya boleh memproses status ${requiredStatus}.`, 403);
     if (STAGE_WAITING_STATUS[activeStage.tahap] !== requiredStatus) return jsonError("Tahap workflow aktif tidak sesuai dengan status pengajuan.", 409);
 
+    // The server is the source of truth for sequencing. Do not rely on the
+    // aggregate submission status or on a stage/role supplied by the client.
+    const previousStages = orderedStages.filter((stage) => stage.tahap < activeStage.tahap);
+    if (previousStages.some((stage) => stage.status !== "Disetujui")) {
+        return jsonError("Tahap sebelumnya harus disetujui terlebih dahulu.", 409);
+    }
+    if (activeStage.tahap === 5 && orderedStages.find((stage) => stage.tahap === 4)?.status !== "Disetujui") {
+        return jsonError("Seklur harus disetujui sebelum Lurah dapat diproses.", 409);
+    }
+
     const isReject = body.action === "tolak" || body.action === "revisi";
     const catatan = (isReject ? body.alasan_penolakan : body.catatan_petugas)?.trim();
     if (isReject && !catatan) return jsonError("Alasan penolakan wajib diisi.");
-    if (!isReject && activeStage.tahap === 5 && body.action !== "selesai") return jsonError("Tahap Lurah wajib diproses dengan aksi VALIDASI & TERBITKAN SURAT.", 400);
+    if (!isReject && activeStage.tahap === 4 && body.action !== "proses_tahap") return jsonError("Tahap Seklur wajib diproses dengan aksi proses_tahap.", 400);
+    if (!isReject && activeStage.tahap === 5 && body.action !== "validasi_terbitkan") return jsonError("Tahap Lurah wajib diproses dengan aksi validasi_terbitkan.", 400);
+    if (!isReject && activeStage.tahap === 5) {
+        const { data: lurahProfiles, error: lurahError } = await supabase.from("petugas")
+            .select("id,username,nama_lengkap,nip,jabatan,role,is_active")
+            .eq("role", "lurah")
+            .eq("is_active", true)
+            .limit(2);
+        if (lurahError) return jsonError(lurahError.message, 500);
+        if (lurahProfiles?.length !== 1) return jsonError("Data authoritative Lurah aktif harus tersedia tepat satu.", 422);
+        return finalizeOfficialLetter(request, {
+            id: body.id,
+            actorProfile: session.profile,
+            signerProfile: lurahProfiles[0],
+            catatan,
+        });
+    }
     const decision = actionDecision(body.action, activeStage);
 
+    console.log("[ADMIN ACTION UPDATE]", { pengajuanId: body.id, tahap: activeStage.tahap });
+    const previousStageStatus = activeStage.status;
     const { error: verificationError } = await supabase.from("verifikasi_pengajuan").update({ status: decision.status, petugas_id: petugasId, acted_at: now, catatan: catatan ?? null }).eq("id", activeStage.id).in("status", ["Menunggu", "Diproses"]);
     if (verificationError) return jsonError(verificationError.message, 500);
 
@@ -120,11 +151,17 @@ export async function PATCH(request: NextRequest) {
     }
 
     const { data, error } = await supabase.from("pengajuan_surat").update(pengajuanUpdate).eq("id", body.id).select("*").single();
-    if (error) return jsonError(error.message, 500);
+    if (error) {
+        await supabase.from("verifikasi_pengajuan").update({ status: previousStageStatus, petugas_id: null, acted_at: null, catatan: null }).eq("id", activeStage.id).eq("status", decision.status);
+        return jsonError(error.message, 500);
+    }
 
     if (!isReject && nextStage) {
         const { error: nextError } = await supabase.from("verifikasi_pengajuan").update({ status: "Diproses" }).eq("id", nextStage.id).eq("status", "Menunggu");
-        if (nextError) return jsonError(nextError.message, 500);
+        if (nextError) {
+            await supabase.from("verifikasi_pengajuan").update({ status: previousStageStatus, petugas_id: null, acted_at: null, catatan: null }).eq("id", activeStage.id).eq("status", decision.status);
+            return jsonError(nextError.message, 500);
+        }
     }
     const trackingRows = isReject
         ? [{ pengajuan_id: body.id, status: activeStage.nama_tahap, keterangan: `${decision.trackingLabel} pada tahap ${stageShortName(activeStage)}. ${catatan}`, petugas: petugasName, created_at: now }]
@@ -134,7 +171,11 @@ export async function PATCH(request: NextRequest) {
                 { pengajuan_id: body.id, status: "Diproses", keterangan: nextStage ? `Pengajuan diteruskan ke ${stageShortName(nextStage)}.` : "Pengajuan diteruskan.", petugas: petugasName, created_at: now },
             ];
     const { error: trackingError } = await supabase.from("tracking_pengajuan").insert(trackingRows);
-    if (trackingError) return jsonError(trackingError.message, 500);
+    if (trackingError) {
+        await supabase.from("verifikasi_pengajuan").update({ status: previousStageStatus, petugas_id: null, acted_at: null, catatan: null }).eq("id", activeStage.id).eq("status", decision.status);
+        if (nextStage && !isReject) await supabase.from("verifikasi_pengajuan").update({ status: "Menunggu" }).eq("id", nextStage.id).eq("status", "Diproses");
+        return jsonError(trackingError.message, 500);
+    }
 
     const auditPayload = {
         pengajuan_id: body.id,
@@ -143,21 +184,25 @@ export async function PATCH(request: NextRequest) {
         role: adminHasFullAccess ? "admin" : workflowRole!,
         tahap: STAGE_AUDIT_LABEL[activeStage.tahap] ?? activeStage.nama_tahap,
         aksi: decision.auditLabel,
-        action: decision.auditLabel,
-        status: decision.trackingLabel,
         status_sebelum: requiredStatus,
         status_sesudah: status,
         catatan: catatan ?? null,
-        metadata: { status_sebelum: requiredStatus, status_sesudah: status, tahap: activeStage.tahap, next_tahap: nextStage?.tahap ?? null, role: adminHasFullAccess ? "admin" : workflowRole!, checklist: body.checklist ?? null, hasil_verifikasi: body.hasil_verifikasi ?? null, dokumentasi_url: body.dokumentasi_url ?? null },
     };
     const { error: auditError } = await supabase.from("audit_pengajuan").insert(auditPayload);
-    if (auditError) return jsonError(auditError.message, 500);
+    if (auditError) {
+        console.error("[ADMIN ACTION ERROR] audit_pengajuan insert", { pengajuanId: body.id, tahap: activeStage.tahap, message: auditError.message, code: auditError.code });
+        await supabase.from("verifikasi_pengajuan").update({ status: previousStageStatus, petugas_id: null, acted_at: null, catatan: null }).eq("id", activeStage.id).eq("status", decision.status);
+        if (nextStage && !isReject) await supabase.from("verifikasi_pengajuan").update({ status: "Menunggu" }).eq("id", nextStage.id).eq("status", "Diproses");
+        await supabase.from("pengajuan_surat").update({ status: "Diproses", updated_at: now }).eq("id", body.id);
+        return jsonError(auditError.message, 500);
+    }
 
     await createWargaNotification({ pengajuanId: body.id, nik: String(pengajuanAktif.nik ?? ""), status: notificationStatusFor(body.action, activeStage), catatan }).catch((notificationError) => {
         console.error("WARGA NOTIFICATION INSERT ERROR", notificationError);
     });
 
-    return NextResponse.json({ ok: true, data });
+    console.log("[ADMIN ACTION SUCCESS]", { pengajuanId: body.id, tahap: activeStage.tahap });
+    return NextResponse.json({ ok: true, message: `${stageShortName(activeStage)} berhasil disetujui.`, data });
 }
 
 function roleLabelForError(role: string) {

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { createSupabaseAdminClient } from "@/services/supabase";
+import { createSupabaseAdminClient, createSupabaseAnonClient } from "@/services/supabase";
+import { getAuthRedirectUrl } from "@/lib/auth-url";
 import { assertWargaProfilePayloadIsSchemaSafe, WARGA_PROFILE_CHANGE_DOCUMENT_BUCKET, WARGA_PROFILE_PHOTO_BUCKET, wargaRegisterSchema, type WargaProfileInsertPayload } from "@/services/warga-auth.service";
 
-const MAX_FILE_SIZE = 2 * 1024 * 1024;
+const MAX_FILE_SIZE = 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
 
 function errorMessage(error: unknown) {
@@ -25,7 +26,7 @@ function extensionFor(file: File) {
 function validateImage(file: File | null, label: string) {
     if (!file || file.size === 0) throw new Error(`${label} wajib diupload.`);
     if (!ALLOWED_IMAGE_TYPES.has(file.type)) throw new Error("Format foto harus JPG, JPEG, PNG, atau WEBP.");
-    if (file.size > MAX_FILE_SIZE) throw new Error("Foto terlalu besar. Silakan pilih foto maksimal 2 MB.");
+    if (file.size > MAX_FILE_SIZE) throw new Error("Ukuran file masih lebih dari 1 MB. Silakan pilih file lain.");
 }
 
 function isBucketNotFound(error: { message?: string; statusCode?: string | number; error?: string }) {
@@ -100,11 +101,13 @@ export async function POST(request: Request) {
         if (existingProfile.error) throw existingProfile.error;
         if (existingProfile.data) return NextResponse.json({ error: "Email atau NIK sudah terdaftar." }, { status: 409 });
 
-        const createUserResponse = await supabaseAdmin.auth.admin.createUser({
+        const createUserResponse = await createSupabaseAnonClient().auth.signUp({
             email: payload.email,
             password: payload.password,
-            email_confirm: true,
-            user_metadata: { nama_lengkap: payload.nama_lengkap, nik: payload.nik, role: "warga" },
+            options: {
+                emailRedirectTo: getAuthRedirectUrl(),
+                data: { nama_lengkap: payload.nama_lengkap, nik: payload.nik, role: "warga" },
+            },
         });
         if (createUserResponse.error) throw new Error(createUserResponse.error.message || "Auth error saat membuat akun warga.");
         const user = createUserResponse.data.user;
@@ -134,6 +137,9 @@ export async function POST(request: Request) {
             tempat_lahir: payload.tempat_lahir,
             tanggal_lahir: payload.tanggal_lahir,
             jenis_kelamin: payload.jenis_kelamin,
+            agama: payload.agama,
+            status_perkawinan: payload.status_perkawinan,
+            status_pekerjaan: payload.status_pekerjaan,
             foto_url: fotoUrl,
             role: "warga",
             status_verifikasi: "Belum Terverifikasi",

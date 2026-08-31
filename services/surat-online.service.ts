@@ -1,16 +1,20 @@
 import { z } from "zod";
 import { createSupabaseAdminClient, createSupabaseBrowserClient } from "@/services/supabase";
-import { assertWargaAccountVerifiedByNik } from "@/services/warga-verification-workflow";
+import { ACCOUNT_VERIFICATION_BLOCK_MESSAGE } from "@/services/warga-verification-workflow";
 import { forwardToN8n, getAppBaseUrl } from "@/services/integrations";
 import { createVerificationRows } from "@/services/verification-workflow";
 import { createWargaNotification, type NotificationStatus } from "@/services/warga-notifikasi.service";
+import { getActiveServiceTemplate, validateTemplateFields } from "@/services/official-document";
+import { SUBMISSION_DOCUMENT_BUCKET } from "@/services/submission-storage";
+import { compressWargaFile, MAX_WARGA_FILE_SIZE } from "@/services/warga-file-compress";
+import { MARRIAGE_SERVICE_ID, MARRIAGE_SERVICE_NAME, MARRIAGE_TEMPLATE_ID, validateMarriageAdditionalData } from "@/services/marriage-submission";
 
 export const STATUS_STEPS = ["Permohonan diterima", "Verifikasi", "Diproses", "Ditandatangani", "Selesai"] as const;
 export const SUBMISSION_STATUS = ["Menunggu Verifikasi", "Verifikasi", "Diproses", "Ditandatangani", "Selesai", "Ditolak"] as const;
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
-const ALLOWED_FILE_TYPES = ["application/pdf", "image/jpeg", "image/png"];
-const SUBMISSION_STORAGE_BUCKET = "surat";
+const MAX_FILE_SIZE = MAX_WARGA_FILE_SIZE;
+const ALLOWED_FILE_TYPES = ["application/pdf", "image/jpeg", "image/jpg", "image/png", "image/webp"];
+const SUBMISSION_STORAGE_BUCKET = SUBMISSION_DOCUMENT_BUCKET;
 
 function notificationStatusFromSubmissionStatus(status: string): NotificationStatus | null {
     const normalized = status.trim().toLowerCase();
@@ -30,8 +34,8 @@ export const submissionSchema = z.object({
     tanggal_lahir: z.string().min(1, "Tanggal lahir wajib diisi"),
     jenis_kelamin: z.string().min(1, "Jenis kelamin wajib dipilih"),
     agama: z.string().min(1, "Agama wajib dipilih"),
-    status_perkawinan: z.string().min(1, "Status perkawinan wajib dipilih"),
-    pekerjaan: z.string().min(2, "Pekerjaan wajib diisi"),
+    status_perkawinan: z.string().min(1, "Status perkawinan wajib tersedia pada profil warga"),
+    status_pekerjaan: z.string().min(1, "Status pekerjaan wajib tersedia pada profil warga"),
     alamat: z.string().min(8, "Alamat wajib diisi"),
     rt_rw: z.string().min(3, "RT/RW wajib diisi"),
     kelurahan: z.string().min(2, "Kelurahan wajib diisi"),
@@ -41,7 +45,10 @@ export const submissionSchema = z.object({
     jenis_surat: z.string().min(1, "Jenis surat wajib diisi"),
     keperluan: z.string().min(5, "Keperluan wajib diisi"),
     catatan: z.string().optional().default(""),
+    additional_data: z.record(z.string(), z.unknown()).optional().default({}),
 });
+const DOMISILI_SERVICE_NAME = "PENERBITAN SURAT KETERANGAN DOMISILI";
+export const isDomisiliService = (serviceName?: string) => serviceName === DOMISILI_SERVICE_NAME;
 
 export type SubmissionInput = z.infer<typeof submissionSchema>;
 type UploadStage = "file_upload" | "pengajuan_insert" | "verification_insert" | "dokumen_insert" | "tracking_insert";
@@ -80,7 +87,27 @@ type SubmissionRequest = SubmissionInput & {
     physical_proof_approved?: boolean;
     physical_proof_generated_at?: string | null;
     materai_status?: string | null;
+    additional_data?: Record<string, unknown>;
 };
+
+type SubmissionRequestError = Error & {
+    httpStatus?: number;
+    httpStatusText?: string;
+    responseBody?: string;
+    resultError?: unknown;
+    resultMessage?: unknown;
+    validationError?: unknown;
+};
+
+function formatDiagnostic(value: unknown): string {
+    if (value == null) return "UNKNOWN";
+    if (typeof value === "string") return value;
+    try {
+        return JSON.stringify(value);
+    } catch {
+        return String(value);
+    }
+}
 
 type SubmissionPathKey = "file_ktp" | "file_kk" | "file_pendukung";
 
@@ -118,7 +145,7 @@ function logSupabaseStageError(label: string, error: { message?: string; statusC
 
 export function validateUploadFile(file: File) {
     if (!ALLOWED_FILE_TYPES.includes(file.type)) throw new Error("File harus PDF, JPG, atau PNG.");
-    if (file.size > MAX_FILE_SIZE) throw new Error("Ukuran file terlalu besar. Maksimal 5 MB.");
+    if (file.size > MAX_FILE_SIZE) throw new Error("Ukuran file masih lebih dari 1 MB. Silakan pilih file lain.");
 }
 
 function safeStorageSegment(value: string) {
@@ -128,7 +155,7 @@ function safeStorageSegment(value: string) {
 function validateUploadedFileMeta(file: UploadedFileMeta, label: string) {
     if (!file.path || file.path.includes("..")) throw new Error(`${label} tidak valid.`);
     if (!ALLOWED_FILE_TYPES.includes(file.type)) throw new Error(`${label} harus PDF, JPG, atau PNG.`);
-    if (file.size > MAX_FILE_SIZE) throw new Error(`Ukuran ${label} terlalu besar. Maksimal 5 MB.`);
+    if (file.size > MAX_FILE_SIZE) throw new Error(`Ukuran ${label} masih lebih dari 1 MB. Silakan pilih file lain.`);
 }
 
 function extensionFromFile(file: File) {
@@ -137,22 +164,23 @@ function extensionFromFile(file: File) {
 }
 
 export async function uploadSubmissionAttachment(folder: "ktp" | "kk" | "pendukung", file: File, ownerId: string, nomorPengajuan?: string) {
-    validateUploadFile(file);
+    const processedFile = await compressWargaFile(file);
+    validateUploadFile(processedFile);
     const client = createSupabaseBrowserClient();
     const { data: authData, error: authError } = await client.auth.getUser();
     if (process.env.NODE_ENV !== "production") logUploadStage("[surat-online:auth-check]", { hasUser: Boolean(authData?.user), authError: authError?.message ?? null });
     if (authError || !authData.user) throw new Error("Supabase Auth session belum aktif.");
     const safeNomor = safeStorageSegment(nomorPengajuan ?? `draft-${Date.now()}`);
-    const path = `${authData.user.id}/${safeNomor}/${folder}.${extensionFromFile(file)}`;
-    const { data, error } = await client.storage.from(SUBMISSION_STORAGE_BUCKET).upload(path, file, {
+    const path = `${authData.user.id}/${safeNomor}/${folder}.${extensionFromFile(processedFile)}`;
+    const { data, error } = await client.storage.from(SUBMISSION_STORAGE_BUCKET).upload(path, processedFile, {
         cacheControl: "3600",
-        contentType: file.type,
+        contentType: processedFile.type,
         upsert: false,
     });
     if (error) throw new Error(error.message || "Gagal mengunggah dokumen.");
     const uploadedPath = data.path;
-    logUploadStage("UPLOAD PATH", { bucket: SUBMISSION_STORAGE_BUCKET, userId: authData.user.id, ownerId, path: uploadedPath, plannedPath: path, fileName: file.name });
-    return { path: uploadedPath, url: null, name: file.name, type: file.type, size: file.size } satisfies UploadedFileMeta;
+    logUploadStage("UPLOAD COMPLETE", { bucket: SUBMISSION_STORAGE_BUCKET, hasPath: Boolean(uploadedPath), fileType: file.type, fileSize: file.size });
+    return { path: uploadedPath, url: null, name: processedFile.name, type: processedFile.type, size: processedFile.size } satisfies UploadedFileMeta;
 }
 
 export async function removeSubmissionAttachments(paths: string[]) {
@@ -217,7 +245,7 @@ async function sendPengajuanEmail(payload: {
             "content-type": "application/json",
         },
         body: JSON.stringify({
-            from: process.env.RESEND_FROM_EMAIL ?? "Kelurahan Tamansari <noreply@tamansari-merak.vercel.app>",
+            from: process.env.RESEND_FROM_EMAIL ?? "Kelurahan Tamansari <noreply@example.com>",
             to: payload.to,
             subject: "Pengajuan Surat Berhasil",
             html: `
@@ -269,22 +297,58 @@ export async function getLayananList() {
     return data ?? [];
 }
 
-export async function createSubmission(formData: SubmissionRequest) {
+export async function createSubmission(formData: SubmissionRequest, authenticatedUserId?: string) {
     if (typeof window !== "undefined") {
         try {
             assertTextPathPayload(formData);
+            const browserClient = createSupabaseBrowserClient();
+            const { data: sessionData, error: sessionError } = await browserClient.auth.getSession();
+            const accessToken = sessionData.session?.access_token;
+            if (sessionError || !accessToken) throw new Error("Sesi warga tidak ditemukan. Silakan login kembali.");
+            const serializedPayload = JSON.stringify(formData);
             const response = await fetch("/api/surat-online/pengajuan", {
                 method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify(formData),
+                headers: { "content-type": "application/json", authorization: `Bearer ${accessToken}` },
+                body: serializedPayload,
             });
-            const result = await response.json().catch(() => null);
-            const message = typeof result?.error === "string" ? result.error : result?.error?.message;
-            if (!response.ok || !result?.ok) throw new Error(message ?? "Gagal mengirim pengajuan.");
+            const responseText = await response.text();
+            let result: Record<string, unknown> | null = null;
+            try {
+                const parsed: unknown = responseText ? JSON.parse(responseText) : null;
+                if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) result = parsed as Record<string, unknown>;
+            } catch {
+                // Keep the text below so a non-JSON API response is diagnosable.
+            }
+            const resultError = result?.error;
+            const message = typeof resultError === "string"
+                ? resultError
+                : resultError && typeof resultError === "object" && typeof (resultError as Record<string, unknown>).message === "string"
+                    ? (resultError as Record<string, unknown>).message as string
+                    : typeof result?.message === "string" ? result.message : undefined;
+            if (!response.ok || result?.ok !== true) {
+                const submitError = new Error(message ?? (responseText.trim() || `Gagal mengirim pengajuan (${response.status})`)) as SubmissionRequestError;
+                submitError.httpStatus = response.status;
+                submitError.httpStatusText = response.statusText;
+                submitError.responseBody = responseText;
+                submitError.resultError = resultError;
+                submitError.resultMessage = result?.message;
+                submitError.validationError = result?.validationError ?? result?.details;
+                throw submitError;
+            }
             return result.data;
         } catch (error) {
-            console.error("SURAT ONLINE CLIENT SUBMIT ERROR");
-            console.dir(error, { depth: null });
+            const errorRecord = error as SubmissionRequestError;
+            console.error(
+                "SURAT ONLINE CLIENT SUBMIT ERROR\n" +
+                `HTTP_STATUS=${String(errorRecord?.httpStatus ?? "UNKNOWN")}\n` +
+                `HTTP_STATUS_TEXT=${String(errorRecord?.httpStatusText ?? "UNKNOWN")}\n` +
+                `RESPONSE_BODY=${formatDiagnostic(errorRecord?.responseBody)}\n` +
+                `RESULT_ERROR=${formatDiagnostic(errorRecord?.resultError)}\n` +
+                `RESULT_MESSAGE=${formatDiagnostic(errorRecord?.resultMessage)}\n` +
+                `VALIDATION_ERROR=${formatDiagnostic(errorRecord?.validationError)}\n` +
+                `ERROR_NAME=${String(errorRecord?.name ?? "UNKNOWN")}\n` +
+                `ERROR_MESSAGE=${String(errorRecord?.message ?? error ?? "UNKNOWN")}`
+            );
             throw error;
         } finally {
             // Semua cleanup UI ditangani komponen pemanggil.
@@ -293,6 +357,7 @@ export async function createSubmission(formData: SubmissionRequest) {
 
     const client = createSupabaseAdminClient();
     if (!client) throw new Error("Supabase service role belum dikonfigurasi.");
+    if (!authenticatedUserId) throw new Error("Sesi warga tidak ditemukan. Silakan login kembali.");
 
     let payload: SubmissionInput;
     let ktpMeta: UploadedFileMeta | null = null;
@@ -301,7 +366,11 @@ export async function createSubmission(formData: SubmissionRequest) {
 
     assertTextPathPayload(formData);
 
-    const getValue = (key: keyof SubmissionRequest) => formData[key];
+    const getValue = (key: keyof SubmissionRequest) => {
+        const source = formData;
+        const value = source[key];
+        return value;
+    };
     const readPath = (key: "file_ktp" | "file_kk" | "file_pendukung") => {
         const value = getValue(key);
         return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -319,6 +388,9 @@ export async function createSubmission(formData: SubmissionRequest) {
     };
 
     try {
+        const submittedAdditionalData = formData.additional_data ?? {};
+        const currentAddress = String(submittedAdditionalData.alamat_sekarang ?? "").trim();
+        if (process.env.NODE_ENV !== "production") console.error("[TRACE-CREATE-BEFORE-VALIDATION]", { hasNik: typeof formData?.nik === "string" && formData.nik.trim().length > 0, nikLength: typeof formData?.nik === "string" ? formData.nik.trim().length : 0 });
         payload = submissionSchema.parse({
             layanan_id: getValue("layanan_id"),
             nik: getValue("nik"),
@@ -329,7 +401,7 @@ export async function createSubmission(formData: SubmissionRequest) {
             jenis_kelamin: getValue("jenis_kelamin"),
             agama: getValue("agama"),
             status_perkawinan: getValue("status_perkawinan"),
-            pekerjaan: getValue("pekerjaan"),
+            status_pekerjaan: getValue("status_pekerjaan"),
             alamat: getValue("alamat"),
             rt_rw: getValue("rt_rw"),
             kelurahan: getValue("kelurahan"),
@@ -339,22 +411,78 @@ export async function createSubmission(formData: SubmissionRequest) {
             jenis_surat: getValue("jenis_surat"),
             keperluan: getValue("keperluan"),
             catatan: getValue("catatan") ?? "",
+            additional_data: getValue("additional_data") ?? {},
         });
+        if (process.env.NODE_ENV !== "production") console.error("[TRACE-CREATE-AFTER-VALIDATION]", { success: true });
         ktpMeta = readPath("file_ktp") ? { path: readPath("file_ktp") ?? "", url: null, name: "KTP", type: "application/pdf", size: 0 } : readMeta("ktp");
         kkMeta = readPath("file_kk") ? { path: readPath("file_kk") ?? "", url: null, name: "KK", type: "application/pdf", size: 0 } : readMeta("kk");
         pendukungMeta = readPath("file_pendukung") ? { path: readPath("file_pendukung") ?? "", url: null, name: "Dokumen pendukung", type: "application/pdf", size: 0 } : readMeta("pendukung");
         if (Number.isNaN(Date.parse(payload.tanggal_lahir))) throw new Error("Tanggal lahir tidak valid.");
         if (formData.consent !== true) throw new Error("Persetujuan pernyataan kebenaran wajib diberikan.");
-        await assertWargaAccountVerifiedByNik(payload.nik);
+        const profileColumns = "id,nik,nama_lengkap,nomor_kk,tempat_lahir,tanggal_lahir,jenis_kelamin,agama,status_perkawinan,status_pekerjaan,alamat,rt,rw,kelurahan,kecamatan,nomor_hp,email,status_verifikasi";
+        const profileResult = await client
+            .from("warga_profiles")
+            .select(profileColumns)
+            // The deployed schema binds warga_profiles directly to auth.users via id.
+            .eq("id", authenticatedUserId)
+            .maybeSingle();
+        if (profileResult.error) throw profileResult.error;
+
+        const profile = profileResult.data;
+        if (!profile) throw new Error("Profil warga terverifikasi tidak ditemukan.");
+        const layananForAddress = await client.from("layanan").select("id,nama").eq("id", getValue("layanan_id")).maybeSingle();
+        if (layananForAddress.error) throw layananForAddress.error;
+        const domisili = isDomisiliService(layananForAddress.data?.nama);
+        const marriage = layananForAddress.data?.id === MARRIAGE_SERVICE_ID;
+        if (marriage && layananForAddress.data?.nama !== MARRIAGE_SERVICE_NAME) throw new Error("Konfigurasi layanan Pengantar Nikah tidak valid.");
+        if (domisili && !currentAddress) throw new Error("Alamat sekarang wajib diisi.");
+        if (profile.status_verifikasi !== "Terverifikasi") throw new Error(ACCOUNT_VERIFICATION_BLOCK_MESSAGE);
+        if (typeof profile.agama !== "string" || !profile.agama.trim()) throw new Error("Data agama pada profil warga belum tersedia.");
+        if (typeof profile.status_perkawinan !== "string" || !profile.status_perkawinan.trim()) throw new Error("Data status perkawinan pada profil warga belum tersedia.");
+        if (typeof profile.status_pekerjaan !== "string" || !profile.status_pekerjaan.trim()) throw new Error("Data status pekerjaan pada profil warga belum tersedia.");
+        // Identitas legal selalu authoritative dari profil terverifikasi; payload browser tidak dipercaya.
+        payload = submissionSchema.parse({
+            ...payload,
+            nik: profile.nik,
+            nama_lengkap: profile.nama_lengkap,
+            nomor_kk: profile.nomor_kk,
+            tempat_lahir: profile.tempat_lahir,
+            tanggal_lahir: profile.tanggal_lahir,
+            jenis_kelamin: profile.jenis_kelamin,
+            agama: profile.agama,
+            status_perkawinan: profile.status_perkawinan,
+            status_pekerjaan: profile.status_pekerjaan,
+            alamat: profile.alamat,
+            rt_rw: `${profile.rt ?? ""}/${profile.rw ?? ""}`,
+            kelurahan: profile.kelurahan,
+            kecamatan: profile.kecamatan,
+            nomor_hp: profile.nomor_hp ?? payload.nomor_hp,
+            email: profile.email ?? payload.email,
+        });
+        const template = await getActiveServiceTemplate(client, payload.layanan_id);
+        if (marriage && (!template || template.templateId !== MARRIAGE_TEMPLATE_ID)) throw new Error("Template Pengantar Nikah tidak valid atau belum aktif.");
+        const marriageData = marriage ? validateMarriageAdditionalData(payload.additional_data) : null;
+        if (template) {
+            const validatedTemplateFields = validateTemplateFields(
+                template.fieldSchema ?? [],
+                { ...(payload.additional_data ?? {}), keperluan: payload.keperluan },
+                {
+                    alamat_asal: profile.alamat,
+                    ...(domisili ? { alamat_sekarang: currentAddress } : {}),
+                },
+            );
+            payload.additional_data = marriageData ? { ...validatedTemplateFields, ...marriageData } : validatedTemplateFields;
+        }
+        payload.additional_data = {
+            ...(payload.additional_data ?? {}),
+            alamat_asal: profile.alamat,
+            ...(domisili ? { alamat_sekarang: currentAddress } : {}),
+        };
         [ktpMeta, kkMeta, pendukungMeta].filter(Boolean).forEach((file) => {
             if (!file?.path || file.path.includes("..")) throw new Error("Path dokumen tidak valid.");
         });
     } catch (error) {
-        console.error("SURAT ONLINE VALIDATION ERROR");
-        console.dir(error, { depth: null });
         throw error;
-    } finally {
-        // Tidak ada resource yang perlu dibersihkan pada tahap validasi.
     }
 
     let nomor_pengajuan = "";
@@ -377,7 +505,6 @@ export async function createSubmission(formData: SubmissionRequest) {
             throw new SupabaseOperationError("SUPABASE SELECT LAYANAN ERROR", layananError);
         }
         if (!layanan) throw new Error("Layanan tidak ditemukan atau tidak aktif.");
-
         const layananRecord = layanan as Record<string, unknown>;
         const jenisSuratFromDatabase = String(layananRecord.nama ?? payload.jenis_surat);
 
@@ -397,13 +524,6 @@ export async function createSubmission(formData: SubmissionRequest) {
         const kkUpload = kkMeta?.path ? { path: kkMeta.path } : null;
         const pendukungUpload = pendukungMeta?.path ? { path: pendukungMeta.path } : null;
 
-        logUploadStage("DATABASE PATH", {
-            bucket: SUBMISSION_STORAGE_BUCKET,
-            file_ktp: ktpUpload?.path ?? null,
-            file_kk: kkUpload?.path ?? null,
-            file_pendukung: pendukungUpload?.path ?? null,
-        });
-
         const [rt = "", rw = ""] = payload.rt_rw.split("/").map((part) => part.trim());
         const pengajuanPayload = {
             layanan_id: payload.layanan_id,
@@ -415,7 +535,6 @@ export async function createSubmission(formData: SubmissionRequest) {
             jenis_kelamin: payload.jenis_kelamin,
             agama: payload.agama,
             status_perkawinan: payload.status_perkawinan,
-            pekerjaan: payload.pekerjaan,
             alamat: payload.alamat,
             rt,
             rw,
@@ -431,10 +550,12 @@ export async function createSubmission(formData: SubmissionRequest) {
             file_kk: kkUpload?.path ?? null,
             file_pendukung: pendukungUpload?.path ?? null,
             consent_given: true,
+            additional_data: {
+                ...(payload.additional_data ?? {}),
+                status_perkawinan: payload.status_perkawinan ?? null,
+                status_pekerjaan: payload.status_pekerjaan ?? null,
+            },
         };
-
-        logUploadStage("[surat-online:pengajuan-insert:start]", { stage: "pengajuan_insert", hasKtpPath: Boolean(pengajuanPayload.file_ktp), hasKkPath: Boolean(pengajuanPayload.file_kk), hasPendukungPath: Boolean(pengajuanPayload.file_pendukung) });
-        console.log("[CREATE SUBMISSION] payload:", pengajuanPayload);
 
         const { data: pengajuan, error } = await client.from("pengajuan_surat").insert(pengajuanPayload).select("id,nomor_pengajuan,status,created_at").single();
         if (error) {

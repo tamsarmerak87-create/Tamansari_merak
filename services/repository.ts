@@ -1,4 +1,5 @@
 import { agenda, gallery, news, statistics } from "@/constants/site";
+import { MASTER_LAYANAN } from "@/constants/master-layanan";
 import type { AdminProfile, AgendaItem, BannerRecord, ComplaintRecord, EmployeeRecord, FaqRecord, LetterRecord, NewsItem, PosbankumRecord, PublicService, ServiceCategory, Statistic } from "@/types";
 import { createSupabaseBrowserClient, createSupabaseServerClient, subscribeToTable } from "@/services/supabase";
 
@@ -33,6 +34,21 @@ function mapLayananRow(row: LayananRow): PublicService {
         online: row.aktif,
     };
 }
+
+const masterServices: PublicService[] = MASTER_LAYANAN.map((layanan) => ({
+    id: `master-layanan-${layanan.urutan}`,
+    title: layanan.nama,
+    category: "administrasi",
+    description: layanan.deskripsi,
+    requirements: layanan.persyaratan,
+    flow: layanan.alur,
+    legalBasis: layanan.dasar_hukum,
+    output: layanan.output,
+    channel: layanan.kanal,
+    // Master data is display-only until the corresponding Supabase row exists.
+    // Never expose its synthetic ID as an online submission target.
+    online: false,
+}));
 
 function getClient() {
     return typeof window === "undefined" ? createSupabaseServerClient() : createSupabaseBrowserClient();
@@ -100,10 +116,11 @@ export const publicRepository = {
 
         if (error) {
             console.error("Supabase layanan error:", error);
-            throw error;
+            return masterServices;
         }
 
-        return ((data ?? []) as LayananRow[]).map(mapLayananRow);
+        const services = ((data ?? []) as LayananRow[]).map(mapLayananRow);
+        return services.length > 0 ? services : masterServices;
     },
     getNews: async () => createRepository<NewsItem>("news").list(news),
     getAgenda: async () => createRepository<AgendaItem>("agenda").list(agenda),

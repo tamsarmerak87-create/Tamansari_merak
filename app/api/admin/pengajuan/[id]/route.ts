@@ -2,34 +2,20 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { getAdminSession, requireAdmin } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
+import { normalizeSubmissionObjectPath, SUBMISSION_DOCUMENT_BUCKET } from "@/services/submission-storage";
 
 type RouteContext = { params: Promise<{ id: string }> };
 type DokumenPengajuan = { url_file: string | null };
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const SURAT_BUCKET = "surat";
+const SURAT_BUCKET = SUBMISSION_DOCUMENT_BUCKET;
 
 function jsonError(message: string, status = 400) {
     return NextResponse.json({ ok: false, error: message }, { status });
 }
 
 function getSuratStoragePath(urlFile?: string | null) {
-    if (!urlFile) return null;
-    const trimmed = urlFile.trim();
-    if (!trimmed) return null;
-
-    try {
-        const parsed = new URL(trimmed);
-        const publicPrefix = `/storage/v1/object/public/${SURAT_BUCKET}/`;
-        const signedPrefix = `/storage/v1/object/sign/${SURAT_BUCKET}/`;
-        const prefix = parsed.pathname.includes(publicPrefix) ? publicPrefix : parsed.pathname.includes(signedPrefix) ? signedPrefix : null;
-        if (!prefix) return null;
-        return decodeURIComponent(parsed.pathname.split(prefix)[1] ?? "").replace(/^\/+/, "") || null;
-    } catch {
-        const normalized = trimmed.replace(/^\/+/, "");
-        if (/^https?:\/\//i.test(normalized)) return null;
-        return normalized.startsWith(`${SURAT_BUCKET}/`) ? normalized.slice(SURAT_BUCKET.length + 1) : normalized;
-    }
+    return normalizeSubmissionObjectPath(urlFile) || null;
 }
 
 export async function DELETE(request: NextRequest, { params }: RouteContext) {

@@ -1,9 +1,12 @@
 import type { User } from "@supabase/supabase-js";
 import { z } from "zod";
 import { createSupabaseBrowserClient } from "@/services/supabase";
+import { getAuthRedirectUrl, isGoogleLoginConfigured } from "@/lib/auth-url";
+import { compressWargaFile, MAX_WARGA_FILE_SIZE } from "@/services/warga-file-compress";
 
 export const WARGA_PROFILE_PHOTO_BUCKET = "avatars";
 export const WARGA_PROFILE_CHANGE_DOCUMENT_BUCKET = "profile-change-documents";
+export const WARGA_RELIGIONS = ["Islam", "Kristen", "Katolik", "Hindu", "Buddha", "Konghucu"] as const;
 
 export type WargaRole = "admin" | "petugas" | "warga";
 export type WargaVerificationStatus = "Belum Terverifikasi" | "Akun Terverifikasi" | "Terverifikasi" | "Ditolak";
@@ -20,6 +23,9 @@ export type WargaProfile = {
     tempat_lahir: string;
     tanggal_lahir: string;
     jenis_kelamin?: string | null;
+    agama?: string | null;
+    status_perkawinan?: string | null;
+    status_pekerjaan?: string | null;
     alamat: string;
     rt: string;
     rw: string;
@@ -60,6 +66,9 @@ export const wargaRegisterSchema = z.object({
     tempat_lahir: z.string().min(2, "Tempat lahir wajib diisi"),
     tanggal_lahir: z.string().min(1, "Tanggal lahir wajib diisi"),
     jenis_kelamin: z.string().min(1, "Jenis kelamin wajib dipilih"),
+    agama: z.enum(WARGA_RELIGIONS, { message: "Agama wajib dipilih" }),
+    status_perkawinan: z.enum(["Menikah", "Belum Menikah", "Janda", "Duda"], { message: "Status perkawinan wajib dipilih" }),
+    status_pekerjaan: z.enum(["Bekerja", "Belum Bekerja"], { message: "Status pekerjaan wajib dipilih" }),
     alamat: z.string().min(8, "Alamat wajib diisi"),
     rt: z.string().min(1, "RT wajib diisi"),
     rw: z.string().min(1, "RW wajib diisi"),
@@ -95,6 +104,9 @@ export const wargaProfileInsertColumns = [
     "tempat_lahir",
     "tanggal_lahir",
     "jenis_kelamin",
+    "agama",
+    "status_perkawinan",
+    "status_pekerjaan",
     "foto_url",
     "role",
     "status_verifikasi",
@@ -119,6 +131,9 @@ export const wargaProfileInsertSchema = z.object({
     tempat_lahir: z.string().min(2),
     tanggal_lahir: z.string().min(1),
     jenis_kelamin: z.string().min(1),
+    agama: z.enum(WARGA_RELIGIONS),
+    status_perkawinan: z.enum(["Menikah", "Belum Menikah", "Janda", "Duda"]),
+    status_pekerjaan: z.enum(["Bekerja", "Belum Bekerja"]),
     foto_url: z.string().nullable().optional(),
     role: z.literal("warga"),
     status_verifikasi: z.enum(["Belum Terverifikasi", "Akun Terverifikasi", "Terverifikasi"]),
@@ -144,7 +159,7 @@ function client() {
     return supabase;
 }
 
-const WARGA_PROFILE_COLUMNS = "id,nama_lengkap,nik,nomor_kk,email,nomor_hp,nomor_whatsapp,tempat_lahir,tanggal_lahir,jenis_kelamin,alamat,rt,rw,kelurahan,kecamatan,foto_url,role,status_verifikasi,alasan_penolakan,created_at,updated_at";
+const WARGA_PROFILE_COLUMNS = "id,nama_lengkap,nik,nomor_kk,email,nomor_hp,nomor_whatsapp,tempat_lahir,tanggal_lahir,jenis_kelamin,agama,status_perkawinan,status_pekerjaan,alamat,rt,rw,kelurahan,kecamatan,foto_url,role,status_verifikasi,tahap_verifikasi,alasan_penolakan,created_at,updated_at";
 
 type ProfileQueryDebug = {
     authUserId: string;
@@ -224,29 +239,20 @@ export async function getCurrentWarga() {
 export type WargaRegisterFiles = { ktp?: File | null; kk?: File | null; selfie?: File | null };
 
 export async function registerWarga(input: WargaRegisterInput, files?: WargaRegisterFiles) {
-    try {
-        const payload = wargaRegisterSchema.parse(input);
-        const supabase = client();
+    const payload = wargaRegisterSchema.parse(input);
 
-        const formData = new FormData();
-        formData.append("payload", JSON.stringify(payload));
-        if (files?.ktp) formData.append("ktp", files.ktp);
-        if (files?.kk) formData.append("kk", files.kk);
-        if (files?.selfie) formData.append("selfie", files.selfie);
-        const response = await fetch("/api/warga/register", files ? { method: "POST", body: formData } : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
-        const result = await response.json().catch(() => null) as { user?: User; profile?: WargaProfile; error?: string } | null;
-        if (!response.ok || !result?.user || !result.profile) {
-            throw new Error(result?.error || "Registrasi gagal. Akun Auth tidak dibuat atau sudah dibersihkan karena profil gagal dibuat.");
-        }
-
-        const signInResponse = await supabase.auth.signInWithPassword({ email: payload.email, password: payload.password });
-        if (signInResponse.error) {
-            throw new Error(`Akun dan profil berhasil dibuat, tetapi login otomatis gagal: ${signInResponse.error.message}. Silakan login manual.`);
-        }
-        return { user: signInResponse.data.user ?? result.user, profile: result.profile };
-    } catch (error) {
-        throw error;
+    const formData = new FormData();
+    formData.append("payload", JSON.stringify(payload));
+    if (files?.ktp) formData.append("ktp", await compressWargaFile(files.ktp));
+    if (files?.kk) formData.append("kk", await compressWargaFile(files.kk));
+    if (files?.selfie) formData.append("selfie", await compressWargaFile(files.selfie));
+    const response = await fetch("/api/warga/register", files ? { method: "POST", body: formData } : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+    const result = await response.json().catch(() => null) as { user?: User; profile?: WargaProfile; error?: string } | null;
+    if (!response.ok || !result?.user || !result.profile) {
+        throw new Error(result?.error || "Registrasi gagal. Akun Auth tidak dibuat atau sudah dibersihkan karena profil gagal dibuat.");
     }
+
+    return { user: result.user, profile: result.profile, requiresEmailConfirmation: true };
 }
 
 async function findEmailByNik(nik: string) {
@@ -265,10 +271,32 @@ export async function loginWarga(input: WargaLoginInput) {
     return data;
 }
 
-export async function signInWithGoogle() {
-    const redirectTo = typeof window !== "undefined" ? `${window.location.origin}/verify` : undefined;
-    const { data, error } = await client().auth.signInWithOAuth({ provider: "google", options: { redirectTo } });
+export const wargaPasswordSchema = z.string().min(8, "Password minimal 8 karakter.");
+
+export function isEmailConfirmationError(error: unknown) {
+    const message = error instanceof Error ? error.message : "";
+    return /email not confirmed|email.*confirm/i.test(message);
+}
+
+export async function resendSignupConfirmation(email: string) {
+    if (!z.string().email().safeParse(email.trim()).success) throw new Error("Masukkan alamat email yang valid.");
+    const { error } = await client().auth.resend({ type: "signup", email: email.trim(), options: { emailRedirectTo: getAuthRedirectUrl() } });
     if (error) throw error;
+}
+
+export async function requestPasswordReset(email: string) {
+    if (!z.string().email().safeParse(email.trim()).success) throw new Error("Masukkan alamat email yang valid.");
+    const { error } = await client().auth.resetPasswordForEmail(email.trim(), { redirectTo: getAuthRedirectUrl() });
+    if (error) throw error;
+}
+
+export async function signInWithGoogle() {
+    if (!isGoogleLoginConfigured()) throw new Error("Login dengan Google belum tersedia. Silakan gunakan login email dan password.");
+    const { data, error } = await client().auth.signInWithOAuth({ provider: "google", options: { redirectTo: getAuthRedirectUrl() } });
+    if (error) {
+        if (/unsupported provider|provider.*not enabled/i.test(error.message)) throw new Error("Login dengan Google belum tersedia. Silakan gunakan login email dan password.");
+        throw new Error("Autentikasi Google gagal. Silakan coba lagi.");
+    }
     return data;
 }
 
@@ -281,13 +309,14 @@ export async function updateWargaProfile(profile: Partial<WargaProfile>) {
     const { user, profile: currentProfile } = await getCurrentWarga();
     if (!user) throw new Error("Silakan login terlebih dahulu.");
     if (!currentProfile?.id) throw new Error("Profil warga tidak ditemukan untuk akun login ini. Periksa apakah akun Auth sudah memiliki row di public.warga_profiles.");
-    const editable = new Set(["nomor_hp", "nomor_whatsapp", "email", "alamat", "rt", "rw", "foto_url"]);
+    const editable = new Set(["nomor_hp", "nomor_whatsapp", "email", "alamat", "rt", "rw", "foto_url", "agama", "status_perkawinan", "status_pekerjaan"]);
     const blocked = new Set(["id", "role", "status_verifikasi", "user_id", "nik", "nomor_kk", "nama_lengkap", "tempat_lahir", "tanggal_lahir", "jenis_kelamin", "kelurahan", "kecamatan", "alasan_penolakan", "created_at"]);
     const profileData = Object.fromEntries(Object.entries(sanitizeWargaProfileUpdatePayload(profile)).filter(([key]) => !blocked.has(key)));
     const invalidColumns = Object.keys(profileData).filter((key) => !editable.has(key));
     if (invalidColumns.length > 0) throw new Error(`Field profil tidak boleh diubah langsung: ${invalidColumns.join(", ")}.`);
     if (typeof profileData.nomor_whatsapp === "string" && profileData.nomor_whatsapp.trim().length < 8) throw new Error("Nomor WhatsApp tidak valid.");
     if (typeof profileData.email === "string" && !z.string().email().safeParse(profileData.email.trim()).success) throw new Error("Email tidak valid.");
+    if (typeof profileData.agama === "string") profileData.agama = z.enum(WARGA_RELIGIONS, { message: "Agama wajib dipilih." }).parse(profileData.agama.trim());
     if (Object.keys(profileData).length > 0) profileData.updated_at = new Date().toISOString();
     const { data, error } = await client().from("warga_profiles").update(profileData).eq("id", currentProfile.id).select(WARGA_PROFILE_COLUMNS).maybeSingle();
     debugProfileQuery({ authUserId: user.id, profileId: currentProfile.id, table: "warga_profiles", filterColumn: "id", filterValue: currentProfile.id, rowCount: data ? 1 : 0, operation: "update" });
@@ -322,7 +351,7 @@ export async function uploadWargaProfileChangeDocument(file: File) {
     if (!file || file.size === 0) return null;
     const allowed = ["image/jpeg", "image/png", "application/pdf"];
     if (!allowed.includes(file.type)) throw new Error("Format dokumen harus JPG, PNG, atau PDF.");
-    if (file.size > 1024 * 1024) throw new Error("Ukuran dokumen maksimal 1 MB.");
+    file = await compressWargaFile(file);
     const supabase = client();
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError) throw userError;
@@ -395,7 +424,8 @@ export async function uploadWargaProfilePhoto(file: File) {
     if (!file || file.size === 0) throw new Error("Pilih foto profil terlebih dahulu.");
     const allowed = ["image/jpeg", "image/png", "image/webp"];
     if (!allowed.includes(file.type)) throw new Error("Format foto harus JPG, JPEG, PNG, atau WebP.");
-    if (file.size > 5 * 1024 * 1024) throw new Error("Ukuran foto maksimal 5 MB.");
+    file = await compressWargaFile(file);
+    if (file.size > MAX_WARGA_FILE_SIZE) throw new Error("Ukuran file setelah kompresi masih lebih dari 1 MB.");
 
     const supabase = client();
     const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
@@ -434,9 +464,9 @@ export async function uploadWargaProfilePhoto(file: File) {
 }
 
 export async function updateWargaPassword(password: string) {
-    if (password.length < 8) throw new Error("Password minimal 8 karakter.");
-    const { error } = await client().auth.updateUser({ password });
-    if (error) throw error;
+    const nextPassword = wargaPasswordSchema.parse(password);
+    const { error } = await client().auth.updateUser({ password: nextPassword });
+    if (error) throw new Error("Link reset password tidak valid atau sudah kedaluwarsa.");
 }
 
 export async function getWargaSubmissions(profile?: WargaProfile | null) {

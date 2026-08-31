@@ -1,6 +1,8 @@
 import { createSupabaseBrowserClient } from "@/services/supabase";
+import { compressWargaFile, MAX_WARGA_FILE_SIZE } from "@/services/warga-file-compress";
 import type { WargaProfile } from "@/services/warga-auth.service";
 import { getCurrentWarga } from "@/services/warga-auth.service";
+import { normalizeSubmissionObjectPath, SUBMISSION_DOCUMENT_BUCKET } from "@/services/submission-storage";
 
 export type TrackingPengajuan = {
     id?: string;
@@ -20,7 +22,13 @@ export type DokumenPengajuan = {
     created_at?: string | null;
     nomor_pengajuan?: string | null;
     status?: string | null;
+    final_pdf_url?: string | null;
+    metadata?: Record<string, unknown> | null;
+    size?: number | null;
+    file_size?: number | null;
 };
+
+export type DocumentManagementPolicy = "LOCKED_IDENTITY" | "MANAGEABLE" | "SERVICE_RESULT";
 
 export type VerifikasiPengajuan = {
     id?: string;
@@ -68,7 +76,7 @@ export type WargaPengajuan = {
     jenis_kelamin?: string | null;
     agama?: string | null;
     status_perkawinan?: string | null;
-    pekerjaan?: string | null;
+    status_pekerjaan?: string | null;
     alamat?: string | null;
     rt?: string | null;
     rw?: string | null;
@@ -93,6 +101,10 @@ export type WargaPengajuan = {
     diproses_by?: string | null;
     selesai_at?: string | null;
     selesai_by?: string | null;
+    final_pdf_url?: string | null;
+    verification_token?: string | null;
+    document_locked?: boolean | null;
+    issued_at?: string | null;
     catatan_admin?: string | null;
     file_ktp?: string | null;
     file_kk?: string | null;
@@ -137,7 +149,7 @@ function client() {
     return supabase;
 }
 
-const DOKUMEN_BUCKET = "surat";
+const DOKUMEN_BUCKET = SUBMISSION_DOCUMENT_BUCKET;
 let favoritTableAvailable: boolean | null = null;
 
 function logDokumenPath(label: string, meta: Record<string, unknown>) {
@@ -146,24 +158,7 @@ function logDokumenPath(label: string, meta: Record<string, unknown>) {
 }
 
 export function normalizeSuratObjectPath(pathOrUrl?: string | null) {
-    const value = pathOrUrl?.trim();
-    if (!value) return "";
-    if (!/^https?:\/\//i.test(value)) return value.replace(/^\/+/, "").replace(/^surat\//, "");
-    try {
-        const url = new URL(value);
-        const marker = `/storage/v1/object/public/${DOKUMEN_BUCKET}/`;
-        const publicIndex = url.pathname.indexOf(marker);
-        if (publicIndex >= 0) return decodeURIComponent(url.pathname.slice(publicIndex + marker.length)).replace(/^surat\//, "");
-        const signedMarker = `/storage/v1/object/sign/${DOKUMEN_BUCKET}/`;
-        const signedIndex = url.pathname.indexOf(signedMarker);
-        if (signedIndex >= 0) return decodeURIComponent(url.pathname.slice(signedIndex + signedMarker.length)).replace(/^surat\//, "");
-        const objectIndex = value.indexOf(`/object/${DOKUMEN_BUCKET}/`);
-        if (objectIndex >= 0) return decodeURIComponent(value.slice(objectIndex + `/object/${DOKUMEN_BUCKET}/`.length)).replace(/^surat\//, "");
-        return decodeURIComponent(value).replace(/^\/+/, "").replace(/^surat\//, "");
-    } catch {
-        return "";
-    }
-    return "";
+    return normalizeSubmissionObjectPath(pathOrUrl);
 }
 
 export async function getCurrentWargaProfile() {
@@ -187,6 +182,17 @@ export async function getMyPengajuan(profileInput?: WargaProfile | null) {
     const result = await response.json().catch(() => null) as WargaPengajuanApiResponse | null;
     if (!response.ok || !result?.ok) throw new Error(result?.error || "Gagal memuat data pengajuan warga.");
     return result.data ?? [];
+}
+
+export async function getMySubmittedMemory(serviceId: string) {
+    const { data: sessionData, error: sessionError } = await client().auth.getSession();
+    if (sessionError) throw sessionError;
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) throw new Error("Silakan login terlebih dahulu.");
+    const response = await fetch(`/api/warga/pengajuan?memory_service_id=${encodeURIComponent(serviceId)}`, { headers: { authorization: `Bearer ${accessToken}` }, cache: "no-store" });
+    const result = await response.json().catch(() => null) as { ok?: boolean; data?: Record<string, unknown> | null; error?: string } | null;
+    if (!response.ok || !result?.ok) throw new Error(result?.error || "Gagal memuat data pengajuan sebelumnya.");
+    return result.data ?? null;
 }
 
 export async function getMyPengajuanDetail(id: string, profileInput?: WargaProfile | null) {
@@ -353,7 +359,7 @@ export async function deleteNotification(id: string) {
 }
 
 export function getMyDocumentsFromPengajuan(items: WargaPengajuan[]) {
-    return items.flatMap((item) => (item.dokumen_pengajuan ?? []).map((doc) => ({
+    return items.flatMap((item) => (item.dokumen_pengajuan ?? []).filter(isWargaUploadedDocument).map((doc) => ({
         ...doc,
         nomor_pengajuan: doc.nomor_pengajuan ?? item.nomor_pengajuan ?? "-",
         status: doc.status ?? item.status ?? "-",
@@ -361,28 +367,181 @@ export function getMyDocumentsFromPengajuan(items: WargaPengajuan[]) {
     })));
 }
 
+export function isWargaUploadedDocument(doc: DokumenPengajuan) {
+    const metadata = doc.metadata ?? {};
+    const markers = [metadata.source, metadata.origin, metadata.document_type, metadata.category, metadata.type]
+        .map((value) => String(value ?? "").trim().toUpperCase());
+    const resultMarkers = ["PETUGAS", "SYSTEM", "GENERATED", "HASIL_PELAYANAN", "DOKUMEN_HASIL"];
+    const generatedMetadataKeys = ["generated_by", "generated_at", "template_id", "issued_at", "signed_at", "verification_token", "pdf_path"];
+    const status = String(doc.status ?? "").trim().toUpperCase();
+    if (markers.some((value) => resultMarkers.includes(value))) return false;
+    if (generatedMetadataKeys.some((key) => metadata[key] != null)) return false;
+    return !["DRAFT", "SIAP_DIVERIFIKASI", "TERBIT", "GENERATED", "RESULT", "FINAL", "ISSUED", "HASIL_PELAYANAN"].includes(status);
+}
+
+export function isServiceResultDocument(doc: DokumenPengajuan) {
+    const metadata = doc.metadata ?? {};
+    const normalized = (value: unknown) => String(value ?? "").trim().toUpperCase().replace(/[\s-]+/g, "_");
+    const status = normalized(doc.status);
+    const jenis = normalized(doc.jenis);
+    const metadataMarkers = [metadata.source, metadata.origin, metadata.document_type, metadata.category, metadata.type].map(normalized);
+    const hasPublicationMetadata = ["issued_at", "signed_at", "generated_at", "generated_by", "pdf_path", "verification_token", "verification_code", "verification_url"]
+        .some((key) => metadata[key] != null);
+    const isPublishedStatus = ["TERBIT", "SIGNED", "FINAL", "ISSUED", "GENERATED", "RESULT", "HASIL_PELAYANAN"].includes(status);
+    const isResultType = /(^|_)SURAT_HASIL_PELAYANAN(?:_V\d+)?$/.test(jenis)
+        || metadataMarkers.some((marker) => ["HASIL_PELAYANAN", "DOKUMEN_HASIL", "GENERATED", "SYSTEM", "PETUGAS"].includes(marker));
+    return Boolean(doc.id && doc.pengajuan_id && doc.url_file) && (isPublishedStatus || isResultType || hasPublicationMetadata);
+}
+
+export function getDocumentManagementPolicy(doc: DokumenPengajuan): DocumentManagementPolicy {
+    if (isServiceResultDocument(doc)) return "SERVICE_RESULT";
+    const metadata = doc.metadata ?? {};
+    const markers = [doc.jenis, metadata.document_type, metadata.category, metadata.identity_type]
+        .map((value) => String(value ?? "").trim().toUpperCase().replace(/[\s-]+/g, "_"));
+    return markers.some((value) => ["KTP", "KK", "KARTU_KELUARGA", "IDENTITY_KTP", "IDENTITY_KK"].includes(value))
+        ? "LOCKED_IDENTITY"
+        : "MANAGEABLE";
+}
+
 export async function uploadMyDokumen(file: File, jenis = "Dokumen Pendukung") {
     if (!file || file.size === 0) throw new Error("File kosong.");
-    if (file.size > 5 * 1024 * 1024) throw new Error("Ukuran file terlalu besar.");
     const allowed = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
     if (!allowed.includes(file.type)) throw new Error("Format file belum didukung.");
+    const processedFile = await compressWargaFile(file);
+    if (processedFile.size > MAX_WARGA_FILE_SIZE) throw new Error("Ukuran file setelah kompresi masih lebih dari 1 MB.");
     const { user, profile } = await getCurrentWargaProfile();
     if (!user || !profile?.nik) throw new Error("Silakan login terlebih dahulu.");
     const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 80);
     const path = `warga/${user.id}/${Date.now()}-${safeName || `dokumen.${ext}`}`;
     const supabase = client();
-    const upload = await supabase.storage.from("surat").upload(path, file, { upsert: false, contentType: file.type });
+    const upload = await supabase.storage.from(DOKUMEN_BUCKET).upload(path, processedFile, { upsert: false, contentType: processedFile.type });
     if (upload.error) throw upload.error;
     logDokumenPath("UPLOAD PATH", { bucket: DOKUMEN_BUCKET, path: upload.data.path, plannedPath: path, fileName: file.name });
-    return { url_file: upload.data.path, nama_file: file.name, jenis };
+    return { url_file: upload.data.path, nama_file: processedFile.name, jenis };
 }
 
-export function getDokumenUrl(pathOrUrl?: string | null) {
-    const path = normalizeSuratObjectPath(pathOrUrl);
-    logDokumenPath("READ PATH", { bucket: DOKUMEN_BUCKET, databasePath: pathOrUrl ?? null, path });
-    if (!path) return "";
-    return client().storage.from(DOKUMEN_BUCKET).getPublicUrl(path).data.publicUrl;
+async function documentMutation(id: string, method: "PATCH" | "DELETE", body?: FormData | { action: "rename"; display_name: string }) {
+    const { data: sessionData, error: sessionError } = await client().auth.getSession();
+    if (sessionError) throw sessionError;
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) throw new Error("Silakan login terlebih dahulu.");
+    const response = await fetch(`/api/warga/dokumen/${encodeURIComponent(id)}`, {
+        method,
+        headers: { authorization: `Bearer ${accessToken}`, ...(body && !(body instanceof FormData) ? { "content-type": "application/json" } : {}) },
+        body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined,
+    });
+    const result = await response.json().catch(() => null) as { ok?: boolean; error?: string; message?: string } | null;
+    if (!response.ok || !result?.ok) throw new Error(result?.error || "Dokumen gagal diperbarui.");
+    return result;
+}
+
+export function renameMyDocument(id: string, displayName: string) {
+    return documentMutation(id, "PATCH", { action: "rename", display_name: displayName });
+}
+
+export function replaceMyDocument(id: string, file: File) {
+    return compressWargaFile(file).then((processedFile) => {
+        const body = new FormData();
+        body.set("action", "replace");
+        body.set("file", processedFile);
+        return documentMutation(id, "PATCH", body);
+    });
+}
+
+export function deleteMyDocument(id: string) {
+    return documentMutation(id, "DELETE");
+}
+
+export function getWargaDokumenUrl(id?: string | null, download = false) {
+    if (!id) return "";
+    const query = new URLSearchParams({ _: String(Date.now()) });
+    if (download) query.set("download", "1");
+    return `/api/warga/dokumen/${encodeURIComponent(id)}?${query.toString()}`;
+}
+
+export type WargaDocumentType = "final-letter" | "supporting" | "unknown";
+
+export async function accessWargaDokumen(id: string, download = false, documentType: WargaDocumentType = "unknown") {
+    if (typeof window === "undefined") throw new Error("Dokumen warga hanya dapat diakses dari browser.");
+    const endpoint = new URL(getWargaDokumenUrl(id, download), window.location.origin).href;
+    const fetchDocument = async () => {
+        const { data, error } = await client().auth.getSession();
+        if (error) throw error;
+        const token = data.session?.access_token;
+        if (!token) throw new Error("Silakan login terlebih dahulu.");
+        console.info("[WARGA DOCUMENT FETCH]", endpoint);
+        try {
+            const response = await fetch(endpoint, {
+                method: "GET",
+                headers: { authorization: `Bearer ${token}` },
+                cache: "no-store",
+                credentials: "same-origin",
+            });
+            console.info("[WARGA DOCUMENT FETCH STATUS]", response.status);
+            return response;
+        } catch (cause) {
+            console.error("[WARGA DOCUMENT FETCH ERROR]", cause instanceof Error ? cause.message : String(cause));
+            throw new Error("Dokumen gagal diambil dari server aplikasi. Periksa koneksi lalu coba lagi.", { cause });
+        }
+    };
+    const previewWindow = !download ? window.open("about:blank", "_blank") : null;
+    if (!download) {
+        console.log("[WARGA PDF PREVIEW] popup", !!previewWindow);
+        if (!previewWindow) {
+            console.error("[WARGA PDF PREVIEW ERROR]", "Popup diblokir browser.");
+            throw new Error("Popup diblokir browser.");
+        }
+        try {
+            const response = await fetchDocument();
+            if (!response.ok) throw new Error(`Gagal mengambil dokumen (${response.status})`);
+            const contentType = response.headers.get("content-type") || "";
+            const normalizedType = contentType.toLowerCase().split(";", 1)[0].trim();
+            const validType = normalizedType === "application/pdf" || normalizedType === "image/jpeg" || normalizedType === "image/png";
+            const expectedPdf = documentType === "final-letter";
+            if (!validType || (expectedPdf && normalizedType !== "application/pdf")) {
+                await response.text().catch(() => "");
+                throw new Error(expectedPdf ? `Response bukan PDF. Content-Type: ${contentType}` : `Tipe dokumen tidak didukung. Content-Type: ${contentType}`);
+            }
+            const blob = await response.blob();
+            if (!blob.size) throw new Error("PDF kosong.");
+            const objectUrl = URL.createObjectURL(blob);
+            previewWindow.location.href = objectUrl;
+            window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+            return;
+        } catch (error) {
+            previewWindow.close();
+            console.error("[WARGA PDF PREVIEW ERROR]", error instanceof Error ? error.message : String(error));
+            throw error;
+        }
+    }
+    try {
+        const response = await fetchDocument();
+        if (!response.ok) throw new Error(`Gagal mengambil dokumen (${response.status})`);
+        const contentType = response.headers.get("content-type") || "";
+        const normalizedType = contentType.toLowerCase().split(";", 1)[0].trim();
+        const validType = normalizedType === "application/pdf" || normalizedType === "image/jpeg" || normalizedType === "image/png";
+        const expectedPdf = documentType === "final-letter";
+        if (!validType || (expectedPdf && normalizedType !== "application/pdf")) {
+            await response.text().catch(() => "");
+            throw new Error(expectedPdf ? `Response bukan PDF. Content-Type: ${contentType}` : `Tipe dokumen tidak didukung. Content-Type: ${contentType}`);
+        }
+        const blob = await response.blob();
+        if (!blob.size) throw new Error("PDF kosong.");
+        const objectUrl = URL.createObjectURL(blob);
+        const disposition = response.headers.get("content-disposition") ?? "";
+        const fileName = disposition.match(/filename\*?=(?:UTF-8''|\")?([^\";]+)/i)?.[1]?.trim() ?? "surat-TMS.pdf";
+        const anchor = document.createElement("a");
+        anchor.href = objectUrl;
+        anchor.download = fileName;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1_000);
+    } catch (error) {
+        console.error("[WARGA PDF PREVIEW ERROR]", error instanceof Error ? error.message : String(error));
+        throw error;
+    }
 }
 
 export async function debugListSuratFolder(folder: string) {

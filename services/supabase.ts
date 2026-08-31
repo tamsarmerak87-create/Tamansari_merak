@@ -31,6 +31,12 @@ export function createSupabaseBrowserClient() {
     return browserClient;
 }
 
+export function createSupabaseAnonClient() {
+    return createClient(requireSupabaseUrl(), requireSupabaseAnonKey(), {
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    });
+}
+
 export function createSupabaseServerClient() {
     return createClient(requireSupabaseUrl(), requireSupabaseServiceKey(), { auth: { persistSession: false } });
 }

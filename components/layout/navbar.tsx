@@ -102,7 +102,7 @@ export function Navbar() {
 
     useEffect(() => {
         if (!user) {
-            setNotifications([]);
+            void Promise.resolve().then(() => setNotifications([]));
             return;
         }
         const loadNotifications = () => void getMyNotifikasi().then(setNotifications).catch(() => setNotifications([]));

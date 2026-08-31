@@ -4,7 +4,7 @@ import type { WargaProfile } from "@/services/warga-auth.service";
 
 type ValidatedWarga = { warga: WargaProfile | null } | { error: string; status: number };
 
-const WARGA_PROFILE_COLUMNS = "id,user_id,nama_lengkap,nik,email,role,status_verifikasi";
+const WARGA_PROFILE_COLUMNS = "id,user_id,nama_lengkap,nik,email,agama,status_perkawinan,status_pekerjaan,role,status_verifikasi";
 
 function jsonError(message: string, status = 400) {
     return NextResponse.json({ ok: false, error: message }, { status });

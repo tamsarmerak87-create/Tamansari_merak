@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/services/supabase";
+import { getMasterTemplateConfig } from "@/services/official-document";
 
 export async function GET() {
     try {
@@ -31,7 +32,32 @@ export async function GET() {
             throw error;
         }
 
-        return NextResponse.json({ ok: true, data: data ?? [] });
+        const serviceIds = (data ?? []).map((service) => service.id);
+        const { data: templates, error: templateError } = serviceIds.length
+            ? await client
+                .from("service_templates")
+                .select("service_id,template_id,template_version,field_schema,status,signer_role")
+                .in("service_id", serviceIds)
+                .eq("is_active", true)
+            : { data: [], error: null };
+        if (templateError) throw templateError;
+        const byService = new Map((templates ?? []).map((template) => [template.service_id, template]));
+        const result = (data ?? []).map((service) => {
+            const template = byService.get(service.id);
+            return {
+                ...service,
+                master_template: getMasterTemplateConfig(service.nama),
+                template: template ? {
+                    template_id: template.template_id,
+                    version: template.template_version,
+                    field_schema: template.field_schema ?? [],
+                    status: template.status,
+                    signer_role: template.signer_role,
+                } : null,
+            };
+        });
+
+        return NextResponse.json({ ok: true, data: result });
     } catch (error) {
         console.error("===== FULL ERROR =====");
         console.dir(error, { depth: null });

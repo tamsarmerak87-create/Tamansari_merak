@@ -1,156 +1,109 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
-import { ArrowRight, Check, Clock3, Headphones, Loader2, LogOut, RefreshCw, ShieldCheck } from "lucide-react";
+import { FormEvent, Suspense, useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { CheckCircle2, Clock3, Info, KeyRound, Loader2, ShieldAlert } from "lucide-react";
+import { AuthField, AuthShell, authInputClass } from "@/components/auth/auth-ui";
 import { Button } from "@/components/ui/button";
-import { useWargaAuth } from "@/components/auth/warga-auth-provider";
-import { isVerified, logoutWarga } from "@/services/warga-auth.service";
+import { getFriendlyMessage } from "@/lib/messages";
 import { createSupabaseBrowserClient } from "@/services/supabase";
-import { site } from "@/constants/site";
-import { cn } from "@/utils/cn";
+import { getCurrentWargaVerificationStatus, isVerified, resendSignupConfirmation, updateWargaPassword, wargaPasswordSchema } from "@/services/warga-auth.service";
 
-const workflow = [
-    { label: "Verifikasi Staff", role: "staff_pelayanan", status: "Menunggu Staff Pelayanan" },
-    { label: "Petugas Lapangan", role: "petugas_lapangan", status: "Menunggu Petugas Lapangan" },
-    { label: "Kasi", role: "kepala_seksi", status: "Menunggu Kasi" },
-    { label: "Seklur", role: "seklur", status: "Menunggu Sek Lur" },
-    { label: "Lurah", role: "lurah", status: "Menunggu Lurah" },
-] as const;
+type View = "checking" | "idle" | "registered" | "confirmed" | "recovery" | "recovery-error" | "updated" | "error";
 
-function progress(profile: any) {
-    const activeRole = profile?.status_verifikasi === "Dikembalikan" ? profile?.returned_to_role : profile?.tahap_verifikasi;
-    const activeIndex = profile?.status_verifikasi === "Terverifikasi" ? workflow.length : Math.max(0, workflow.findIndex((s) => s.role === activeRole || s.status === profile?.status_verifikasi));
-    return [
-        { label: "Akun dibuat", state: "done" },
-        { label: "Profil tersimpan", state: "done" },
-        ...workflow.map((step, index) => ({ label: step.label, state: profile?.status_verifikasi === "Terverifikasi" || index < activeIndex ? "done" : index === activeIndex ? "current" : "upcoming" })),
-        { label: "Akun Terverifikasi", state: profile?.status_verifikasi === "Terverifikasi" ? "done" : "upcoming" },
-    ];
+function VerifyContent() {
+    const router = useRouter();
+    const params = useSearchParams();
+    const [view, setView] = useState<View>("checking");
+    const [message, setMessage] = useState("");
+    const [password, setPassword] = useState("");
+    const [confirmation, setConfirmation] = useState("");
+    const [saving, setSaving] = useState(false);
+    const [resending, setResending] = useState(false);
+    const [accountVerified, setAccountVerified] = useState(false);
+
+    useEffect(() => {
+        let active = true;
+        const supabase = createSupabaseBrowserClient();
+        if (!supabase) { void Promise.resolve().then(() => { setMessage("Layanan autentikasi belum tersedia."); setView("error"); }); return; }
+        if (params.get("registered") === "1") {
+            void Promise.resolve().then(() => setView("registered"));
+            return;
+        }
+        const run = async () => {
+            const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+            const callbackError = params.get("error_description") || params.get("error") || hash.get("error_description") || hash.get("error");
+            if (callbackError && /otp_expired|access_denied|expired|invalid/i.test(callbackError)) {
+                setView("recovery-error");
+                return;
+            }
+            if (callbackError) throw new Error(/unsupported provider|provider.*not enabled/i.test(callbackError) ? "Login dengan Google belum tersedia saat ini. Silakan gunakan email dan password." : "Link sudah tidak valid atau telah kedaluwarsa. Silakan minta link baru.");
+            const code = params.get("code");
+            const type = params.get("type") || hash.get("type");
+            const hasCallback = Boolean(code || type || hash.get("access_token") || hash.get("refresh_token"));
+            if (!hasCallback) {
+                setView("idle");
+                return;
+            }
+            if (code) { const { error } = await supabase.auth.exchangeCodeForSession(code); if (error) throw error; }
+            const { data, error } = await supabase.auth.getSession();
+            if (error) throw error;
+            if (!data.session) throw new Error("Link verifikasi tidak valid atau sudah kedaluwarsa.");
+            if (!active) return;
+            if (type === "recovery") { setView("recovery"); return; }
+            if (data.session.user.app_metadata?.provider === "google") { router.replace("/dashboard"); return; }
+            if (!data.session.user.email_confirmed_at) throw new Error("Email belum berhasil dikonfirmasi.");
+            // Confirmation only proves email ownership; officer verification remains database-driven.
+            try {
+                const { profile } = await getCurrentWargaVerificationStatus();
+                if (!active) return;
+                setAccountVerified(isVerified(profile));
+            } catch {
+                // A profile that cannot be read must never be presented as officer-verified.
+                setAccountVerified(false);
+            }
+            setView("confirmed");
+        };
+        const { data } = supabase.auth.onAuthStateChange((event) => { if (active && event === "PASSWORD_RECOVERY") setView("recovery"); });
+        void run().catch((error) => { if (active) { setMessage(getFriendlyMessage(error, "Link verifikasi tidak valid atau sudah kedaluwarsa.")); setView("error"); } });
+        return () => { active = false; data.subscription.unsubscribe(); };
+    }, [params, router]);
+
+    async function save(event: FormEvent) {
+        event.preventDefault(); setMessage("");
+        const parsed = wargaPasswordSchema.safeParse(password);
+        if (!parsed.success) { setMessage(parsed.error.issues[0]?.message || "Password belum memenuhi ketentuan."); return; }
+        if (password !== confirmation) { setMessage("Konfirmasi password tidak sama."); return; }
+        try { setSaving(true); await updateWargaPassword(password); setPassword(""); setConfirmation(""); setView("updated"); }
+        catch (error) { setMessage(getFriendlyMessage(error, "Link reset password tidak valid atau sudah kedaluwarsa.")); }
+        finally { setSaving(false); }
+    }
+
+    async function resend() {
+        const email = params.get("email") || "";
+        setMessage("");
+        try {
+            setResending(true);
+            await resendSignupConfirmation(email);
+            setMessage("Email konfirmasi berhasil dikirim.");
+        } catch (error) {
+            setMessage(getFriendlyMessage(error, "Email konfirmasi belum berhasil dikirim. Silakan coba lagi."));
+        } finally {
+            setResending(false);
+        }
+    }
+
+    if (view === "checking") return <AuthShell title="Memeriksa Link" subtitle="Mohon tunggu, kami sedang memverifikasi tautan Anda."><div className="mt-8 flex justify-center gap-3 font-bold"><Loader2 className="animate-spin" />Memproses...</div></AuthShell>;
+    if (view === "idle") return <AuthShell title="Verifikasi Email" subtitle="Silakan gunakan link yang dikirim ke email Anda."><div className="mt-8 rounded-2xl border border-blue-200 bg-blue-50 p-5 text-center text-blue-950"><Info aria-label="Informasi" className="mx-auto size-10 text-blue-600" /><h2 className="mt-4 font-black">Belum ada proses yang sedang diproses.</h2><p className="mt-2 text-sm font-semibold leading-6">Silakan buka link dari email konfirmasi untuk mengaktifkan email Anda, atau gunakan link reset password jika Anda sedang mengatur ulang password.</p></div><Button href="/login" variant="gold" className="mt-6 w-full">Kembali ke Portal</Button></AuthShell>;
+    if (view === "registered") return <AuthShell title="Registrasi Berhasil" subtitle="Silakan cek email Anda untuk mengaktifkan akun."><div className="mt-8 space-y-5 text-center"><CheckCircle2 className="mx-auto size-14 text-emerald-600" />{message && <div className={`rounded-2xl px-4 py-3 text-sm font-bold ${message.includes("berhasil") ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>{message}</div>}<Button type="button" variant="gold" disabled={resending} onClick={resend}>{resending ? <Loader2 className="animate-spin" size={18} /> : null}{resending ? "Mengirim..." : "Kirim Ulang Email Konfirmasi"}</Button><Link href="/login" className="block text-sm font-bold underline">Kembali ke Portal</Link></div></AuthShell>;
+    if (view === "recovery") return <AuthShell title="Reset Password" subtitle="Silakan buat password baru untuk akun Anda."><form onSubmit={save} className="mt-8 space-y-5">{message && <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{message}</div>}<AuthField label="Password Baru"><input aria-label="Password Baru" type="password" autoComplete="new-password" className={authInputClass} value={password} onChange={(e) => setPassword(e.target.value)} required /></AuthField><AuthField label="Konfirmasi Password"><input aria-label="Konfirmasi Password" type="password" autoComplete="new-password" className={authInputClass} value={confirmation} onChange={(e) => setConfirmation(e.target.value)} required /></AuthField><Button type="submit" variant="gold" disabled={saving}><KeyRound size={18} />{saving ? "Menyimpan..." : "Simpan Password"}</Button></form></AuthShell>;
+    if (view === "recovery-error") return <AuthShell title="Link Reset Tidak Dapat Diproses" subtitle="Link reset password sudah kedaluwarsa atau tidak valid."><div className="mt-8 rounded-2xl border border-red-200 bg-red-50 p-5 text-center text-red-950"><ShieldAlert aria-label="Link reset tidak valid" className="mx-auto size-12 text-red-600" /><p className="mt-4 text-sm font-bold leading-6">Link sudah tidak dapat digunakan. Silakan minta link reset password baru.</p></div><Button href="/forgot-password" variant="gold" className="mt-6 w-full">Minta Link Reset Baru</Button></AuthShell>;
+    if (view === "error") return <AuthShell title="Link Tidak Dapat Diproses" subtitle={message || "Link sudah tidak valid atau telah kedaluwarsa. Silakan minta link baru."}><div className="mt-8 rounded-2xl border border-red-200 bg-red-50 p-5 text-center text-red-950"><ShieldAlert aria-label="Link tidak valid" className="mx-auto size-12 text-red-600" /><p className="mt-4 text-sm font-bold leading-6">Link sudah tidak valid atau telah kedaluwarsa. Silakan minta link baru.</p></div><Button href="/forgot-password" variant="gold" className="mt-6 w-full">Minta Link Baru</Button></AuthShell>;
+    const updated = view === "updated";
+    return <AuthShell title={updated ? "Password Diperbarui" : "Email Terkonfirmasi"} subtitle={updated ? "Password berhasil diperbarui." : "Email Anda berhasil dikonfirmasi."}><div className="mt-8 space-y-6 text-center"><CheckCircle2 aria-label="Berhasil" className="mx-auto size-16 text-emerald-600" />{!updated && (accountVerified ? <div data-account-status="verified" className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-left text-emerald-950"><div className="flex items-start gap-3"><CheckCircle2 aria-hidden="true" className="mt-0.5 size-6 shrink-0 text-emerald-600" /><div><h2 className="font-black">Akun Anda Telah Diverifikasi</h2><p className="mt-2 text-sm font-semibold leading-6">Verifikasi akun oleh petugas Kelurahan Tamansari telah selesai. Anda sekarang dapat menggunakan layanan Portal Warga.</p><span className="mt-4 inline-flex rounded-full border border-emerald-300 bg-white px-3 py-1 text-xs font-black uppercase tracking-wide text-emerald-700">Terverifikasi</span></div></div></div> : <div data-account-status="pending" className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-left text-amber-950"><div className="flex items-start gap-3"><Clock3 aria-label="Menunggu" className="mt-0.5 size-6 shrink-0 text-amber-600" /><div><h2 className="font-black">Akun Menunggu Verifikasi Petugas</h2><p className="mt-2 text-sm font-semibold leading-6">Email Anda sudah berhasil dikonfirmasi. Akun Anda sekarang sedang menunggu verifikasi oleh petugas Kelurahan Tamansari.</p><span className="mt-4 inline-flex rounded-full border border-amber-300 bg-white px-3 py-1 text-xs font-black tracking-wide text-amber-800">Menunggu Verifikasi Petugas</span><p className="mt-4 text-sm font-semibold leading-6">Setelah akun diverifikasi, Anda dapat menggunakan layanan Portal Warga.</p></div></div></div>)}<Button href="/login" variant="gold">Masuk ke Portal</Button></div></AuthShell>;
 }
 
 export default function VerifyPage() {
-    const router = useRouter();
-    const { user, profile, loading, refresh } = useWargaAuth();
-    const [checking, setChecking] = useState(false);
-
-    const verified = useMemo(() => isVerified(profile) || profile?.status_verifikasi === "Terverifikasi", [profile]);
-    const timeline = useMemo(() => progress(profile), [profile]);
-    const currentStep = timeline.find((item) => item.state === "current")?.label ?? profile?.status_verifikasi ?? "Menunggu verifikasi";
-
-    useEffect(() => {
-        if (!loading && !user) router.replace("/login");
-    }, [loading, router, user]);
-
-    useEffect(() => {
-        if (verified) router.replace("/dashboard");
-    }, [router, verified]);
-
-    useEffect(() => {
-        if (!loading && profile?.status_verifikasi === "Ditolak") router.replace("/verification-rejected");
-    }, [loading, profile?.status_verifikasi, router]);
-
-    useEffect(() => {
-        if (!user || verified) return;
-        const supabase = createSupabaseBrowserClient();
-        if (!supabase) return;
-        const channel = supabase
-            .channel(`warga-verification:${user.id}`)
-            .on("postgres_changes", { event: "UPDATE", schema: "public", table: "warga_profiles", filter: `id=eq.${user.id}` }, (payload) => {
-                const next = payload.new as { status_verifikasi?: string };
-                if (next.status_verifikasi === "Terverifikasi" || next.status_verifikasi === "Akun Terverifikasi") router.replace("/dashboard");
-                if (next.status_verifikasi === "Ditolak") router.replace("/verification-rejected");
-                void refresh();
-            })
-            .subscribe();
-        return () => { void supabase.removeChannel(channel); };
-    }, [refresh, router, user, verified]);
-
-    async function logout() {
-        await logoutWarga();
-        router.replace("/login");
-    }
-
-    const checkStatus = useCallback(async () => {
-        try {
-            setChecking(true);
-            await refresh();
-        } finally {
-            setChecking(false);
-        }
-    }, [refresh]);
-
-    if (loading || !user) {
-        return <main className="flex min-h-screen items-center justify-center bg-[#F7F9FC] px-5 text-gov-950"><Loader2 className="mr-3 size-5 animate-spin text-accent-500" /><span className="font-black">Memuat status verifikasi...</span></main>;
-    }
-
-    return <main className="relative min-h-screen overflow-hidden bg-[#F7F9FC] px-5 py-12 text-slate-800 sm:px-10 lg:px-20">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_12%,rgba(255,197,51,.28),transparent_28%),radial-gradient(circle_at_84%_18%,rgba(11,44,106,.16),transparent_30%),linear-gradient(180deg,#ffffff_0%,#f7f9fc_48%,#eef4ff_100%)]" />
-        <motion.section initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .55, ease: "easeOut" }} className="relative mx-auto grid max-w-[1180px] gap-6 lg:grid-cols-[.9fr_1.1fr] lg:items-stretch">
-            <aside className="overflow-hidden rounded-[36px] border border-white/30 bg-[linear-gradient(145deg,#071a33,#0B2C6A_58%,#123b85)] p-8 text-white shadow-[0_32px_90px_rgba(11,44,106,.24)] sm:p-10">
-                <motion.div initial={{ scale: .9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ delay: .1 }} className="inline-flex items-center gap-3 rounded-full border border-accent-200/30 bg-white/10 px-4 py-2 text-xs font-black uppercase tracking-[.2em] text-accent-200 backdrop-blur">
-                    <ShieldCheck className="size-4" /> Verifikasi Kelurahan
-                </motion.div>
-                <h1 className="mt-8 text-4xl font-black leading-tight md:text-6xl">Pendaftaran Berhasil</h1>
-                <p className="mt-5 max-w-xl text-lg leading-8 text-white/78">Data akun warga sudah masuk ke sistem Kelurahan Tamansari dan akan diperiksa langsung oleh petugas berwenang.</p>
-                <div className="mt-10 rounded-[28px] border border-white/15 bg-white/10 p-5 backdrop-blur-xl">
-                    <div className="flex items-center gap-4">
-                        <span className="grid size-14 place-items-center rounded-2xl bg-accent-300 text-2xl shadow-[0_16px_35px_rgba(255,197,51,.28)]">✅</span>
-                        <div>
-                            <p className="text-xs font-black uppercase tracking-[.2em] text-accent-200">Shield Check</p>
-                            <p className="mt-1 text-xl font-black">Identitas diterima sistem</p>
-                        </div>
-                    </div>
-                </div>
-            </aside>
-
-            <section className="rounded-[36px] border border-white/70 bg-white/78 p-6 shadow-[0_28px_90px_rgba(15,39,72,.13)] backdrop-blur-2xl sm:p-8 lg:p-10">
-                <motion.div initial={{ opacity: 0, scale: .95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: .12 }} className="mx-auto grid size-20 place-items-center rounded-[28px] border border-accent-200/60 bg-[linear-gradient(135deg,#fff8dc,#ffffff)] text-gov-950 shadow-[0_18px_45px_rgba(255,197,51,.25)]">
-                    <ShieldCheck className="size-10 text-gov-950" />
-                </motion.div>
-
-                <div className="mt-6 text-center">
-                    <p className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-black text-amber-700"><span>🟡</span> {currentStep}</p>
-                    <h2 className="mt-5 text-3xl font-black text-gov-950 sm:text-4xl">Pendaftaran Berhasil</h2>
-                    <p className="mx-auto mt-4 max-w-2xl leading-8 text-slate-600">Data Anda telah berhasil didaftarkan. Petugas Kelurahan Tamansari akan memverifikasi identitas berdasarkan NIK, KK dan data yang diinput.</p>
-                </div>
-
-                <div className="mt-7 grid gap-4 sm:grid-cols-2">
-                    <div className="rounded-[26px] border border-gov-100 bg-white/72 p-5 shadow-soft backdrop-blur">
-                        <p className="text-xs font-black uppercase tracking-[.18em] text-slate-400">Status saat ini</p>
-                        <p className="mt-2 text-lg font-black text-gov-950">{profile?.status_verifikasi ?? "Belum Terverifikasi"}</p>
-                    </div>
-                    <div className="rounded-[26px] border border-accent-200/70 bg-[linear-gradient(135deg,#fff7d6,#ffffff)] p-5 shadow-soft backdrop-blur">
-                        <p className="flex items-center gap-2 text-xs font-black uppercase tracking-[.18em] text-slate-500"><Clock3 className="size-4 text-accent-500" /> Estimasi</p>
-                        <p className="mt-2 text-lg font-black text-gov-950">1 × 24 Jam Kerja</p>
-                    </div>
-                </div>
-
-                <div className="mt-8 rounded-[28px] border border-white bg-white/72 p-5 shadow-soft backdrop-blur-xl sm:p-6">
-                    <p className="text-sm font-black uppercase tracking-[.18em] text-gov-950">Progress Verifikasi</p>
-                    <div className="mt-5 space-y-4">
-                        {timeline.map((item, index) => <motion.div key={item.label} initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: .16 + index * .06 }} className="flex items-center gap-4">
-                            <span className={cn("grid size-10 shrink-0 place-items-center rounded-full border text-sm font-black", item.state === "done" && "border-emerald-200 bg-emerald-50 text-emerald-700", item.state === "current" && "border-accent-300 bg-accent-100 text-gov-950", item.state === "upcoming" && "border-slate-200 bg-white text-slate-400")}>{item.state === "done" ? <Check className="size-5" /> : item.state === "current" ? "⏳" : "○"}</span>
-                            <div className="min-w-0 flex-1">
-                                <p className={cn("font-black", item.state === "upcoming" ? "text-slate-400" : "text-gov-950")}>{item.state === "done" ? "✓ " : item.state === "current" ? "⏳ " : "○ "}{item.label}</p>
-                                {index < timeline.length - 1 ? <div className="mt-3 h-px bg-gradient-to-r from-gov-100 via-accent-100 to-transparent" /> : null}
-                            </div>
-                        </motion.div>)}
-                    </div>
-                </div>
-
-                <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
-                    <Button type="button" variant="gold" onClick={checkStatus} disabled={checking} className="sm:min-w-56">
-                        {checking ? <Loader2 className="size-5 animate-spin" /> : <RefreshCw className="size-5" />}
-                        {checking ? "Mengecek..." : "Refresh Status"}
-                    </Button>
-                    <Button type="button" variant="glass" href={site.wa} target="_blank" rel="noreferrer" className="sm:min-w-52"><Headphones className="size-5" />Hubungi TAMSAR CS</Button>
-                    <Button type="button" variant="glass" onClick={logout} className="sm:min-w-40"><LogOut className="size-5" />Logout</Button>
-                </div>
-
-                <p className="mt-6 text-center text-sm font-bold text-slate-500">Jika status berubah menjadi Terverifikasi, Anda akan otomatis diarahkan ke Dashboard Warga. <ArrowRight className="inline size-4" /></p>
-            </section>
-        </motion.section>
-    </main>;
+    return <Suspense fallback={<main className="grid min-h-screen place-items-center"><Loader2 className="animate-spin" /></main>}><VerifyContent /></Suspense>;
 }

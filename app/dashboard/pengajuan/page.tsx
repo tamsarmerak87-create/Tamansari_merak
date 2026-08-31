@@ -25,7 +25,7 @@ export default function SemuaPengajuanPage() {
     const [query, setQuery] = useState("");
     const [barcodeItem, setBarcodeItem] = useState<WargaPengajuan | null>(null);
     useEffect(() => { if (!loading && !user) router.push("/login"); }, [loading, user, router]);
-    useEffect(() => { if (!user || !profile) { if (!loading) setFetching(false); return; } void (async () => { try { setFetching(true); setItems(await getMyPengajuan(profile)); } catch (error) { console.error(error); } finally { setFetching(false); } })(); }, [loading, user, profile]);
+    useEffect(() => { if (!user || !profile) { if (!loading) void Promise.resolve().then(() => setFetching(false)); return; } void (async () => { try { setFetching(true); setItems(await getMyPengajuan(profile)); } catch (error) { console.error(error); } finally { setFetching(false); } })(); }, [loading, user, profile]);
     const filtered = useMemo(() => items.filter((item) => matchFilter(item, filter)).filter((item) => `${docName(item)} ${agenda(item)} ${item.status}`.toLowerCase().includes(query.toLowerCase())), [items, filter, query]);
     if (loading || !user) return <main className="min-h-screen bg-[#F7F8F5] p-10 font-black text-[#172033]">Memuat pengajuan...</main>;
     return <main className="min-h-screen bg-[#F7F8F5] px-4 pb-28 pt-6 text-[#172033] sm:px-8 lg:px-10">

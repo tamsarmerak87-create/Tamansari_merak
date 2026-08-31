@@ -16,7 +16,7 @@ export default function NotifikasiPage() {
     const [error, setError] = useState("");
 
     useEffect(() => { if (!loading && !user) router.push("/login"); }, [loading, user, router]);
-    useEffect(() => { if (!user || !profile) { if (!loading) setFetching(false); return; } void refresh(); }, [loading, user, profile]);
+    useEffect(() => { if (!user || !profile) { if (!loading) void Promise.resolve().then(() => setFetching(false)); return; } void refresh(); }, [loading, user, profile]);
 
     async function refresh() {
         if (!profile) return;

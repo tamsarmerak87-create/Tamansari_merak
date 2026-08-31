@@ -1,15 +1,14 @@
 import jsPDF from "jspdf";
 import QRCode from "qrcode";
 import type { WargaPengajuan } from "@/services/warga-pengajuan.service";
-
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://tamansari-merak.vercel.app";
+import { getSiteUrl } from "@/lib/auth-url";
 
 export function getNomorTiket(item: Pick<WargaPengajuan, "nomor_pengajuan"> & { nomor_tiket?: string | null }) {
     return item.nomor_tiket || item.nomor_pengajuan || "-";
 }
 
 export function getTrackingUrl(nomorPengajuan?: string | null) {
-    return `${SITE_URL.replace(/\/$/, "")}/surat-online/tracking?nomor=${encodeURIComponent(nomorPengajuan || "")}`;
+    return `${getSiteUrl()}/surat-online/tracking?nomor=${encodeURIComponent(nomorPengajuan || "")}`;
 }
 
 function formatDate(value?: string | null) {

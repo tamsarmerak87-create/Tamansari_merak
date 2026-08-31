@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:regression": "node --test tests/admin-authorization-regression.test.mjs tests/admin-pengajuan-workflow-regression.test.mjs tests/auth-password-reset-regression.test.mjs tests/official-letter-regression.test.mjs tests/master-template-registry-regression.test.mjs tests/marriage-submission-regression.test.mjs tests/submission-memory-regression.test.mjs tests/submission-purpose-binding-regression.test.mjs tests/submission-workflow-regression.test.mjs tests/warga-documents-regression.test.mjs tests/warga-profile-status-regression.test.mjs tests/pengajuan-profile-auth-binding-regression.test.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "latest",
