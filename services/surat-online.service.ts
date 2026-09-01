@@ -8,6 +8,7 @@ import { getActiveServiceTemplate, validateTemplateFields } from "@/services/off
 import { SUBMISSION_DOCUMENT_BUCKET } from "@/services/submission-storage";
 import { compressWargaFile, MAX_WARGA_FILE_SIZE } from "@/services/warga-file-compress";
 import { MARRIAGE_SERVICE_ID, MARRIAGE_SERVICE_NAME, MARRIAGE_TEMPLATE_ID, validateMarriageAdditionalData } from "@/services/marriage-submission";
+import { sendApplicationStatusEmailSafely, statusEmailInputFromSubmission } from "@/services/email.service";
 
 export const STATUS_STEPS = ["Permohonan diterima", "Verifikasi", "Diproses", "Ditandatangani", "Selesai"] as const;
 export const SUBMISSION_STATUS = ["Menunggu Verifikasi", "Verifikasi", "Diproses", "Ditandatangani", "Selesai", "Ditolak"] as const;
@@ -224,51 +225,6 @@ export function createNomorTiket(sequence: number, date = new Date()) {
 
 export function createTrackingUrl(nomorPengajuan: string) {
     return `${getAppBaseUrl()}/surat-online/tracking?nomor=${encodeURIComponent(nomorPengajuan)}`;
-}
-
-async function sendPengajuanEmail(payload: {
-    to: string;
-    nama: string;
-    nomor_pengajuan: string;
-    nomor_tiket: string;
-    tanggal: string;
-    jenis_pelayanan: string;
-    tracking_url: string;
-}) {
-    const apiKey = process.env.RESEND_API_KEY;
-    if (!apiKey || !payload.to) return { skipped: true, reason: "RESEND_API_KEY/email belum tersedia" };
-
-    const response = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-            authorization: `Bearer ${apiKey}`,
-            "content-type": "application/json",
-        },
-        body: JSON.stringify({
-            from: process.env.RESEND_FROM_EMAIL ?? "Kelurahan Tamansari <noreply@example.com>",
-            to: payload.to,
-            subject: "Pengajuan Surat Berhasil",
-            html: `
-                <div style="font-family:Arial,sans-serif;line-height:1.7;color:#0f172a">
-                    <h2>Pengajuan Surat Berhasil</h2>
-                    <p>Yth. ${payload.nama}, permohonan surat online Anda berhasil diterima.</p>
-                    <ul>
-                        <li><b>Nomor Pengajuan:</b> ${payload.nomor_pengajuan}</li>
-                        <li><b>Nomor Tiket:</b> ${payload.nomor_tiket}</li>
-                        <li><b>Tanggal:</b> ${payload.tanggal}</li>
-                        <li><b>Jenis Pelayanan:</b> ${payload.jenis_pelayanan}</li>
-                    </ul>
-                    <p>Cek status melalui tautan berikut:</p>
-                    <p><a href="${payload.tracking_url}">${payload.tracking_url}</a></p>
-                    <p>Kelurahan Tamansari<br/>Kecamatan Pulomerak<br/>Kota Cilegon</p>
-                </div>
-            `,
-        }),
-    });
-
-    const data = await response.json().catch(() => null);
-    if (!response.ok) return { ok: false, status: response.status, data };
-    return { ok: true, status: response.status, data };
 }
 
 export async function getLayananList() {
@@ -633,24 +589,7 @@ export async function createSubmission(formData: SubmissionRequest, authenticate
             console.dir(n8nError, { depth: null });
         }
 
-        try {
-            const emailResult = await sendPengajuanEmail({
-                to: payload.email,
-                nama: payload.nama_lengkap,
-                nomor_pengajuan,
-                nomor_tiket,
-                tanggal: pengajuan.created_at ?? new Date().toISOString(),
-                jenis_pelayanan: jenisSuratFromDatabase,
-                tracking_url,
-            });
-            if ("ok" in emailResult && emailResult.ok === false) {
-                console.error("RESEND EMAIL ERROR");
-                console.dir(emailResult, { depth: null });
-            }
-        } catch (emailError) {
-            console.error("RESEND EMAIL ERROR");
-            console.dir(emailError, { depth: null });
-        }
+        await sendApplicationStatusEmailSafely({ email: payload.email, nama: payload.nama_lengkap, nomorPengajuan: nomor_pengajuan, nomorTiket: nomor_tiket, jenisPelayanan: jenisSuratFromDatabase, status: "submitted", trackingUrl: tracking_url, tanggal: pengajuan.created_at ?? new Date().toISOString() });
 
         return {
             ...pengajuanPayload,
@@ -738,7 +677,7 @@ export async function updateSubmissionStatus(id: string, status: string, catatan
         throw new Error("Status pengajuan tidak valid untuk workflow admin.");
     }
 
-    const { data, error } = await client.from("pengajuan_surat").update(updatePayload).eq("id", id).select("*").single();
+    const { data, error } = await client.from("pengajuan_surat").update(updatePayload).eq("id", id).select("*, layanan(*)").single();
     if (error) {
         console.error("SUPABASE UPDATE PENGAJUAN_SURAT ERROR");
         console.dir(error, { depth: null });
@@ -766,6 +705,9 @@ export async function updateSubmissionStatus(id: string, status: string, catatan
             console.dir(notificationError, { depth: null });
         });
     }
+
+    const emailStatus = notificationStatusFromSubmissionStatus(normalizedStatus);
+    if (emailStatus) await sendApplicationStatusEmailSafely(statusEmailInputFromSubmission(data as Record<string, unknown>, emailStatus, catatan, now));
 
     try {
         const tracking_url = createTrackingUrl(data.nomor_pengajuan);

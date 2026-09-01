@@ -29,21 +29,12 @@ test("form registrasi menyediakan status pekerjaan dan semua pilihannya", () => 
     for (const option of ["Bekerja", "Belum Bekerja"]) assert.match(register, new RegExp(`<option>${option}</option>`));
 });
 
-test("agama adalah field profil warga authoritative sejak registrasi hingga profil", () => {
+test("agama divalidasi saat registrasi tanpa meminta kolom yang tidak ada di warga_profiles production", () => {
     assert.match(register, /aria-label="Agama"/);
     for (const option of ["Islam", "Kristen", "Katolik", "Hindu", "Buddha", "Konghucu"]) assert.match(register, new RegExp(`<option>${option}</option>`));
-    assert.match(auth, /agama: z\.enum/);
-    assert.match(registerRoute, /agama: payload\.agama/);
-    assert.match(auth, /WARGA_PROFILE_COLUMNS\s*=\s*[^;]*agama[^;]*status_perkawinan[^;]*status_pekerjaan/);
-    assert.match(wargaProfilePage, /\["Agama", profile\.agama \|\| "-"\]/);
-    assert.match(wargaProfilePage, /aria-label="Agama"/);
-    assert.match(wargaProfilePage, /WARGA_RELIGIONS\.map/);
-    assert.match(wargaProfilePage, /setAgama\(profile\?\.agama \|\| ""\)/);
-    assert.match(wargaProfilePage, /updateWargaProfile\(\{[^}]*agama,/);
-    assert.match(auth, /editable = new Set\(\[[^\]]*"agama"/);
-    assert.match(auth, /profileData\.agama = z\.enum\(WARGA_RELIGIONS/);
-    assert.match(auth, /from\("warga_profiles"\)\.update\(profileData\)/);
-    assert.match(trackingRoute, /WARGA_PROFILE_COLUMNS\s*=\s*[^;]*agama[^;]*status_perkawinan[^;]*status_pekerjaan/);
+    assert.match(auth, /wargaRegisterSchema[\s\S]*agama: z\.enum/);
+    assert.doesNotMatch(registerRoute, /agama:\s*payload\.agama/);
+    assert.doesNotMatch(auth.match(/const WARGA_PROFILE_COLUMNS = "([^"]*)"/)?.[1] ?? "", /(?:^|,)agama(?:,|$)/);
     assert.doesNotMatch(pdf, /value\(profile\.agama\)/);
     assert.match(pdf, /value\(surat\.agama\)/);
     assert.doesNotMatch(pdf, /Tidak dicantumkan/);
@@ -58,11 +49,12 @@ test("finalizer mengambil profil verified dan menyimpan snapshot status authorit
     assert.doesNotMatch(finalizer, /(?:agama|status_perkawinan|status_pekerjaan):\s*pengajuan/);
 });
 
-test("register memvalidasi dan menyimpan kedua status ke profil", () => {
-    assert.match(auth, /status_perkawinan: z\.enum/);
-    assert.match(auth, /status_pekerjaan: z\.enum/);
-    assert.match(registerRoute, /status_perkawinan: payload\.status_perkawinan/);
-    assert.match(registerRoute, /status_pekerjaan: payload\.status_pekerjaan/);
+test("register memvalidasi kedua status tanpa menyimpannya ke warga_profiles production", () => {
+    assert.match(auth, /wargaRegisterSchema[\s\S]*status_perkawinan: z\.enum/);
+    assert.match(auth, /wargaRegisterSchema[\s\S]*status_pekerjaan: z\.enum/);
+    for (const field of ["status_perkawinan", "status_pekerjaan"]) {
+        assert.doesNotMatch(registerRoute, new RegExp(`${field}:\\s*payload\\.${field}`));
+    }
 });
 
 test("Surat Profil tidak meminta status yang tidak ada pada schema production", () => {
@@ -87,12 +79,16 @@ test("auth dan Dokumen Saya tetap memakai ownership existing", () => {
     assert.match(documents, /useWargaAuth/);
 });
 
-test("query profil production memakai status yang tersedia pada schema", () => {
-    assert.match(migration, /add column if not exists status_pekerjaan text/);
-    assert.match(auth, /WARGA_PROFILE_COLUMNS\s*=\s*[^;]*agama[^;]*status_perkawinan[^;]*status_pekerjaan/);
-    for (const source of [auth, registerRoute, pdf, adminData, adminUsers]) {
-        assert.doesNotMatch(source, /(?:warga_profiles\.pekerjaan|status_perkawinan,pekerjaan)/);
+test("register dan auth hanya memakai kolom warga_profiles yang tersedia di production", () => {
+    const insertColumns = auth.match(/export const wargaProfileInsertColumns = \[([\s\S]*?)\] as const/)?.[1] ?? "";
+    assert.match(insertColumns, /"id"/);
+    for (const field of ["agama", "status_perkawinan", "status_pekerjaan"]) {
+        assert.doesNotMatch(insertColumns, new RegExp(`"${field}"`));
+        assert.doesNotMatch(registerRoute, new RegExp(`${field}:\\s*payload\\.${field}`));
+        assert.doesNotMatch(auth.match(/const WARGA_PROFILE_COLUMNS = "([^"]*)"/)?.[1] ?? "", new RegExp(`(?:^|,)${field}(?:,|$)`));
     }
+    assert.match(registerRoute, /cleanupStorage\(supabaseAdmin, uploadedFiles\)/);
+    assert.match(registerRoute, /cleanupAuthUser\(createdUserId\)/);
 });
 
 test("proses pengajuan mengirim tiga field wajib langsung dari profil warga", () => {

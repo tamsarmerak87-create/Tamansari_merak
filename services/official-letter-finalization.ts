@@ -8,6 +8,7 @@ import { getActiveStage, isFinalSubmissionStatus, normalizeWorkflowRole } from "
 import { assertTemplateContentSafe, getActiveServiceTemplate, mapDocumentValues, renderDocumentTemplate, signerFromProfile, templateFromSnapshot, templateSnapshot, validateTemplateFields, verificationCode } from "@/services/official-document";
 import { SUBMISSION_DOCUMENT_BUCKET } from "@/services/submission-storage";
 import { renderOfficialLetterPdf } from "@/services/official-letter-pdf";
+import { sendApplicationStatusEmailSafely, statusEmailInputFromSubmission } from "@/services/email.service";
 
 type AnyRow = Record<string, any>;
 function jsonError(message: string, status = 400) { return NextResponse.json({ ok: false, error: message }, { status }); }
@@ -307,6 +308,7 @@ async function handleOfficialLetter(request: NextRequest, context: { params: Pro
         await supabase.from("verifikasi_pengajuan").update({ status: "Disetujui", petugas_id: session.profile.id, catatan: body.catatan || "Disetujui dan ditandatangani secara digital internal oleh Lurah.", acted_at: now, approved_at: now }).eq("id", activeStage.id).in("status", ["Menunggu", "Diproses"]);
         await supabase.from("tracking_pengajuan").insert({ pengajuan_id: id, status: "SELESAI", keterangan: "Dokumen disetujui Lurah, diberi QR verifikasi, dan diterbitkan.", petugas: signer.nama, created_at: now });
         for (const action of ["REVIEW_LURAH", "APPROVAL_LURAH", "TTD", "PENERBITAN", "QR_CREATED", "PDF_CREATED"]) await writeAudit(supabase, { pengajuan_id: id, status: "SELESAI", action, aksi: action, tahap: "LURAH", role: "lurah", user_id: session.profile.id, nama_petugas: signer.nama, catatan: action === "TTD" ? "Persetujuan digital internal; bukan TTE bersertifikat BSrE." : body.catatan || "Dokumen final diterbitkan.", metadata: { verification_code: code, verification_url: verificationUrl, qr_path: qrPath, pdf_path: finalUpload.path }, created_at: now });
+        await sendApplicationStatusEmailSafely(statusEmailInputFromSubmission({ ...pengajuan, ...finalized }, "completed", body.catatan, now));
         logFinalize("SUCCESS", id, { documentId: issuedDocument.id });
         return NextResponse.json({
             ok: true,

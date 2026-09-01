@@ -3,6 +3,7 @@ import { getAdminSession, isPetugas } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
 import { ROLE_STAGE_STATUS, STAGE_WAITING_STATUS, VERIFICATION_STAGES, getActiveStage, isFinalSubmissionStatus, normalizeSubmissionStatus, normalizeWorkflowRole } from "@/services/verification-workflow";
 import { createWargaNotification, type NotificationStatus } from "@/services/warga-notifikasi.service";
+import { sendApplicationStatusEmailSafely, statusEmailInputFromSubmission } from "@/services/email.service";
 
 function jsonError(message: string, status = 400) {
     return NextResponse.json({ ok: false, error: message }, { status });
@@ -155,7 +156,7 @@ export async function PATCH(request: NextRequest) {
         pengajuanUpdate.diproses_by = petugasId;
     }
 
-    const { data, error } = await supabase.from("pengajuan_surat").update(pengajuanUpdate).eq("id", body.id).select("*").single();
+    const { data, error } = await supabase.from("pengajuan_surat").update(pengajuanUpdate).eq("id", body.id).select("*, layanan(*)").single();
     if (error) return jsonError(error.message, 500);
 
     if (!isReject && nextStage) {
@@ -191,6 +192,8 @@ export async function PATCH(request: NextRequest) {
     await createWargaNotification({ pengajuanId: body.id, nik: String(pengajuanAktif.nik ?? ""), status: notificationStatusFor(body.action, activeStage), catatan }).catch((notificationError) => {
         console.error("WARGA NOTIFICATION INSERT ERROR", notificationError);
     });
+    const emailStatus = notificationStatusFor(body.action, activeStage);
+    await sendApplicationStatusEmailSafely(statusEmailInputFromSubmission(data as Record<string, unknown>, emailStatus, catatan, now));
 
     return NextResponse.json({ ok: true, data });
 }

@@ -3,6 +3,7 @@ import { getAdminSession, isPetugas } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
 import { ROLE_STAGE_STATUS, STAGE_WAITING_STATUS, VERIFICATION_STAGES, getActiveStage, isFinalSubmissionStatus, normalizeSubmissionStatus, normalizeWorkflowRole } from "@/services/verification-workflow";
 import { createWargaNotification } from "@/services/warga-notifikasi.service";
+import { sendApplicationStatusEmailSafely, statusEmailInputFromSubmission } from "@/services/email.service";
 
 type RouteContext = { params: Promise<{ id: string }> };
 type SupabaseError = { message?: string; details?: string; hint?: string; code?: string };
@@ -301,7 +302,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
             .from("pengajuan_surat")
             .update(pengajuanUpdate)
             .eq("id", pengajuanId)
-            .select("id,status")
+            .select("*, layanan(*)")
             .maybeSingle();
         if (updatePengajuanError) {
             logSupabaseOperation(debugContext, "update pengajuan_surat", "pengajuan_surat", updatePengajuanError);
@@ -351,6 +352,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
         await createWargaNotification({ pengajuanId, nik: String(pengajuan.nik ?? ""), status: isReject ? "rejected" : nextStage ? "verified" : "completed", catatan }).catch((notificationError) => {
             console.error("WARGA NOTIFICATION INSERT ERROR", notificationError);
         });
+        const emailStatus = isReject ? "rejected" : nextStage ? "verified" : "completed";
+        await sendApplicationStatusEmailSafely(statusEmailInputFromSubmission(updatedPengajuan as Record<string, unknown>, emailStatus, catatan, now));
 
         logDebug("success", { pengajuanId, stage: activeStage.tahap, action, nextStatus: nextWorkflowStatus });
         return NextResponse.json({ ok: true, data: updatedPengajuan });
