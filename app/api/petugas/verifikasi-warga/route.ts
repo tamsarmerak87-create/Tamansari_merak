@@ -27,7 +27,7 @@ async function signedStorageUrl(supabase: ReturnType<typeof createSupabaseAdminC
 
 async function enrichWargaDetail(supabase: ReturnType<typeof createSupabaseAdminClient>, row: Record<string, any>) {
     const [officers, changeRequests] = await Promise.all([
-        supabase.from("petugas").select("id,username,nama_lengkap,jabatan,role,is_active"),
+        supabase.from("petugas").select("id,username,nama_lengkap,nip,jabatan,role,is_active"),
         supabase.from("warga_profile_change_requests").select("id,change_request_id,user_id,profile_id,jenis_perubahan,data_lama,data_baru,alasan,dokumen_pendukung,status,alasan_petugas,created_at,verified_at,verified_by").eq("profile_id", row.id).order("created_at", { ascending: false }),
     ]);
     const officerMap = new Map((officers.data ?? []).map((p: Record<string, any>) => [String(p.id), p]));
@@ -41,7 +41,21 @@ async function enrichWargaDetail(supabase: ReturnType<typeof createSupabaseAdmin
         const { url, meta } = await signedStorageUrl(supabase, CHANGE_DOCUMENT_BUCKET, req.dokumen_pendukung);
         documents.push({ id: req.id, nama_dokumen: `Dokumen Pendukung ${req.jenis_perubahan}`, jenis_dokumen: "Dokumen Pendukung", nama_file: fileNameFromPath(req.dokumen_pendukung), file_url: url, preview_url: url, tipe_file: guessType(req.dokumen_pendukung), ukuran_file: meta?.metadata?.size ?? meta?.metadata?.contentLength ?? null, uploaded_at: req.created_at, status: req.status ?? (url ? "Dokumen tersedia" : "File tidak ditemukan"), change_request: req });
     }
-    return { ...row, active_stage: getActiveWargaStage(row), return_targets: getValidReturnStages(getActiveWargaStage(row)?.role), documents, profile_change_requests: changeRequests.data ?? [], handled_by_name: row.handled_by ? (officerMap.get(String(row.handled_by))?.nama_lengkap ?? officerMap.get(String(row.handled_by))?.username ?? row.handled_by) : null, verification_history: Array.isArray(row.verification_history) ? row.verification_history.map((h: Record<string, any>) => ({ ...h, nama_petugas: h.nama_petugas ?? (h.petugas_id ? officerMap.get(String(h.petugas_id))?.nama_lengkap : null) })) : [] };
+    const verificationHistory = Array.isArray(row.verification_history) ? row.verification_history.map((h: Record<string, any>) => {
+        const officer = h.petugas_id ? officerMap.get(String(h.petugas_id)) : null;
+        return { ...h, nama_petugas: officer?.nama_lengkap ?? officer?.username ?? h.nama_petugas ?? null };
+    }) : [];
+    const latestHistoryOfficer = ([...verificationHistory] as Record<string, any>[]).reverse().find((h) => h.petugas_id || h.nama_petugas);
+    const source = row.handled_by
+        ? { id: row.handled_by, storedName: null }
+        : latestHistoryOfficer
+            ? { id: latestHistoryOfficer.petugas_id ?? null, storedName: latestHistoryOfficer.nama_petugas ?? null }
+            : row.verified_by
+                ? { id: row.verified_by, storedName: null }
+                : null;
+    const assignedOfficer = source?.id ? officerMap.get(String(source.id)) : null;
+    const handledByName = assignedOfficer?.nama_lengkap ?? assignedOfficer?.username ?? source?.storedName ?? null;
+    return { ...row, active_stage: getActiveWargaStage(row), return_targets: getValidReturnStages(getActiveWargaStage(row)?.role), documents, profile_change_requests: changeRequests.data ?? [], handled_by_name: handledByName, handled_by_nip: assignedOfficer?.nip ?? null, handled_by_jabatan: assignedOfficer?.jabatan ?? null, handled_by_role: assignedOfficer?.role ?? null, verification_history: verificationHistory };
 }
 
 export async function GET(request: NextRequest) {
