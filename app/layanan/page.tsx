@@ -1,4 +1,5 @@
 import nextDynamic from "next/dynamic";
+import { connection } from "next/server";
 import { LayananCatalog } from "@/app/layanan/layanan-catalog";
 import { publicRepository } from "@/services/repository";
 
@@ -9,6 +10,7 @@ const LayananExperience = nextDynamic(() => import("@/app/layanan/layanan-catalo
 });
 
 export default async function LayananPage() {
+    await connection();
     const layanan = await publicRepository.getServices();
 
     return (

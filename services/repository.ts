@@ -1,7 +1,7 @@
 import { agenda, gallery, news, statistics } from "@/constants/site";
 import { MASTER_LAYANAN } from "@/constants/master-layanan";
 import type { AdminProfile, AgendaItem, BannerRecord, ComplaintRecord, EmployeeRecord, FaqRecord, LetterRecord, NewsItem, PosbankumRecord, PublicService, ServiceCategory, Statistic } from "@/types";
-import { createSupabaseBrowserClient, createSupabaseServerClient, subscribeToTable } from "@/services/supabase";
+import { createSupabaseAnonClient, createSupabaseBrowserClient, createSupabaseServerClient, subscribeToTable } from "@/services/supabase";
 
 type TableName = "admin_profiles" | "employees" | "news" | "agenda" | "banners" | "faqs" | "letters" | "complaints" | "posbankum_cases" | "statistics";
 type RepositoryPayload = Record<string, unknown>;
@@ -95,7 +95,7 @@ export function createRepository<T extends { id: string }>(table: TableName) {
 export const publicRepository = {
     getStatistics: async () => createRepository<Statistic & { id: string }>("statistics").list(statistics.map((item) => ({ id: item.label, ...item }))),
     getServices: async () => {
-        const client = getClient();
+        const client = typeof window === "undefined" ? createSupabaseAnonClient() : createSupabaseBrowserClient();
 
         const { data, error } = await client
             .from("layanan")
