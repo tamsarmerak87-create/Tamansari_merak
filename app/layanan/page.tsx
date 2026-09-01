@@ -1,8 +1,10 @@
-import dynamic from "next/dynamic";
+import nextDynamic from "next/dynamic";
 import { LayananCatalog } from "@/app/layanan/layanan-catalog";
 import { publicRepository } from "@/services/repository";
 
-const LayananExperience = dynamic(() => import("@/app/layanan/layanan-catalog").then((mod) => mod.LayananCatalog), {
+export const dynamic = "force-dynamic";
+
+const LayananExperience = nextDynamic(() => import("@/app/layanan/layanan-catalog").then((mod) => mod.LayananCatalog), {
     ssr: true,
 });
 
