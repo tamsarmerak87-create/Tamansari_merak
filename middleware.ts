@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { verifyPortalSessionToken } from "@/lib/portal-session-token";
 
 const protectedPrefixes = ["/dashboard", "/profile", "/profil", "/layanan", "/pengajuan", "/surat-online", "/tracking", "/posbankum"];
 const adminPublicPaths = ["/admin/login"];
@@ -16,11 +17,11 @@ function isPetugasProtectedPath(pathname: string) {
     return pathname === "/petugas" || (pathname.startsWith("/petugas/") && !petugasPublicPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`)));
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
     const { pathname } = request.nextUrl;
     if (isAdminProtectedPath(pathname)) {
-        const adminSessionToken = request.cookies.has("tamsar_admin_session");
-        const petugasSessionToken = request.cookies.has("tamsar_petugas_session");
+        const adminSessionToken = await verifyPortalSessionToken(request.cookies.get("tamsar_admin_session")?.value);
+        const petugasSessionToken = await verifyPortalSessionToken(request.cookies.get("tamsar_petugas_session")?.value);
         const response = NextResponse.next();
         response.headers.set("x-tamsar-admin-role-required", "admin");
         if (!adminSessionToken && petugasSessionToken) {
@@ -39,7 +40,7 @@ export function middleware(request: NextRequest) {
     }
     if (isPetugasProtectedPath(pathname)) {
         const url = request.nextUrl.clone();
-        if (!request.cookies.has("tamsar_petugas_session")) {
+        if (!await verifyPortalSessionToken(request.cookies.get("tamsar_petugas_session")?.value)) {
             url.pathname = "/petugas/login";
             url.searchParams.set("next", pathname);
             return NextResponse.redirect(url);

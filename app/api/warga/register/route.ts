@@ -80,6 +80,7 @@ export async function POST(request: Request) {
     }
 
     let createdUserId = "";
+    const uploadedFiles: { bucket: string; path: string }[] = [];
     try {
         const contentType = request.headers.get("content-type") ?? "";
         const formData = contentType.includes("multipart/form-data") ? await request.formData() : null;
@@ -113,7 +114,6 @@ export async function POST(request: Request) {
         const user = createUserResponse.data.user;
         if (!user) throw new Error("Auth error: Supabase tidak mengembalikan user setelah pendaftaran.");
         createdUserId = user.id;
-        const uploadedFiles: { bucket: string; path: string }[] = [];
         const fotoUrl = selfieFile ? await uploadImage(supabaseAdmin, WARGA_PROFILE_PHOTO_BUCKET, `${user.id}/profile-${Date.now()}.${extensionFor(selfieFile)}`, selfieFile) : null;
         if (fotoUrl) uploadedFiles.push({ bucket: WARGA_PROFILE_PHOTO_BUCKET, path: fotoUrl });
         const ktpPath = ktpFile ? await uploadImage(supabaseAdmin, WARGA_PROFILE_CHANGE_DOCUMENT_BUCKET, `${user.id}/register-ktp-${Date.now()}.${extensionFor(ktpFile)}`, ktpFile) : null;
@@ -137,9 +137,6 @@ export async function POST(request: Request) {
             tempat_lahir: payload.tempat_lahir,
             tanggal_lahir: payload.tanggal_lahir,
             jenis_kelamin: payload.jenis_kelamin,
-            agama: payload.agama,
-            status_perkawinan: payload.status_perkawinan,
-            status_pekerjaan: payload.status_pekerjaan,
             foto_url: fotoUrl,
             role: "warga",
             status_verifikasi: "Belum Terverifikasi",
@@ -169,6 +166,7 @@ export async function POST(request: Request) {
 
         return NextResponse.json({ user, profile: profileResponse.data });
     } catch (error) {
+        if (uploadedFiles.length > 0) await cleanupStorage(supabaseAdmin, uploadedFiles);
         if (createdUserId) {
             try {
                 await cleanupAuthUser(createdUserId);

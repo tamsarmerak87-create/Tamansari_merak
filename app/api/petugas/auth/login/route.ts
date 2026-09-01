@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import { NextResponse, type NextRequest } from "next/server";
 import { isAdmin, isPetugas } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
+import { createPortalSessionToken } from "@/lib/portal-session-token";
 
 const failedResponse = () => NextResponse.json({ ok: false, message: "Username atau password salah." }, { status: 401 });
 
@@ -29,7 +30,7 @@ export async function POST(request: NextRequest) {
 
         const { password_hash: _passwordHash, ...safeProfile } = petugas;
         const response = NextResponse.json({ ok: true, user: { id: petugas.id, username: petugas.username }, profile: safeProfile });
-        response.cookies.set("tamsar_petugas_session", petugas.id, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 8 });
+        response.cookies.set("tamsar_petugas_session", await createPortalSessionToken(petugas.id), { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 8 });
         response.cookies.delete("tamsar_admin_session");
         return response;
     } catch (error) {

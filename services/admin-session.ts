@@ -1,6 +1,7 @@
 import { type NextRequest } from "next/server";
 import { createSupabaseAdminClient } from "@/services/supabase";
 import { normalizeWorkflowRole } from "@/services/verification-workflow";
+import { verifyPortalSessionToken } from "@/lib/portal-session-token";
 
 export const workflowRoles = [
     "admin",
@@ -83,7 +84,9 @@ export async function getAdminSession(request: NextRequest, options: { cookie?: 
         : cookie === "petugas"
             ? request.cookies.get("tamsar_petugas_session")?.value
             : request.cookies.get("tamsar_admin_session")?.value ?? request.cookies.get("tamsar_petugas_session")?.value;
-    if (!petugasId) return { error: "UNAUTHENTICATED" as const, profile: null };
+    const rawToken = petugasId;
+    const verifiedId = await verifyPortalSessionToken(rawToken);
+    if (!verifiedId) return { error: "UNAUTHENTICATED" as const, profile: null };
 
     const supabase = createSupabaseAdminClient();
     if (!supabase) return { error: "SUPABASE_NOT_CONFIGURED" as const, profile: null };
@@ -91,7 +94,7 @@ export async function getAdminSession(request: NextRequest, options: { cookie?: 
     const { data, error } = await supabase
         .from("petugas")
         .select("id,username,nama_lengkap,nip,jabatan,role,is_active")
-        .eq("id", petugasId)
+        .eq("id", verifiedId)
         .eq("is_active", true)
         .maybeSingle();
 

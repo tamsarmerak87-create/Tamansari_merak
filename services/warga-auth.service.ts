@@ -104,9 +104,6 @@ export const wargaProfileInsertColumns = [
     "tempat_lahir",
     "tanggal_lahir",
     "jenis_kelamin",
-    "agama",
-    "status_perkawinan",
-    "status_pekerjaan",
     "foto_url",
     "role",
     "status_verifikasi",
@@ -131,9 +128,6 @@ export const wargaProfileInsertSchema = z.object({
     tempat_lahir: z.string().min(2),
     tanggal_lahir: z.string().min(1),
     jenis_kelamin: z.string().min(1),
-    agama: z.enum(WARGA_RELIGIONS),
-    status_perkawinan: z.enum(["Menikah", "Belum Menikah", "Janda", "Duda"]),
-    status_pekerjaan: z.enum(["Bekerja", "Belum Bekerja"]),
     foto_url: z.string().nullable().optional(),
     role: z.literal("warga"),
     status_verifikasi: z.enum(["Belum Terverifikasi", "Akun Terverifikasi", "Terverifikasi"]),
@@ -159,7 +153,7 @@ function client() {
     return supabase;
 }
 
-const WARGA_PROFILE_COLUMNS = "id,nama_lengkap,nik,nomor_kk,email,nomor_hp,nomor_whatsapp,tempat_lahir,tanggal_lahir,jenis_kelamin,agama,status_perkawinan,status_pekerjaan,alamat,rt,rw,kelurahan,kecamatan,foto_url,role,status_verifikasi,tahap_verifikasi,alasan_penolakan,created_at,updated_at";
+const WARGA_PROFILE_COLUMNS = "id,nama_lengkap,nik,nomor_kk,email,nomor_hp,nomor_whatsapp,tempat_lahir,tanggal_lahir,jenis_kelamin,alamat,rt,rw,kelurahan,kecamatan,foto_url,role,status_verifikasi,tahap_verifikasi,alasan_penolakan,created_at,updated_at";
 
 type ProfileQueryDebug = {
     authUserId: string;
@@ -309,14 +303,13 @@ export async function updateWargaProfile(profile: Partial<WargaProfile>) {
     const { user, profile: currentProfile } = await getCurrentWarga();
     if (!user) throw new Error("Silakan login terlebih dahulu.");
     if (!currentProfile?.id) throw new Error("Profil warga tidak ditemukan untuk akun login ini. Periksa apakah akun Auth sudah memiliki row di public.warga_profiles.");
-    const editable = new Set(["nomor_hp", "nomor_whatsapp", "email", "alamat", "rt", "rw", "foto_url", "agama", "status_perkawinan", "status_pekerjaan"]);
+    const editable = new Set(["nomor_hp", "nomor_whatsapp", "email", "alamat", "rt", "rw", "foto_url"]);
     const blocked = new Set(["id", "role", "status_verifikasi", "user_id", "nik", "nomor_kk", "nama_lengkap", "tempat_lahir", "tanggal_lahir", "jenis_kelamin", "kelurahan", "kecamatan", "alasan_penolakan", "created_at"]);
     const profileData = Object.fromEntries(Object.entries(sanitizeWargaProfileUpdatePayload(profile)).filter(([key]) => !blocked.has(key)));
     const invalidColumns = Object.keys(profileData).filter((key) => !editable.has(key));
     if (invalidColumns.length > 0) throw new Error(`Field profil tidak boleh diubah langsung: ${invalidColumns.join(", ")}.`);
     if (typeof profileData.nomor_whatsapp === "string" && profileData.nomor_whatsapp.trim().length < 8) throw new Error("Nomor WhatsApp tidak valid.");
     if (typeof profileData.email === "string" && !z.string().email().safeParse(profileData.email.trim()).success) throw new Error("Email tidak valid.");
-    if (typeof profileData.agama === "string") profileData.agama = z.enum(WARGA_RELIGIONS, { message: "Agama wajib dipilih." }).parse(profileData.agama.trim());
     if (Object.keys(profileData).length > 0) profileData.updated_at = new Date().toISOString();
     const { data, error } = await client().from("warga_profiles").update(profileData).eq("id", currentProfile.id).select(WARGA_PROFILE_COLUMNS).maybeSingle();
     debugProfileQuery({ authUserId: user.id, profileId: currentProfile.id, table: "warga_profiles", filterColumn: "id", filterValue: currentProfile.id, rowCount: data ? 1 : 0, operation: "update" });

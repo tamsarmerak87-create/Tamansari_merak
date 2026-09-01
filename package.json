@@ -46,6 +46,7 @@
     "eslint": "latest",
     "eslint-config-next": "latest",
     "postcss": "latest",
+    "supabase": "^2.116.0",
     "tailwindcss": "latest",
     "typescript": "latest"
   }

@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import { NextResponse, type NextRequest } from "next/server";
 import { isAdmin } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
+import { createPortalSessionToken } from "@/lib/portal-session-token";
 
 type PetugasRow = {
     id: string;
@@ -52,7 +53,7 @@ export async function POST(request: NextRequest) {
             user: { id: row.id, username: row.username },
             profile: safeProfile,
         });
-        response.cookies.set("tamsar_admin_session", row.id, {
+        response.cookies.set("tamsar_admin_session", await createPortalSessionToken(row.id), {
             httpOnly: true,
             sameSite: "lax",
             secure: process.env.NODE_ENV === "production",
