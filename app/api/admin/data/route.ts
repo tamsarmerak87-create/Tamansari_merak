@@ -38,14 +38,14 @@ export async function GET(request: NextRequest) {
                 .order("nama", { ascending: true }),
             supabase
                 .from("warga_profiles")
-                .select("id,nama_lengkap,nik,email,nomor_hp,nomor_whatsapp,nomor_kk,tempat_lahir,tanggal_lahir,jenis_kelamin,agama,status_perkawinan,status_pekerjaan,alamat,rt,rw,kelurahan,kecamatan,role,created_at,status_verifikasi,alasan_penolakan")
+                .select("id,nama_lengkap,nik,email,nomor_hp,nomor_whatsapp,nomor_kk,tempat_lahir,tanggal_lahir,jenis_kelamin,alamat,rt,rw,kelurahan,kecamatan,role,created_at,status_verifikasi,alasan_penolakan")
                 // The admin verification queue is driven by the account status,
                 // not by the separate letter-submission workflow stages.
                 .eq("status_verifikasi", "Belum Terverifikasi")
                 .order("created_at", { ascending: true }),
             supabase
                 .from("warga_profiles")
-                .select("id,nama_lengkap,nik,email,nomor_hp,nomor_whatsapp,nomor_kk,tempat_lahir,tanggal_lahir,jenis_kelamin,agama,status_perkawinan,status_pekerjaan,alamat,rt,rw,kelurahan,kecamatan,role,created_at,status_verifikasi,alasan_penolakan")
+                .select("id,nama_lengkap,nik,email,nomor_hp,nomor_whatsapp,nomor_kk,tempat_lahir,tanggal_lahir,jenis_kelamin,alamat,rt,rw,kelurahan,kecamatan,role,created_at,status_verifikasi,alasan_penolakan")
                 .order("created_at", { ascending: false }),
         ]);
 
