@@ -1,0 +1,9 @@
+{
+  "appId": "com.cilegon.tamsar.admin",
+  "appName": "TAMSAR ADMIN",
+  "webDir": "public",
+  "server": {
+    "url": "https://tamansari-merak.vercel.app/admin/login",
+    "cleartext": false
+  }
+}

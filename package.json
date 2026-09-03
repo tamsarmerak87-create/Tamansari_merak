@@ -11,6 +11,10 @@
     "test:regression": "node --test tests/application-status-email-regression.test.mjs tests/admin-authorization-regression.test.mjs tests/admin-pengajuan-workflow-regression.test.mjs tests/auth-password-reset-regression.test.mjs tests/official-letter-regression.test.mjs tests/master-template-registry-regression.test.mjs tests/marriage-submission-regression.test.mjs tests/submission-memory-regression.test.mjs tests/submission-purpose-binding-regression.test.mjs tests/submission-workflow-regression.test.mjs tests/warga-documents-regression.test.mjs tests/warga-profile-status-regression.test.mjs tests/pengajuan-profile-auth-binding-regression.test.mjs"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.1",
+    "@capacitor/cli": "^8.5.1",
+    "@capacitor/core": "^8.5.1",
+    "@capacitor/ios": "^8.5.1",
     "@hookform/resolvers": "latest",
     "@supabase/supabase-js": "latest",
     "@tanstack/react-query": "latest",
@@ -37,6 +41,7 @@
     "zustand": "latest"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "latest",
     "@types/qrcode": "^1.5.6",

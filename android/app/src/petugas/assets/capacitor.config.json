@@ -1,0 +1,9 @@
+{
+  "appId": "com.cilegon.tamsar.petugas",
+  "appName": "TAMSAR PETUGAS",
+  "webDir": "public",
+  "server": {
+    "url": "https://tamansari-merak.vercel.app/petugas/dashboard",
+    "cleartext": false
+  }
+}
