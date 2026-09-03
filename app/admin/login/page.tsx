@@ -41,48 +41,66 @@ export default function AdminLoginPage() {
   }
 
   return (
-    <main className="relative grid min-h-screen place-items-center overflow-hidden bg-[radial-gradient(circle_at_top_left,#f6d889_0,#f8fafc_32%,#071a33_100%)] p-4">
-      <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(7,26,51,.82),rgba(11,44,106,.64),rgba(255,255,255,.18))]" />
-      <section className="relative grid w-full max-w-5xl overflow-hidden rounded-[2.5rem] border border-white/30 bg-white/90 shadow-[0_28px_90px_rgba(7,26,51,.35)] backdrop-blur-xl lg:grid-cols-[1.05fr_.95fr]">
-        <div className="bg-[linear-gradient(135deg,#071a33,#0B2C6A)] p-8 text-white sm:p-10">
-          <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-accent-400 text-gov-950 shadow-[0_18px_40px_rgba(246,216,137,.35)]">
-            <Building2 className="size-9" />
+    <main className="relative grid min-h-screen place-items-center overflow-hidden bg-[radial-gradient(circle_at_top,#f6d889_0,#f8fafc_30%,#dbe7f5_100%)] p-4 sm:p-6">
+      <div className="absolute -left-24 top-[-7rem] h-72 w-72 rounded-full bg-accent-300/30 blur-3xl" />
+      <div className="absolute -bottom-32 -right-24 h-80 w-80 rounded-full bg-gov-800/20 blur-3xl" />
+
+      <section className="relative w-full max-w-md rounded-[2rem] border border-white/80 bg-white/95 p-6 shadow-[0_24px_70px_rgba(7,26,51,.18)] backdrop-blur-xl sm:p-10">
+        <form onSubmit={login}>
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gov-950 text-accent-300 shadow-[0_14px_30px_rgba(7,26,51,.22)]">
+            <Building2 className="size-8" />
           </div>
-          <p className="mt-8 text-xs font-black uppercase tracking-[.25em] text-accent-200">Portal Admin Kelurahan Tamansari</p>
-          <h1 className="mt-4 text-4xl font-black leading-tight">Ruang kerja petugas untuk pelayanan digital warga.</h1>
-          <p className="mt-5 leading-8 text-white/75">Akses terpisah dari Portal Warga. Hanya akun Supabase yang terdaftar pada tabel <b>public.petugas</b> yang dapat mengelola verifikasi warga dan layanan administrasi.</p>
-          <div className="mt-8 rounded-[2rem] border border-white/15 bg-white/10 p-5">
-            <ShieldCheck className="size-7 text-accent-300" />
-            <p className="mt-3 font-black">Pemerintah Digital Indonesia</p>
-            <p className="mt-1 text-sm font-bold text-white/65">Aman, terotorisasi, dan siap memicu realtime status warga.</p>
+
+          <div className="mt-6 text-center">
+            <p className="text-xs font-black uppercase tracking-[.25em] text-accent-700">Login Admin</p>
+            <h1 className="mt-2 text-3xl font-black text-gov-950">Masuk ke Dashboard</h1>
           </div>
-        </div>
-        <form onSubmit={login} className="p-8 sm:p-10">
-          <p className="text-xs font-black uppercase tracking-[.25em] text-accent-700">Admin Login</p>
-          <h2 className="mt-2 text-3xl font-black text-gov-950">Masuk Dashboard</h2>
-          <label className="mt-8 block text-sm font-black text-gov-950">Username Petugas</label>
-          <div className="mt-2 flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3 ring-1 ring-slate-100 focus-within:ring-accent-300">
-            <UserRound className="size-5 text-slate-400" />
+
+          <label className="mt-8 block text-sm font-black text-gov-950" htmlFor="admin-username">
+            Username atau Email
+          </label>
+          <div className="mt-2 flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200 transition focus-within:bg-white focus-within:ring-2 focus-within:ring-accent-400">
+            <UserRound className="size-5 shrink-0 text-slate-400" />
             <input
-              className="w-full bg-transparent font-bold outline-none"
+              id="admin-username"
+              className="min-w-0 w-full bg-transparent font-bold text-gov-950 outline-none placeholder:font-medium placeholder:text-slate-400"
               type="text"
               name="username"
               autoComplete="username"
-              placeholder="Masukkan Username Petugas"
+              placeholder="Masukkan username atau email"
               value={username}
               onChange={(event) => setUsername(event.target.value)}
               required
             />
           </div>
-          <label className="mt-5 block text-sm font-black text-gov-950">Password</label>
-          <div className="mt-2 flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3 ring-1 ring-slate-100 focus-within:ring-accent-300">
-            <LockKeyhole className="size-5 text-slate-400" />
-            <input className="w-full bg-transparent font-bold outline-none" placeholder="••••••••" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
+
+          <label className="mt-5 block text-sm font-black text-gov-950" htmlFor="admin-password">
+            Password
+          </label>
+          <div className="mt-2 flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200 transition focus-within:bg-white focus-within:ring-2 focus-within:ring-accent-400">
+            <LockKeyhole className="size-5 shrink-0 text-slate-400" />
+            <input
+              id="admin-password"
+              className="min-w-0 w-full bg-transparent font-bold text-gov-950 outline-none placeholder:font-medium placeholder:text-slate-400"
+              name="password"
+              autoComplete="current-password"
+              placeholder="Masukkan password"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+            />
           </div>
-          {error && <p className="mt-4 rounded-2xl bg-red-50 p-4 text-sm font-black text-red-700">{error}</p>}
+
+          {error && (
+            <p role="alert" className="mt-4 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-bold text-red-700">
+              {error}
+            </p>
+          )}
+
           <Button type="submit" variant="gold" disabled={loading} className="mt-6 w-full sm:w-full">
             {loading ? <Loader2 className="size-5 animate-spin" /> : <ShieldCheck className="size-5" />}
-            {loading ? "Memverifikasi akun petugas..." : "Masuk Portal Admin"}
+            {loading ? "Memverifikasi akun..." : "Login Admin"}
           </Button>
         </form>
       </section>
