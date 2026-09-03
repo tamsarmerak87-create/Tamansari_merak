@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getAdminSession, isPetugas } from "@/services/admin-session";
 import { createSupabaseAdminClient } from "@/services/supabase";
+import { isFinalSubmissionStatus } from "@/services/verification-workflow";
 
 function error(message: string, status = 400) { return NextResponse.json({ ok: false, error: message }, { status }); }
 
@@ -19,6 +20,11 @@ export async function POST(request: NextRequest) {
     const lapangan = officers?.find((item) => item.id === body.lapangan_id);
     if (staff?.role !== "staff_pelayanan" || lapangan?.role !== "petugas_lapangan") return error("Petugas yang dipilih tidak sesuai role atau tidak aktif.", 400);
 
+    const { data: submission, error: submissionError } = await db.from("pengajuan_surat").select("id,status").eq("id", body.pengajuan_id).maybeSingle();
+    if (submissionError) return error(submissionError.message, 500);
+    if (!submission) return error("Pengajuan tidak ditemukan.", 404);
+    if (isFinalSubmissionStatus(String(submission.status))) return error("Pengajuan sudah selesai atau ditolak dan tidak dapat dibagikan.", 409);
+
     const { data: stages, error: stageError } = await db.from("verifikasi_pengajuan").select("id,tahap,role_petugas,status,petugas_id").eq("pengajuan_id", body.pengajuan_id).in("tahap", [1, 2]);
     if (stageError) return error(stageError.message, 500);
     const first = stages?.find((stage) => stage.tahap === 1);
@@ -26,7 +32,7 @@ export async function POST(request: NextRequest) {
     if (!first || !second) return error("Tahap assignment existing tidak ditemukan.", 409);
     if (first.role_petugas !== "staff_pelayanan" || second.role_petugas !== "petugas_lapangan") return error("Role tahap assignment tidak sesuai workflow existing.", 409);
     if (!["Menunggu", "Diproses"].includes(first.status) || !["Menunggu", "Diproses"].includes(second.status)) return error("Pengajuan sudah diproses dan tidak dapat dibagikan ulang.", 409);
-    if (first.petugas_id || second.petugas_id) return error("Pengajuan ini sudah dibagikan.", 409);
+    if (first.petugas_id || second.petugas_id) return error("Pengajuan sudah dibagikan kepada petugas lain.", 409);
 
     const now = new Date().toISOString();
     const firstUpdate = await db.from("verifikasi_pengajuan").update({ petugas_id: body.staff_id, updated_at: now }).eq("id", first.id).eq("role_petugas", "staff_pelayanan").in("status", ["Menunggu", "Diproses"]).is("petugas_id", null).select("id");

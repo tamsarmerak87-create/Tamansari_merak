@@ -194,7 +194,7 @@ export async function GET(request: NextRequest) {
 
     const [activeResult, allStagesResult, submissionsResult, officersResult, auditsResult, wargaResult, petugasNotificationsResult] = await Promise.all([
         safeRows<VerificationRow>("verifikasi_pengajuan.active", (() => { let q = supabase.from("verifikasi_pengajuan").select("id,pengajuan_id,tahap,nama_tahap,role_petugas,status,petugas_id,catatan,created_at,acted_at").in("status", ["Menunggu", "Diproses"]); if (!isLurah && workflowRole !== "kepala_seksi") q = q.eq("role_petugas", workflowRole).or(`petugas_id.eq.${session.profile.id},petugas_id.is.null`); return q.order("created_at", { ascending: false }); })(), warnings),
-        safeRows<VerificationRow>("verifikasi_pengajuan.all", (() => { let q = supabase.from("verifikasi_pengajuan").select("id,pengajuan_id,tahap,nama_tahap,role_petugas,status,petugas_id,catatan,created_at,acted_at"); if (!isLurah) q = q.or(`role_petugas.eq.${workflowRole},petugas_id.eq.${session.profile.id}`); return q.order("tahap", { ascending: true }); })(), warnings),
+        safeRows<VerificationRow>("verifikasi_pengajuan.all", (() => { let q = supabase.from("verifikasi_pengajuan").select("id,pengajuan_id,tahap,nama_tahap,role_petugas,status,petugas_id,catatan,created_at,acted_at"); if (!isLurah && workflowRole !== "kepala_seksi") q = q.or(`role_petugas.eq.${workflowRole},petugas_id.eq.${session.profile.id}`); return q.order("tahap", { ascending: true }); })(), warnings),
         safeRows<AnyRow>(isLurah ? "pengajuan_surat.monitoring" : "pengajuan_surat.petugas_candidates", supabase.from("pengajuan_surat").select("*, layanan(*)").order("created_at", { ascending: false }), warnings),
         safeRows<AnyRow>("petugas", supabase.from("petugas").select("id,username,nama_lengkap,jabatan,role,is_active").eq("is_active", true).in("role", ["staff_pelayanan", "petugas_lapangan"]), warnings),
         safeRows<AnyRow>("audit_pengajuan.mine", supabase.from("audit_pengajuan").select("*").eq("user_id", session.profile.id).order("created_at", { ascending: false }), warnings),
@@ -282,7 +282,28 @@ export async function GET(request: NextRequest) {
     const wargaRows = (wargaResult.data ?? []) as AnyRow[];
     const wargaTasks = wargaRows.filter((row) => isPendingWargaVerification(row) && canHandleWargaStage(session.profile!, row)).map(wargaTask);
     const requiredSubmissionStatus = ROLE_STAGE_STATUS[workflowRole];
-    const kasiTasks: AnyRow[] = workflowRole === "kepala_seksi" ? activeStages.filter((stage) => [1, 2].includes(stage.tahap) && !stage.petugas_id).map(enrichStage).filter((row) => row.nomor_pengajuan || row.nama_lengkap).map((row) => ({ ...row, task_type: "pengajuan_layanan", jenis_tugas: "Pengajuan Layanan" })) : [];
+    const kasiSubmissionIds = workflowRole === "kepala_seksi"
+        ? Array.from(new Set(allStages.filter((stage) => [1, 2].includes(stage.tahap)).map((stage) => stage.pengajuan_id)))
+            .filter((pengajuanId) => {
+                const stages = stagesByPengajuan.get(String(pengajuanId)) ?? [];
+                const first = stages.find((stage) => Number(stage.tahap) === 1);
+                const second = stages.find((stage) => Number(stage.tahap) === 2);
+                const submission = submissionMap.get(String(pengajuanId));
+                return Boolean(submission && first && second
+                    && first.role_petugas === "staff_pelayanan"
+                    && second.role_petugas === "petugas_lapangan"
+                    && !first.petugas_id && !second.petugas_id
+                    && ["Menunggu", "Diproses"].includes(String(first.status))
+                    && ["Menunggu", "Diproses"].includes(String(second.status))
+                    && !isFinalSubmissionStatus(String(submission.workflow_status ?? submission.status)));
+            })
+        : [];
+    const kasiTasks: AnyRow[] = kasiSubmissionIds
+        .map((pengajuanId) => (stagesByPengajuan.get(String(pengajuanId)) ?? []).find((stage) => Number(stage.tahap) === 1))
+        .filter((stage) => Boolean(stage))
+        .map((stage) => enrichStage(stage as VerificationRow))
+        .filter((row) => row.nomor_pengajuan || row.nama_lengkap)
+        .map((row) => ({ ...row, task_type: "pengajuan_layanan", jenis_tugas: "Pengajuan Layanan" }));
     const stageTasks: AnyRow[] = activeStages
         .map(enrichStage)
         .filter((row) => row.nomor_pengajuan || row.nama_lengkap)
@@ -334,8 +355,7 @@ export async function GET(request: NextRequest) {
     }
     const stageCounts = [1, 2, 3, 4, 5].reduce<Record<string, number>>((acc, tahap) => { acc[String(tahap)] = allStages.filter((stage) => stage.tahap === tahap && ["Menunggu", "Diproses"].includes(String(stage.status ?? ""))).length; return acc; }, {});
     const totalResult = isLurah ? { total: (submissionsResult.data ?? []).length, selesai: (submissionsResult.data ?? []).filter((row: AnyRow) => row.status === "Selesai").length } : { total: 0, selesai: 0 };
-    const unassignedForKasi = workflowRole === "kepala_seksi" ? allStages.filter((stage) => [1, 2].includes(stage.tahap) && !stage.petugas_id && ["Menunggu", "Diproses"].includes(stage.status)).length / 2 : 0;
-    const stats = { menunggu: tasks.length, tugas_pengajuan: pengajuanTasks.length, verifikasi_warga: wargaTasks.length, pengajuan_masuk: Math.floor(unassignedForKasi), diproses: history.length, dikembalikan: history.filter((row) => /kembali|revisi|dikembalikan/i.test(`${row.action ?? row.aksi ?? row.status ?? row.status_sesudah ?? ""}`)).length, lurah: { total: totalResult.total, staff: stageCounts["1"] ?? 0, lapangan: stageCounts["2"] ?? 0, kasi: stageCounts["3"] ?? 0, seklur: stageCounts["4"] ?? 0, lurah: stageCounts["5"] ?? 0, selesai: totalResult.selesai } };
+    const stats = { menunggu: tasks.length, tugas_pengajuan: pengajuanTasks.length, verifikasi_warga: wargaTasks.length, pengajuan_masuk: kasiTasks.length, diproses: history.length, dikembalikan: history.filter((row) => /kembali|revisi|dikembalikan/i.test(`${row.action ?? row.aksi ?? row.status ?? row.status_sesudah ?? ""}`)).length, lurah: { total: totalResult.total, staff: stageCounts["1"] ?? 0, lapangan: stageCounts["2"] ?? 0, kasi: stageCounts["3"] ?? 0, seklur: stageCounts["4"] ?? 0, lurah: stageCounts["5"] ?? 0, selesai: totalResult.selesai } };
 
     return NextResponse.json({ ok: true, petugas: session.profile, stats, tugas: tasks, data: { tasks, wargaTasks, wargaHistory, pengajuanTasks, history, detail, detailError, officers: officersResult.data ?? [], monitoring, notifikasi: petugasNotificationsResult.data ?? [], warnings, stats } });
 }
