@@ -95,7 +95,12 @@ export async function loginPetugasPortal(username: string, password: string) {
     });
 
     if (!response.ok) {
-        throw new Error("Username atau password salah.");
+        const data = await response.json().catch(() => null) as { message?: string } | null;
+        throw new Error(data?.message || (response.status === 503
+            ? "Layanan sedang mengalami gangguan koneksi. Silakan coba kembali beberapa saat lagi."
+            : response.status >= 500
+                ? "Terjadi gangguan internal. Silakan coba kembali beberapa saat lagi."
+                : "Username atau password salah."));
     }
 
     const data = (await response.json()) as { user: AdminPortalUser; profile: PetugasRow };
